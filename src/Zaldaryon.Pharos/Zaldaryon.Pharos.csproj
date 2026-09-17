@@ -19,6 +19,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="Pixnop.Atlas" Version="0.13.1" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Reference Include="VintagestoryAPI">
       <HintPath>$(VintageStoryPath)/VintagestoryAPI.dll</HintPath>
       <Private>true</Private>
@@ -65,10 +70,6 @@
     </Reference>
     <Reference Include="SkiaSharp">
       <HintPath>$(VintageStoryPath)/Lib/SkiaSharp.dll</HintPath>
-      <Private>true</Private>
-    </Reference>
-    <Reference Include="Newtonsoft.Json">
-      <HintPath>$(VintageStoryPath)/Lib/Newtonsoft.Json.dll</HintPath>
       <Private>true</Private>
     </Reference>
   </ItemGroup>

@@ -141,7 +141,67 @@ public static class HeadlessPlatformResolver
             // Register Vintage Story managed assembly resolver as fallback
             AppDomain.CurrentDomain.AssemblyResolve += AssemblyResolver.AssemblyResolve;
 
+            // Ensure Lib and Mods directories are staged in AppContext.BaseDirectory for mod compilation
+            EnsureStagedBinaries(gamePath);
+
             _initialized = true;
+        }
+    }
+
+    /// <summary>
+    /// Ensures Lib and Mods folders are accessible from the runtime BaseDirectory so that
+    /// mod loading and compilation succeed during server and client bootstrap.
+    /// </summary>
+    public static void EnsureStagedBinaries(string? customGamePath = null)
+    {
+        string gamePath = ResolveGamePath(customGamePath);
+        string baseDir = AppContext.BaseDirectory;
+
+        LinkOrCopyDirectory(Path.Combine(gamePath, "Lib"), Path.Combine(baseDir, "Lib"));
+        LinkOrCopyDirectory(Path.Combine(gamePath, "Mods"), Path.Combine(baseDir, "Mods"));
+    }
+
+    private static void LinkOrCopyDirectory(string sourceDir, string targetDir)
+    {
+        if (!Directory.Exists(sourceDir) || Directory.Exists(targetDir))
+        {
+            return;
+        }
+
+        try
+        {
+            Directory.CreateSymbolicLink(targetDir, sourceDir);
+        }
+        catch
+        {
+            try
+            {
+                Directory.CreateDirectory(targetDir);
+                foreach (string file in Directory.GetFiles(sourceDir))
+                {
+                    string destFile = Path.Combine(targetDir, Path.GetFileName(file));
+                    File.Copy(file, destFile, overwrite: true);
+                }
+            }
+            catch
+            {
+                // Best-effort staging
+            }
+        }
+    }
+
+    /// <summary>
+    /// Ensures GamePaths.AssetsPath points to a valid assets directory within the game installation.
+    /// </summary>
+    public static void EnsureAssetsPath(string? customAssetsPath = null)
+    {
+        string gamePath = ResolveGamePath();
+        string assetsPath = customAssetsPath ?? Path.Combine(gamePath, "assets");
+        if (Directory.Exists(assetsPath))
+        {
+            PropertyInfo? prop = typeof(Vintagestory.API.Config.GamePaths).GetProperty("AssetsPath", BindingFlags.Public | BindingFlags.Static);
+            MethodInfo? setter = prop?.GetSetMethod(nonPublic: true);
+            setter?.Invoke(null, [assetsPath]);
         }
     }
 }
