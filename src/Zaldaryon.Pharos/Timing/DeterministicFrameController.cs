@@ -100,6 +100,11 @@ public sealed class DeterministicFrameController
     public event EventHandler<FrameCompletedEventArgs>? OnFrameCompleted;
 
     /// <summary>
+    /// Optional ChunkTesselatorManager stepped deterministically with each frame.
+    /// </summary>
+    public ChunkTesselatorManager? ChunkTesselatorManager { get; set; }
+
+    /// <summary>
     /// Advances the client by a single deterministic frame.
     /// </summary>
     public void Step(float dt = 1f / 60f)
@@ -147,6 +152,20 @@ public sealed class DeterministicFrameController
 
                 // 4. Ensure offscreen FBO is bound for rendering
                 _window.Framebuffer.Bind();
+
+                // 4.5. Step background chunk tessellation and mesh upload deterministically if active
+                if (ChunkTesselatorManager != null)
+                {
+                    try
+                    {
+                        ChunkTesselatorManager.OnSeperateThreadGameTick(dt);
+                        ChunkTesselatorManager.OnBeforeFrame(dt);
+                    }
+                    catch (Exception ex)
+                    {
+                        _platform.Logger.Warning($"Error stepping ChunkTesselatorManager: {ex.Message}");
+                    }
+                }
 
                 // 5. Execute screen and game rendering pipeline
                 if (_client.Player?.Entity?.Pos != null)
@@ -401,10 +420,9 @@ public sealed class DeterministicFrameController
 
         int dirtyCount = DirtyChunksPriorityCount + DirtyChunksCount + DirtyChunksLastCount;
         int tessCount = TesselatedChunksPriorityCount + TesselatedChunksCount;
-        int awaitingTess = RuntimeStats.chunksAwaitingTesselation;
-        int awaitingPool = RuntimeStats.chunksAwaitingPooling;
+        int awaitingPooling = (ChunkTesselatorManager != null) ? RuntimeStats.chunksAwaitingPooling : 0;
 
-        return dirtyCount == 0 && tessCount == 0 && awaitingTess == 0 && awaitingPool == 0;
+        return dirtyCount == 0 && tessCount == 0 && awaitingPooling == 0;
     }
 
     /// <summary>

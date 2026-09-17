@@ -1,6 +1,11 @@
+using System.Collections.Generic;
+using System.Linq;
 using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
+using Vintagestory.API.Client;
+using Vintagestory.API.Common;
+using Vintagestory.API.Common.Entities;
 using Vintagestory.API.Config;
 using Vintagestory.API.MathTools;
 using Vintagestory.Client;
@@ -8,6 +13,7 @@ using Vintagestory.Client.Network;
 using Vintagestory.Client.NoObf;
 using Vintagestory.Common;
 using Zaldaryon.Pharos.Bootstrap;
+using Zaldaryon.Pharos.Fixtures;
 using Zaldaryon.Pharos.Platform;
 using Zaldaryon.Pharos.Player;
 using Zaldaryon.Pharos.Server;
@@ -33,6 +39,7 @@ public sealed class HeadlessClient : IDisposable
     public HeadlessClientOptions Options { get; }
     public DeterministicFrameController FrameController { get; }
     public IClientTestPlayer TestPlayer { get; }
+    public ChunkTesselatorManager? ChunkTesselatorManager { get; private set; }
     public bool IsDisposed => _disposed;
 
     internal HeadlessClient(
@@ -230,6 +237,252 @@ public sealed class HeadlessClient : IDisposable
         Client.Connect();
 
         return new ClientServerLoopbackSession(this, server);
+    }
+
+    /// <summary>
+    /// Initializes a standalone mock world within ClientWorldMap without running an embedded or remote server.
+    /// Configures world dimensions, lighting models, chunk data pools, and initializes terrain mesher state.
+    /// </summary>
+    public void InitializeMockWorld(Vec3i? mapSize = null, int defaultSunlight = 31)
+    {
+        Vec3i size = mapSize ?? new Vec3i(1024, 256, 1024);
+        Client.WorldMap.OnMapSizeReceived(size, new Vec3i(32, 256, 32));
+
+        Client.WorldMap.SunBrightness = Math.Clamp(defaultSunlight, 0, 31);
+        Client.WorldMap.BlockLightLevels = new float[32];
+        Client.WorldMap.SunLightLevels = new float[32];
+        Client.WorldMap.BlockLightLevelsByte = new byte[32];
+        Client.WorldMap.SunLightLevelsByte = new byte[32];
+        Client.WorldMap.hueLevels = new byte[32];
+        Client.WorldMap.satLevels = new byte[32];
+        for (int i = 0; i < 32; i++)
+        {
+            float lvl = i / 31f;
+            Client.WorldMap.BlockLightLevels[i] = lvl;
+            Client.WorldMap.SunLightLevels[i] = lvl;
+            Client.WorldMap.BlockLightLevelsByte[i] = (byte)(255 * lvl);
+            Client.WorldMap.SunLightLevelsByte[i] = (byte)(255 * lvl);
+        }
+
+        Client.WorldMap.OnBlocksAndLightLevelsReceived();
+
+        // Ensure frustum culler is initialized for distance and culling checks
+        FieldInfo? frustumField = typeof(ClientMain).GetField("frustumCuller", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+        if (frustumField?.GetValue(Client) == null)
+        {
+            FrustumCulling culler = new();
+            culler.UpdateViewDistance(ClientSettings.ViewDistance);
+            frustumField?.SetValue(Client, culler);
+        }
+
+        // Enable terrain tessellation and initialize ChunkTesselator
+        Client.ShouldTesselateTerrain = true;
+
+        if (Client.TerrainChunkTesselator == null)
+        {
+            Client.TerrainChunkTesselator = new ChunkTesselator(Client);
+        }
+
+        ChunkTesselator tct = Client.TerrainChunkTesselator;
+        FieldInfo? lightsGoField = typeof(ChunkTesselator).GetField("lightsGo", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+        FieldInfo? texturesGoField = typeof(ChunkTesselator).GetField("blockTexturesGo", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+        lightsGoField?.SetValue(tct, true);
+        texturesGoField?.SetValue(tct, true);
+
+        try
+        {
+            tct.Start();
+        }
+        catch
+        {
+            FieldInfo? startedField = typeof(ChunkTesselator).GetField("started", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+            startedField?.SetValue(tct, true);
+        }
+
+        if (ChunkTesselatorManager == null)
+        {
+            ChunkTesselatorManager = new ChunkTesselatorManager(Client);
+            FrameController.ChunkTesselatorManager = ChunkTesselatorManager;
+        }
+
+        // Ensure chunk renderer is wired if atlas textures are available
+        FieldInfo? rendererField = typeof(ClientMain).GetField("chunkRenderer", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+        if (rendererField?.GetValue(Client) == null)
+        {
+            int[] textureIds = (Client.BlockAtlasManager?.AtlasTextures != null && Client.BlockAtlasManager.AtlasTextures.Count > 0)
+                ? Client.BlockAtlasManager.AtlasTextures.Select(t => t.TextureId).ToArray()
+                : new int[] { 1 };
+            ChunkRenderer renderer = new(textureIds, Client);
+            rendererField?.SetValue(Client, renderer);
+        }
+    }
+
+    /// <summary>
+    /// Injects a synthetic ChunkFixture directly into ClientWorldMap chunk cache.
+    /// </summary>
+    public ClientChunk InjectChunk(ChunkFixture fixture, bool triggerTesselation = true)
+    {
+        ArgumentNullException.ThrowIfNull(fixture);
+
+        if (Client.WorldMap.MapSizeY <= 0)
+        {
+            InitializeMockWorld();
+        }
+
+        FieldInfo? poolField = typeof(ClientWorldMap).GetField("chunkDataPool", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+        ClientChunkDataPool pool = (ClientChunkDataPool)poolField?.GetValue(Client.WorldMap)!
+            ?? new ClientChunkDataPool(32, Client);
+
+        ClientChunk clientChunk = ClientChunk.CreateNew(pool);
+
+        // Mark loaded from server so ChunkTesselatorManager does not requeue indefinitely
+        FieldInfo? loadedField = typeof(ClientChunk).GetField("loadedFromServer", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+        loadedField?.SetValue(clientChunk, true);
+
+        ushort sun = (ushort)Math.Clamp(fixture.DefaultSunlight, (byte)0, (byte)31);
+        clientChunk.Lighting.FillWithSunlight(sun);
+
+        bool hasNonAirBlocks = false;
+
+        foreach (var (index3d, blockCode) in fixture.BlockCodes)
+        {
+            int blockId = ResolveBlockId(blockCode);
+            clientChunk.Data[index3d] = blockId;
+            if (blockId != 0) hasNonAirBlocks = true;
+        }
+
+        foreach (var (index3d, blockId) in fixture.BlockIds)
+        {
+            clientChunk.Data[index3d] = blockId;
+            if (blockId != 0) hasNonAirBlocks = true;
+        }
+
+        foreach (var (index3d, sunLevel) in fixture.CustomSunlight)
+        {
+            clientChunk.Lighting.SetSunlight(index3d, sunLevel);
+        }
+
+        foreach (var (index3d, blockLight) in fixture.CustomBlocklight)
+        {
+            clientChunk.Lighting.SetBlocklight(index3d, blockLight);
+        }
+
+        foreach (Entity entity in fixture.Entities)
+        {
+            clientChunk.AddEntity(entity);
+        }
+
+        foreach (var (pos, blockEntity) in fixture.BlockEntities)
+        {
+            clientChunk.BlockEntities[pos] = blockEntity;
+        }
+
+        clientChunk.LightPositions = new HashSet<int>();
+        clientChunk.Empty = !hasNonAirBlocks;
+
+        // Insert into ClientWorldMap.chunks dictionary
+        FieldInfo? chunksField = typeof(ClientWorldMap).GetField("chunks", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+        FieldInfo? lockField = typeof(ClientWorldMap).GetField("chunksLock", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+        object chunksLock = lockField?.GetValue(Client.WorldMap) ?? new object();
+        var chunksDict = (Dictionary<long, ClientChunk>)chunksField?.GetValue(Client.WorldMap)!;
+
+        long key = MapUtil.Index3dL(fixture.Position.X, fixture.Position.Y, fixture.Position.Z, Client.WorldMap.index3dMulX, Client.WorldMap.index3dMulZ);
+        lock (chunksLock)
+        {
+            if (chunksDict.TryGetValue(key, out ClientChunk? existingChunk) && existingChunk != null)
+            {
+                FieldInfo? rendererField = typeof(ClientMain).GetField("chunkRenderer", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+                if (rendererField?.GetValue(Client) is object renderer)
+                {
+                    MethodInfo? removeMethod = typeof(ClientChunk).GetMethod("RemoveDataPoolLocations", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+                    removeMethod?.Invoke(existingChunk, new object[] { renderer });
+                }
+            }
+            chunksDict[key] = clientChunk;
+        }
+
+        if (triggerTesselation && !clientChunk.Empty)
+        {
+            FieldInfo? redrawField = typeof(ClientChunk).GetField("enquedForRedraw", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+            redrawField?.SetValue(clientChunk, true);
+
+            FieldInfo? dirtyPriorityField = typeof(ClientMain).GetField("dirtyChunksPriority", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+            FieldInfo? dirtyPriorityLockField = typeof(ClientMain).GetField("dirtyChunksPriorityLock", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+            object lockObj = dirtyPriorityLockField?.GetValue(Client) ?? new object();
+            object? queueObj = dirtyPriorityField?.GetValue(Client);
+
+            if (queueObj != null)
+            {
+                lock (lockObj)
+                {
+                    MethodInfo? enqueueMethod = queueObj.GetType().GetMethod("Enqueue", new[] { typeof(long) });
+                    enqueueMethod?.Invoke(queueObj, new object[] { key });
+
+                    // Edge-dirty adjacent chunks if loaded
+                    for (int dx = -1; dx <= 1; dx++)
+                    {
+                        for (int dy = -1; dy <= 1; dy++)
+                        {
+                            for (int dz = -1; dz <= 1; dz++)
+                            {
+                                if (dx == 0 && dy == 0 && dz == 0) continue;
+                                long neighborKey = MapUtil.Index3dL(
+                                    fixture.Position.X + dx,
+                                    fixture.Position.Y + dy,
+                                    fixture.Position.Z + dz,
+                                    Client.WorldMap.index3dMulX,
+                                    Client.WorldMap.index3dMulZ);
+
+                                lock (chunksLock)
+                                {
+                                    if (chunksDict.TryGetValue(neighborKey, out ClientChunk? neighbor) && neighbor != null && !neighbor.Empty)
+                                    {
+                                        enqueueMethod?.Invoke(queueObj, new object[] { neighborKey | long.MinValue });
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        return clientChunk;
+    }
+
+    /// <summary>
+    /// Injects multiple chunk fixtures into ClientWorldMap.
+    /// </summary>
+    public List<ClientChunk> InjectChunks(IEnumerable<ChunkFixture> fixtures, bool triggerTesselation = true)
+    {
+        ArgumentNullException.ThrowIfNull(fixtures);
+        List<ClientChunk> injected = new();
+        foreach (ChunkFixture fixture in fixtures)
+        {
+            injected.Add(InjectChunk(fixture, triggerTesselation));
+        }
+        return injected;
+    }
+
+    private int ResolveBlockId(string blockCode)
+    {
+        if (string.Equals(blockCode, "air", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(blockCode, "game:air", StringComparison.OrdinalIgnoreCase))
+        {
+            return 0;
+        }
+
+        if (int.TryParse(blockCode, out int numericId))
+        {
+            return numericId;
+        }
+
+        if (Client.BlocksByCode != null && Client.BlocksByCode.TryGetValue(new AssetLocation(blockCode), out Block? block))
+        {
+            return block.BlockId;
+        }
+
+        return 1;
     }
 
     public void Dispose()
