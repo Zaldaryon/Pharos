@@ -78,9 +78,16 @@ public static class HeadlessClientBootstrap
             platform.WindowSize.Height = options.Height;
 
             // 6. Wire ScreenManager and instantiate ClientMain via GuiScreenRunningGame
+            lock (ScreenManager.MainThreadTasks)
+            {
+                ScreenManager.MainThreadTasks.Clear();
+            }
+
             ScreenManager.Platform = platform;
             ScreenManager screenManager = new(platform);
             GuiScreenRunningGame runningGameScreen = new(screenManager, null);
+            typeof(ScreenManager).GetField("CurrentScreen", BindingFlags.NonPublic | BindingFlags.Instance)?.SetValue(screenManager, runningGameScreen);
+
             FieldInfo? field = typeof(GuiScreenRunningGame).GetField("runningGame", BindingFlags.NonPublic | BindingFlags.Instance);
             ClientMain? client = (ClientMain?)field?.GetValue(runningGameScreen);
             if (client == null)
