@@ -1,0 +1,43 @@
+name: Feature Request
+description: Suggest an enhancement, new API, or capability for Pharos.
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Pharos provides headless client execution and scenario testing for Vintage Story and Stratum. Feature requests should align with test automation, state inspection, and headless simulation goals.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem Statement
+      description: Describe the test scenario, inspection limitation, or pain point you want to address.
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed Solution
+      description: Describe your proposed feature, API design, or architectural change.
+    validations:
+      required: true
+  - type: textarea
+    id: api-example
+    attributes:
+      label: Proposed API or Code Example
+      description: Show how scenario tests would use this new capability.
+      render: csharp
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      description: Describe any alternative designs or workarounds you considered.
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Scope Alignment
+      options:
+        - label: This capability belongs in client testing, inspection, or scenario lifecycle tooling.
+          required: true
+        - label: This does not introduce non-deterministic timing or wall-clock dependencies.
+          required: true

@@ -1,0 +1,50 @@
+name: Technical Task
+description: Track planned roadmap items, architectural enhancements, or infrastructure tasks.
+title: "[Task]: "
+labels: ["type: core"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this template for tracking architectural tasks, roadmap issues, and internal framework engineering.
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: Concise summary of the task and its target deliverable.
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Motivation and Context
+      description: Why this task is needed and what dependencies or milestones it supports.
+    validations:
+      required: true
+  - type: textarea
+    id: technical-requirements
+    attributes:
+      label: Technical Requirements and Architecture
+      description: Detail specific implementation guidelines, classes, APIs, and engine touchpoints.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance-criteria
+    attributes:
+      label: Acceptance Criteria
+      description: List concrete criteria required to consider this task complete.
+      placeholder: |
+        - [ ] Criterion 1
+        - [ ] Criterion 2
+        - [ ] Unit and integration tests pass
+    validations:
+      required: true
+  - type: checkboxes
+    id: guidelines
+    attributes:
+      label: Implementation Standards
+      options:
+        - label: Follows active voice and repository architecture conventions.
+          required: true
+        - label: Preserves deterministic frame execution and isolated headless lifecycle.
+          required: true

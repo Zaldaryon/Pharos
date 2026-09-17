@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Stratum Community Discord
+    url: https://discord.gg/pd24fawhsD
+    about: Ask questions and collaborate with the Stratum development community.
+  - name: Vintage Story Upstream Tracker
+    url: https://github.com/anegostudios/VintageStory-Issues/issues
+    about: Report bugs that reproduce on unmodified vanilla Vintage Story.
