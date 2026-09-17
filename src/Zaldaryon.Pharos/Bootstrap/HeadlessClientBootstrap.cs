@@ -27,7 +27,7 @@ public static class HeadlessClientBootstrap
             options ??= new HeadlessClientOptions();
 
             // 1. Initialize resolver and locate game installation
-            HeadlessPlatformResolver.Initialize(options.GameInstallPath);
+            HeadlessPlatformResolver.Initialize(options);
             string gamePath = HeadlessPlatformResolver.ResolveGamePath(options.GameInstallPath);
 
             // 2. Configure isolated data and asset paths

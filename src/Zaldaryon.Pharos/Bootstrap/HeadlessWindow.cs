@@ -19,6 +19,7 @@ public sealed class HeadlessWindow : IDisposable
 
     public GameWindowNative NativeWindow { get; }
     public HeadlessFramebuffer Framebuffer { get; }
+    public GlRendererInfo? RendererInfo { get; }
     public int Width { get; }
     public int Height { get; }
 
@@ -61,6 +62,17 @@ public sealed class HeadlessWindow : IDisposable
 
         // Ensure GLFW can run on any test thread
         GLFWProvider.CheckForMainThread = false;
+
+        // Configure Mesa software rasterization (llvmpipe) and validate virtual display server on Linux
+        if (options.ConfigureMesaEnvironment && (OperatingSystem.IsLinux() || options.ForceSoftwareRendering))
+        {
+            LinuxHeadlessEnvironment.ConfigureMesaEnvironment(options);
+        }
+
+        if (OperatingSystem.IsLinux())
+        {
+            LinuxHeadlessEnvironment.ValidateDisplayServer(options.LinuxDisplay);
+        }
 
         // Initialize GLFW with offscreen and non-activating hints
         if (!GLFW.Init())
@@ -108,6 +120,9 @@ public sealed class HeadlessWindow : IDisposable
         // Ensure OpenGL context is active and current on this thread
         NativeWindow.MakeCurrent();
         GL.LoadBindings(new GLFWBindingsContext());
+
+        // Query driver and renderer capabilities
+        RendererInfo = LinuxHeadlessEnvironment.QueryRendererInfo();
 
         // Create the offscreen framebuffer
         Framebuffer = new HeadlessFramebuffer(Width, Height);
