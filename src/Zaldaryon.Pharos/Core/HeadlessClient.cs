@@ -14,6 +14,7 @@ using Vintagestory.Client.NoObf;
 using Vintagestory.Common;
 using Zaldaryon.Pharos.Bootstrap;
 using Zaldaryon.Pharos.Fixtures;
+using Zaldaryon.Pharos.Graphics;
 using Zaldaryon.Pharos.Platform;
 using Zaldaryon.Pharos.Player;
 using Zaldaryon.Pharos.Server;
@@ -41,6 +42,13 @@ public sealed class HeadlessClient : IDisposable
     public IClientTestPlayer TestPlayer { get; }
     public ChunkTesselatorManager? ChunkTesselatorManager { get; private set; }
     public bool IsDisposed => _disposed;
+
+    /// <summary>
+    /// OpenGL command proxy for recording draw and buffer operations per frame.
+    /// Recording is disabled by default. Call <see cref="GlCommandProxy.Enable"/> before a frame
+    /// and <see cref="GlCommandProxy.Snapshot"/> after to capture counts.
+    /// </summary>
+    public GlCommandProxy GL { get; } = new();
 
     internal HeadlessClient(
         ClientMain client,
@@ -489,6 +497,15 @@ public sealed class HeadlessClient : IDisposable
     {
         if (_disposed) return;
         _disposed = true;
+
+        try
+        {
+            GL.Disable();
+        }
+        catch
+        {
+            // Ignore GL proxy teardown errors
+        }
 
         try
         {
