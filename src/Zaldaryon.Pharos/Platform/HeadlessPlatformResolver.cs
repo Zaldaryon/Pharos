@@ -81,6 +81,9 @@ public static class HeadlessPlatformResolver
             // Allow GLFW to run from any test runner thread
             OpenTK.Windowing.Desktop.GLFWProvider.CheckForMainThread = false;
 
+            // Force OpenAL Soft to use the null driver backend in headless/CI environments
+            Environment.SetEnvironmentVariable("ALSOFT_DRIVERS", "null");
+
             // Register assembly resolver for game and Lib directories
             AppDomain.CurrentDomain.AssemblyResolve += (sender, args) =>
             {

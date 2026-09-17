@@ -11,4 +11,5 @@ public sealed class HeadlessClientOptions
     public string? DataPath { get; init; }
     public string? AssetsPath { get; init; }
     public bool DisableAudio { get; init; } = true;
+    public bool UseNullAudioDevice { get; init; } = true;
 }
