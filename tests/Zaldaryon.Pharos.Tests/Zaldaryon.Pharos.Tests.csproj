@@ -60,6 +60,10 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <Visible>false</Visible>
     </Content>
+    <Content Include="$(VintageStoryPath)\Lib\OpenAL32.dll" Condition="Exists('$(VintageStoryPath)\Lib\OpenAL32.dll')">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Visible>false</Visible>
+    </Content>
   </ItemGroup>
 
 </Project>

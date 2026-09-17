@@ -4,6 +4,7 @@ using Vintagestory;
 using Vintagestory.API.Config;
 using Vintagestory.Client;
 using Vintagestory.Client.NoObf;
+using Zaldaryon.Pharos.Audio;
 using Zaldaryon.Pharos.Core;
 using Zaldaryon.Pharos.Platform;
 
@@ -47,10 +48,17 @@ public static class HeadlessClientBootstrap
                 SetAssetsPath(assetsPath);
             }
 
-            // 3. Configure client settings
-            if (options.DisableAudio)
+            // 3. Configure audio subsystem and client settings
+            if (options.DisableAudio || options.UseNullAudioDevice)
             {
+                NullAudioPatcher.Patch();
+
                 ClientSettings.MasterSoundLevel = 0;
+                ClientSettings.SoundLevel = 0;
+                ClientSettings.EntitySoundLevel = 0;
+                ClientSettings.AmbientSoundLevel = 0;
+                ClientSettings.WeatherSoundLevel = 0;
+                ClientSettings.MusicLevel = 0;
             }
 
             ClientSettings.ScreenWidth = options.Width;
