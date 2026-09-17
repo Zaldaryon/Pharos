@@ -9,6 +9,7 @@ using Vintagestory.Client.NoObf;
 using Vintagestory.Common;
 using Zaldaryon.Pharos.Bootstrap;
 using Zaldaryon.Pharos.Platform;
+using Zaldaryon.Pharos.Player;
 using Zaldaryon.Pharos.Server;
 using Zaldaryon.Pharos.Timing;
 
@@ -31,6 +32,7 @@ public sealed class HeadlessClient : IDisposable
     public GlRendererInfo? RendererInfo => Window.RendererInfo;
     public HeadlessClientOptions Options { get; }
     public DeterministicFrameController FrameController { get; }
+    public IClientTestPlayer TestPlayer { get; }
     public bool IsDisposed => _disposed;
 
     internal HeadlessClient(
@@ -50,6 +52,7 @@ public sealed class HeadlessClient : IDisposable
         Options = options;
         _tempDataPath = tempDataPath;
         FrameController = new DeterministicFrameController(client, platform, screenManager, runningGameScreen, window);
+        TestPlayer = new ClientTestPlayer(client);
     }
 
     /// <summary>
