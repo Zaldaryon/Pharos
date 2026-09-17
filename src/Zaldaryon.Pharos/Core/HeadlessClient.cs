@@ -13,6 +13,7 @@ using Vintagestory.Client.Network;
 using Vintagestory.Client.NoObf;
 using Vintagestory.Common;
 using Zaldaryon.Pharos.Bootstrap;
+using Zaldaryon.Pharos.Culling;
 using Zaldaryon.Pharos.Fixtures;
 using Zaldaryon.Pharos.Graphics;
 using Zaldaryon.Pharos.Platform;
@@ -50,6 +51,12 @@ public sealed class HeadlessClient : IDisposable
     /// </summary>
     public GlCommandProxy GL { get; } = new();
 
+    /// <summary>
+    /// Frustum and culling state inspector. Call <see cref="CullingInspector.Snapshot"/> after a
+    /// frame step to capture which chunks were visible, culled, or occlusion-culled.
+    /// </summary>
+    public CullingInspector Culling { get; }
+
     internal HeadlessClient(
         ClientMain client,
         ClientPlatformWindows platform,
@@ -68,6 +75,7 @@ public sealed class HeadlessClient : IDisposable
         _tempDataPath = tempDataPath;
         FrameController = new DeterministicFrameController(client, platform, screenManager, runningGameScreen, window);
         TestPlayer = new ClientTestPlayer(client);
+        Culling = new CullingInspector(client);
     }
 
     /// <summary>
