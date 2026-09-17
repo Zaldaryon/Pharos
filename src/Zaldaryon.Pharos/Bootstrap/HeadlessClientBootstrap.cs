@@ -1,9 +1,11 @@
 using System.Reflection;
 using OpenTK.Windowing.Desktop;
 using Vintagestory;
+using Vintagestory.API.Common;
 using Vintagestory.API.Config;
 using Vintagestory.Client;
 using Vintagestory.Client.NoObf;
+using Vintagestory.Common;
 using Zaldaryon.Pharos.Audio;
 using Zaldaryon.Pharos.Core;
 using Zaldaryon.Pharos.Platform;
@@ -77,6 +79,17 @@ public static class HeadlessClientBootstrap
             platform.WindowSize.Width = options.Width;
             platform.WindowSize.Height = options.Height;
 
+            FieldInfo? amField = typeof(ClientPlatformWindows).GetField("assetManager", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+            if (amField?.GetValue(platform) == null)
+            {
+                var am = new AssetManager(GamePaths.AssetsPath, EnumAppSide.Client);
+                am.Origins = new List<IAssetOrigin>();
+                am.Assets = new Dictionary<AssetLocation, IAsset>();
+                typeof(AssetManager).GetField("assetsByCategory", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public)
+                    ?.SetValue(am, new Dictionary<string, List<IAsset>>());
+                amField?.SetValue(platform, am);
+            }
+
             // 6. Wire ScreenManager and instantiate ClientMain via GuiScreenRunningGame
             lock (ScreenManager.MainThreadTasks)
             {
@@ -84,6 +97,7 @@ public static class HeadlessClientBootstrap
             }
 
             ScreenManager.Platform = platform;
+            ScreenManager.ParsedArgs ??= new ClientProgramArgs();
             ScreenManager screenManager = new(platform);
             GuiScreenRunningGame runningGameScreen = new(screenManager, null);
             typeof(ScreenManager).GetField("CurrentScreen", BindingFlags.NonPublic | BindingFlags.Instance)?.SetValue(screenManager, runningGameScreen);
@@ -95,6 +109,10 @@ public static class HeadlessClientBootstrap
                 client = new ClientMain(runningGameScreen, platform);
                 field?.SetValue(runningGameScreen, client);
             }
+
+            client.modHandler ??= new SystemModHandler(client);
+            client.clientSystems ??= new ClientSystem[] { client.modHandler };
+            client.TerrainChunkTesselator ??= new ChunkTesselator(client);
 
             return new HeadlessClient(client, platform, screenManager, runningGameScreen, window, options, tempDataPath);
         }
