@@ -1,10 +1,15 @@
+using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
+using Vintagestory.API.Config;
 using Vintagestory.API.MathTools;
 using Vintagestory.Client;
+using Vintagestory.Client.Network;
 using Vintagestory.Client.NoObf;
+using Vintagestory.Common;
 using Zaldaryon.Pharos.Bootstrap;
 using Zaldaryon.Pharos.Platform;
+using Zaldaryon.Pharos.Server;
 using Zaldaryon.Pharos.Timing;
 
 namespace Zaldaryon.Pharos.Core;
@@ -108,6 +113,54 @@ public sealed class HeadlessClient : IDisposable
     public void StepFrames(int count, float dt = 1f / 60f)
     {
         FrameController.StepFrames(count, dt);
+    }
+
+    /// <summary>
+    /// Connects the headless client to an in-process embedded Atlas server instance using engine singleplayer loopback.
+    /// </summary>
+    public ClientServerLoopbackSession ConnectLoopback(AtlasServerHost server, string playerName = "PharosTest")
+    {
+        ArgumentNullException.ThrowIfNull(server);
+
+        ClientSettings.PlayerName = playerName;
+        ClientSettings.PlayerUID = "pharos-" + playerName.ToLowerInvariant();
+
+        Client.IsSingleplayer = true;
+        Client.Connectdata = new ServerConnectData
+        {
+            Host = "localhost",
+            Port = 42424
+        };
+
+        FieldInfo? serverInfoField = typeof(ClientMain).GetField("ServerInfo", BindingFlags.NonPublic | BindingFlags.Instance);
+        if (serverInfoField != null)
+        {
+            object? serverInfo = serverInfoField.GetValue(Client);
+            if (serverInfo == null)
+            {
+                serverInfo = Activator.CreateInstance(serverInfoField.FieldType);
+                serverInfoField.SetValue(Client, serverInfo);
+            }
+            serverInfo?.GetType().GetField("connectdata")?.SetValue(serverInfo, Client.Connectdata);
+        }
+
+        Platform.singlePlayerServerDummyNetwork = new DummyNetwork[2]
+        {
+            server.TcpNetwork,
+            server.UdpNetwork
+        };
+
+        DummyTcpNetClient dummyTcp = new();
+        dummyTcp.SetNetwork(server.TcpNetwork);
+        Client.MainNetClient = dummyTcp;
+
+        DummyUdpNetClient dummyUdp = new();
+        dummyUdp.SetNetwork(server.UdpNetwork);
+        Client.UdpNetClient = dummyUdp;
+
+        Client.Connect();
+
+        return new ClientServerLoopbackSession(this, server);
     }
 
     public void Dispose()
