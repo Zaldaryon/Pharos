@@ -16,6 +16,7 @@ using Zaldaryon.Pharos.Bootstrap;
 using Zaldaryon.Pharos.Culling;
 using Zaldaryon.Pharos.Fixtures;
 using Zaldaryon.Pharos.Graphics;
+using Zaldaryon.Pharos.Memory;
 using Zaldaryon.Pharos.Platform;
 using Zaldaryon.Pharos.Player;
 using Zaldaryon.Pharos.Server;
@@ -56,6 +57,14 @@ public sealed class HeadlessClient : IDisposable
     /// frame step to capture which chunks were visible, culled, or occlusion-culled.
     /// </summary>
     public CullingInspector Culling { get; }
+
+    /// <summary>
+    /// Mesh pool and allocation metrics inspector. <see cref="MemoryInspector.PoolSnapshot"/> is
+    /// always available. Call <see cref="MemoryInspector.Enable"/> to activate hit/miss and
+    /// per-type allocation tracking. Use <see cref="MemoryInspector.MeasureAllocations"/> for
+    /// inline heap measurement without patching.
+    /// </summary>
+    public MemoryInspector Memory { get; } = new();
 
     internal HeadlessClient(
         ClientMain client,
@@ -513,6 +522,15 @@ public sealed class HeadlessClient : IDisposable
         catch
         {
             // Ignore GL proxy teardown errors
+        }
+
+        try
+        {
+            Memory.Disable();
+        }
+        catch
+        {
+            // Ignore memory inspector teardown errors
         }
 
         try
