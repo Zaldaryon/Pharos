@@ -35,7 +35,7 @@ Both platforms report OpenGL 4.5 core and produce identical rendering behavior.
 
 ## Requirements
 
-- .NET 9 or later
+- .NET 10 (matches Vintage Story 1.22.x)
 - Vintage Story 1.21.x or 1.22.x (see [compatibility matrix](https://github.com/Zaldaryon/Pharos/issues/22) when published)
 
 ## Quick start
