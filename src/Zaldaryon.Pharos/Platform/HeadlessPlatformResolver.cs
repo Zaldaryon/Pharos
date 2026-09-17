@@ -2,6 +2,7 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 using OpenTK.Windowing.GraphicsLibraryFramework;
 using Vintagestory.Common;
+using Zaldaryon.Pharos.Bootstrap;
 
 namespace Zaldaryon.Pharos.Platform;
 
@@ -34,10 +35,31 @@ public static class HeadlessPlatformResolver
         }
 
         string defaultWin = @"C:\Games\VintageStory";
-        if (Directory.Exists(defaultWin))
+        if (OperatingSystem.IsWindows() && Directory.Exists(defaultWin))
         {
             _resolvedGamePath = defaultWin;
             return _resolvedGamePath;
+        }
+
+        if (OperatingSystem.IsLinux())
+        {
+            string userHome = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            string[] linuxCandidates =
+            [
+                "/usr/share/vintagestory",
+                "/opt/vintagestory",
+                Path.Combine(userHome, ".local", "share", "vintagestory"),
+                Path.Combine(userHome, ".config", "Vintagestory")
+            ];
+
+            foreach (string candidate in linuxCandidates)
+            {
+                if (Directory.Exists(candidate))
+                {
+                    _resolvedGamePath = Path.GetFullPath(candidate);
+                    return _resolvedGamePath;
+                }
+            }
         }
 
         try
@@ -59,7 +81,12 @@ public static class HeadlessPlatformResolver
         return _resolvedGamePath;
     }
 
-    public static void Initialize(string? customGamePath = null)
+    public static void Initialize(string? customGamePath)
+    {
+        Initialize(new HeadlessClientOptions { GameInstallPath = customGamePath });
+    }
+
+    public static void Initialize(HeadlessClientOptions? options = null)
     {
         lock (_initLock)
         {
@@ -68,7 +95,8 @@ public static class HeadlessPlatformResolver
                 return;
             }
 
-            string gamePath = ResolveGamePath(customGamePath);
+            options ??= new HeadlessClientOptions();
+            string gamePath = ResolveGamePath(options.GameInstallPath);
             string libDir = Path.Combine(gamePath, "Lib");
 
             // Add Lib folder to PATH for unmanaged dependency resolution using platform path separator
@@ -82,7 +110,16 @@ public static class HeadlessPlatformResolver
             OpenTK.Windowing.Desktop.GLFWProvider.CheckForMainThread = false;
 
             // Force OpenAL Soft to use the null driver backend in headless/CI environments
-            Environment.SetEnvironmentVariable("ALSOFT_DRIVERS", "null");
+            if (options.DisableAudio || options.UseNullAudioDevice)
+            {
+                Environment.SetEnvironmentVariable("ALSOFT_DRIVERS", "null");
+            }
+
+            // On Linux, configure Mesa software rendering (llvmpipe) before GLFW/OpenGL loads
+            if (options.ConfigureMesaEnvironment && (OperatingSystem.IsLinux() || options.ForceSoftwareRendering))
+            {
+                LinuxHeadlessEnvironment.ConfigureMesaEnvironment(options);
+            }
 
             // Register assembly resolver for game and Lib directories
             AppDomain.CurrentDomain.AssemblyResolve += (sender, args) =>

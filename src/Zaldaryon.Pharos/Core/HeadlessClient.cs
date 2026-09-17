@@ -4,6 +4,7 @@ using Vintagestory.API.MathTools;
 using Vintagestory.Client;
 using Vintagestory.Client.NoObf;
 using Zaldaryon.Pharos.Bootstrap;
+using Zaldaryon.Pharos.Platform;
 using Zaldaryon.Pharos.Timing;
 
 namespace Zaldaryon.Pharos.Core;
@@ -22,6 +23,7 @@ public sealed class HeadlessClient : IDisposable
     public GuiScreenRunningGame RunningGameScreen { get; }
     public HeadlessWindow Window { get; }
     public HeadlessFramebuffer Framebuffer => Window.Framebuffer;
+    public GlRendererInfo? RendererInfo => Window.RendererInfo;
     public HeadlessClientOptions Options { get; }
     public DeterministicFrameController FrameController { get; }
     public bool IsDisposed => _disposed;
