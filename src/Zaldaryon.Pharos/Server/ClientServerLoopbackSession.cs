@@ -1,8 +1,12 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Vintagestory.API.MathTools;
 using Zaldaryon.Pharos.Core;
 using Zaldaryon.Pharos.Player;
+using Zaldaryon.Pharos.Timing;
 
 namespace Zaldaryon.Pharos.Server;
 
@@ -124,6 +128,158 @@ public sealed class ClientServerLoopbackSession : IDisposable
 
         return false;
     }
+
+    /// <summary>
+    /// Advances server and client in lockstep until the specified chunk radius around the player is loaded and meshed.
+    /// </summary>
+    public async Task<bool> WaitForWorldReadyAsync(int radius = 1, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
+    {
+        List<ChunkPos> unmeshed = new();
+        for (int frame = 0; frame < maxFrames; frame++)
+        {
+            if (Client.FrameController.IsWorldReady(radius, out unmeshed))
+            {
+                return true;
+            }
+
+            await StepAsync(dt, ct).ConfigureAwait(false);
+        }
+
+        if (Client.FrameController.IsWorldReady(radius, out unmeshed))
+        {
+            return true;
+        }
+
+        Vec3d pos = Player.Position;
+        int cx = (int)Math.Floor(pos.X / 32.0);
+        int cy = (int)Math.Floor(pos.Y / 32.0);
+        int cz = (int)Math.Floor(pos.Z / 32.0);
+
+        string unmeshedSummary = unmeshed.Count <= 10
+            ? string.Join(", ", unmeshed)
+            : $"{string.Join(", ", unmeshed.Take(10))}... ({unmeshed.Count} total)";
+
+        throw new TimeoutException(
+            $"World was not ready in loopback session within {maxFrames} frames (dt={dt:F4}s). " +
+            $"Player chunk: ({cx}, {cy}, {cz}), radius: {radius}. " +
+            $"Unmeshed chunks remaining ({unmeshed.Count}): [{unmeshedSummary}]. " +
+            $"Queues: awaitingTesselation={Vintagestory.Client.RuntimeStats.chunksAwaitingTesselation}, awaitingPooling={Vintagestory.Client.RuntimeStats.chunksAwaitingPooling}, " +
+            $"dirtyPriority={Client.FrameController.DirtyChunksPriorityCount}, dirtyNormal={Client.FrameController.DirtyChunksCount}.");
+    }
+
+    public Task<bool> WaitForWorldReady(int radius = 1, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
+        => WaitForWorldReadyAsync(radius, maxFrames, dt, ct);
+
+    public async Task<bool> WaitForWorldReadyAsync(ChunkPos center, int radius = 1, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
+    {
+        List<ChunkPos> unmeshed = new();
+        for (int frame = 0; frame < maxFrames; frame++)
+        {
+            if (Client.FrameController.IsWorldReady(radius, out unmeshed, center))
+            {
+                return true;
+            }
+
+            await StepAsync(dt, ct).ConfigureAwait(false);
+        }
+
+        if (Client.FrameController.IsWorldReady(radius, out unmeshed, center))
+        {
+            return true;
+        }
+
+        string unmeshedSummary = unmeshed.Count <= 10
+            ? string.Join(", ", unmeshed)
+            : $"{string.Join(", ", unmeshed.Take(10))}... ({unmeshed.Count} total)";
+
+        throw new TimeoutException(
+            $"World was not ready in loopback session within {maxFrames} frames (dt={dt:F4}s). " +
+            $"Center chunk: {center}, radius: {radius}. " +
+            $"Unmeshed chunks remaining ({unmeshed.Count}): [{unmeshedSummary}]. " +
+            $"Queues: awaitingTesselation={Vintagestory.Client.RuntimeStats.chunksAwaitingTesselation}, awaitingPooling={Vintagestory.Client.RuntimeStats.chunksAwaitingPooling}, " +
+            $"dirtyPriority={Client.FrameController.DirtyChunksPriorityCount}, dirtyNormal={Client.FrameController.DirtyChunksCount}.");
+    }
+
+    public Task<bool> WaitForWorldReady(ChunkPos center, int radius = 1, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
+        => WaitForWorldReadyAsync(center, radius, maxFrames, dt, ct);
+
+    public Task<bool> WaitForWorldReadyAsync(BlockPos center, int radius = 1, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(center);
+        return WaitForWorldReadyAsync(ChunkPos.FromBlockPos(center), radius, maxFrames, dt, ct);
+    }
+
+    public Task<bool> WaitForWorldReady(BlockPos center, int radius = 1, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
+        => WaitForWorldReadyAsync(center, radius, maxFrames, dt, ct);
+
+    public async Task<bool> WaitForChunkMeshedAsync(ChunkPos chunkPos, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
+    {
+        for (int frame = 0; frame < maxFrames; frame++)
+        {
+            if (Client.FrameController.IsChunkMeshed(chunkPos))
+            {
+                return true;
+            }
+
+            await StepAsync(dt, ct).ConfigureAwait(false);
+        }
+
+        if (Client.FrameController.IsChunkMeshed(chunkPos))
+        {
+            return true;
+        }
+
+        var chunk = Client.Client.WorldMap?.GetChunk(chunkPos.X, chunkPos.Y, chunkPos.Z);
+        string status = chunk == null ? "Not loaded / null" : chunk.Empty ? "Empty" : "Loaded, pending tessellation";
+
+        throw new TimeoutException(
+            $"Chunk at {chunkPos} was not meshed in loopback session within {maxFrames} frames (dt={dt:F4}s). " +
+            $"Chunk status: {status}. " +
+            $"Queues: awaitingTesselation={Vintagestory.Client.RuntimeStats.chunksAwaitingTesselation}, awaitingPooling={Vintagestory.Client.RuntimeStats.chunksAwaitingPooling}, " +
+            $"dirtyPriority={Client.FrameController.DirtyChunksPriorityCount}, dirtyNormal={Client.FrameController.DirtyChunksCount}.");
+    }
+
+    public Task<bool> WaitForChunkMeshed(ChunkPos chunkPos, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
+        => WaitForChunkMeshedAsync(chunkPos, maxFrames, dt, ct);
+
+    public Task<bool> WaitForChunkMeshedAsync(int chunkX, int chunkY, int chunkZ, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
+        => WaitForChunkMeshedAsync(new ChunkPos(chunkX, chunkY, chunkZ), maxFrames, dt, ct);
+
+    public Task<bool> WaitForChunkMeshed(int chunkX, int chunkY, int chunkZ, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
+        => WaitForChunkMeshedAsync(new ChunkPos(chunkX, chunkY, chunkZ), maxFrames, dt, ct);
+
+    public Task<bool> WaitForChunkMeshedAsync(BlockPos blockPos, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
+        => WaitForChunkMeshedAsync(ChunkPos.FromBlockPos(blockPos), maxFrames, dt, ct);
+
+    public Task<bool> WaitForChunkMeshed(BlockPos blockPos, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
+        => WaitForChunkMeshedAsync(ChunkPos.FromBlockPos(blockPos), maxFrames, dt, ct);
+
+    public async Task<bool> WaitForAllMeshesReadyAsync(int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
+    {
+        for (int frame = 0; frame < maxFrames; frame++)
+        {
+            if (Client.FrameController.AreAllMeshesReady())
+            {
+                return true;
+            }
+
+            await StepAsync(dt, ct).ConfigureAwait(false);
+        }
+
+        if (Client.FrameController.AreAllMeshesReady())
+        {
+            return true;
+        }
+
+        throw new TimeoutException(
+            $"Background mesh tessellation queue was not drained in loopback session within {maxFrames} frames (dt={dt:F4}s). " +
+            $"Queues remaining: awaitingTesselation={Vintagestory.Client.RuntimeStats.chunksAwaitingTesselation}, awaitingPooling={Vintagestory.Client.RuntimeStats.chunksAwaitingPooling}, " +
+            $"dirtyPriority={Client.FrameController.DirtyChunksPriorityCount}, dirtyNormal={Client.FrameController.DirtyChunksCount}, dirtyLast={Client.FrameController.DirtyChunksLastCount}, " +
+            $"tessPriority={Client.FrameController.TesselatedChunksPriorityCount}, tessNormal={Client.FrameController.TesselatedChunksCount}.");
+    }
+
+    public Task<bool> WaitForAllMeshesReady(int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
+        => WaitForAllMeshesReadyAsync(maxFrames, dt, ct);
 
     /// <summary>
     /// Disconnects the client from the server and flushes pending packets through loopback queues.

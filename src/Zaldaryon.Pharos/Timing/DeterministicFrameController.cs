@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
@@ -39,6 +41,12 @@ public sealed class DeterministicFrameController
     private static readonly FieldInfo? s_lastTessField = typeof(ClientChunk).GetField("lastTesselationMs", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
     private static readonly FieldInfo? s_quantityDrawnField = typeof(ClientChunk).GetField("quantityDrawn", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
     private static readonly FieldInfo? s_centerPoolField = typeof(ClientChunk).GetField("centerModelPoolLocations", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+    private static readonly FieldInfo? s_dirtyChunksPriorityField = typeof(ClientMain).GetField("dirtyChunksPriority", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+    private static readonly FieldInfo? s_dirtyChunksField = typeof(ClientMain).GetField("dirtyChunks", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+    private static readonly FieldInfo? s_dirtyChunksLastField = typeof(ClientMain).GetField("dirtyChunksLast", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+    private static readonly FieldInfo? s_tesselatedChunksPriorityField = typeof(ClientMain).GetField("tesselatedChunksPriority", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+    private static readonly FieldInfo? s_tesselatedChunksField = typeof(ClientMain).GetField("tesselatedChunks", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+    private static readonly FieldInfo? s_enquedForRedrawField = typeof(ClientChunk).GetField("enquedForRedraw", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
 
     private readonly ClientMain _client;
     private readonly ClientPlatformWindows _platform;
@@ -268,6 +276,15 @@ public sealed class DeterministicFrameController
             return false;
         }
 
+        if (chunk is ClientChunk clientChunk)
+        {
+            bool isRedraw = (bool)(s_enquedForRedrawField?.GetValue(clientChunk) ?? false);
+            if (isRedraw)
+            {
+                return false;
+            }
+        }
+
         if (chunk.Empty)
         {
             return true;
@@ -278,27 +295,116 @@ public sealed class DeterministicFrameController
             return true;
         }
 
-        if (chunk is ClientChunk clientChunk)
+        if (chunk is ClientChunk renderedChunk)
         {
-            long lastTess = (long)(s_lastTessField?.GetValue(clientChunk) ?? 0L);
-            if (lastTess > 0)
-            {
-                return true;
-            }
-
-            int quantityDrawn = (int)(s_quantityDrawnField?.GetValue(clientChunk) ?? 0);
+            int quantityDrawn = (int)(s_quantityDrawnField?.GetValue(renderedChunk) ?? 0);
             if (quantityDrawn > 0)
             {
                 return true;
             }
 
-            if (s_centerPoolField?.GetValue(clientChunk) != null)
+            if (s_centerPoolField?.GetValue(renderedChunk) != null)
             {
                 return true;
             }
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// Checks whether the specified chunk radius around a center coordinate (or player) is loaded and meshed.
+    /// Populates unmeshedChunks with remaining chunk coordinates if not ready.
+    /// </summary>
+    public bool IsWorldReady(int radius, out List<ChunkPos> unmeshedChunks, ChunkPos? center = null)
+    {
+        if (radius < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(radius), "Radius must be non-negative.");
+        }
+
+        unmeshedChunks = new List<ChunkPos>();
+        if (_client.WorldMap == null)
+        {
+            unmeshedChunks.Add(center ?? new ChunkPos(0, 0, 0));
+            return false;
+        }
+
+        int centerChunkX, centerChunkY, centerChunkZ;
+        if (center.HasValue)
+        {
+            centerChunkX = center.Value.X;
+            centerChunkY = center.Value.Y;
+            centerChunkZ = center.Value.Z;
+        }
+        else
+        {
+            Vec3d pos = _client.EntityPlayer?.Pos?.XYZ ?? _client.MainCamera?.CamSourcePosition ?? new Vec3d(0, 0, 0);
+            centerChunkX = (int)Math.Floor(pos.X / 32.0);
+            centerChunkY = (int)Math.Floor(pos.Y / 32.0);
+            centerChunkZ = (int)Math.Floor(pos.Z / 32.0);
+        }
+
+        int minY = Math.Max(0, centerChunkY - radius);
+        int maxY = centerChunkY + radius;
+        if (_client.WorldMap.MapSizeY > 0)
+        {
+            int maxMapChunkY = (_client.WorldMap.MapSizeY / 32) - 1;
+            if (centerChunkY <= maxMapChunkY)
+            {
+                maxY = Math.Min(maxMapChunkY, maxY);
+            }
+        }
+
+        for (int cx = centerChunkX - radius; cx <= centerChunkX + radius; cx++)
+        {
+            for (int cz = centerChunkZ - radius; cz <= centerChunkZ + radius; cz++)
+            {
+                for (int cy = minY; cy <= maxY; cy++)
+                {
+                    ChunkPos pos = new(cx, cy, cz);
+                    if (!IsChunkMeshed(pos))
+                    {
+                        unmeshedChunks.Add(pos);
+                    }
+                }
+            }
+        }
+
+        return unmeshedChunks.Count == 0;
+    }
+
+    private int GetQueueCount(FieldInfo? field)
+    {
+        if (field == null) return 0;
+        object? queue = field.GetValue(_client);
+        if (queue == null) return 0;
+        PropertyInfo? countProp = queue.GetType().GetProperty("Count");
+        return (int)(countProp?.GetValue(queue) ?? 0);
+    }
+
+    public int DirtyChunksPriorityCount => GetQueueCount(s_dirtyChunksPriorityField);
+    public int DirtyChunksCount => GetQueueCount(s_dirtyChunksField);
+    public int DirtyChunksLastCount => GetQueueCount(s_dirtyChunksLastField);
+    public int TesselatedChunksPriorityCount => GetQueueCount(s_tesselatedChunksPriorityField);
+    public int TesselatedChunksCount => GetQueueCount(s_tesselatedChunksField);
+
+    /// <summary>
+    /// Checks whether all background chunk tessellation, priority, and pooling queues have completed.
+    /// </summary>
+    public bool AreAllMeshesReady()
+    {
+        if (_client == null)
+        {
+            return true;
+        }
+
+        int dirtyCount = DirtyChunksPriorityCount + DirtyChunksCount + DirtyChunksLastCount;
+        int tessCount = TesselatedChunksPriorityCount + TesselatedChunksCount;
+        int awaitingTess = RuntimeStats.chunksAwaitingTesselation;
+        int awaitingPool = RuntimeStats.chunksAwaitingPooling;
+
+        return dirtyCount == 0 && tessCount == 0 && awaitingTess == 0 && awaitingPool == 0;
     }
 
     /// <summary>
@@ -310,7 +416,14 @@ public sealed class DeterministicFrameController
         bool meshed = await WaitForAsync(() => IsChunkMeshed(chunkPos), maxFrames, dt, ct);
         if (!meshed)
         {
-            throw new TimeoutException($"Chunk at {chunkPos} was not meshed within {maxFrames} frames.");
+            IWorldChunk? chunk = _client.WorldMap?.GetChunk(chunkPos.X, chunkPos.Y, chunkPos.Z);
+            string status = chunk == null ? "Not loaded / null" : chunk.Empty ? "Empty" : "Loaded, pending tessellation";
+
+            throw new TimeoutException(
+                $"Chunk at {chunkPos} was not meshed within {maxFrames} frames (dt={dt:F4}s). " +
+                $"Chunk status: {status}. " +
+                $"Queues: awaitingTesselation={RuntimeStats.chunksAwaitingTesselation}, awaitingPooling={RuntimeStats.chunksAwaitingPooling}, " +
+                $"dirtyPriority={DirtyChunksPriorityCount}, dirtyNormal={DirtyChunksCount}.");
         }
         return true;
     }
@@ -328,5 +441,87 @@ public sealed class DeterministicFrameController
     public Task<bool> WaitForChunkMeshedAsync(BlockPos blockPos, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
     {
         return WaitForChunkMeshedAsync(ChunkPos.FromBlockPos(blockPos), maxFrames, dt, ct);
+    }
+
+    /// <summary>
+    /// Advances frames until the specified chunk radius around the player is loaded and meshed.
+    /// Throws TimeoutException with actionable diagnostics if chunks are not ready within the frame budget.
+    /// </summary>
+    public async Task<bool> WaitForWorldReadyAsync(int radius = 1, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
+    {
+        List<ChunkPos> unmeshed = new();
+        bool ready = await WaitForAsync(() => IsWorldReady(radius, out unmeshed), maxFrames, dt, ct);
+        if (!ready)
+        {
+            Vec3d pos = _client.EntityPlayer?.Pos?.XYZ ?? _client.MainCamera?.CamSourcePosition ?? new Vec3d(0, 0, 0);
+            int cx = (int)Math.Floor(pos.X / 32.0);
+            int cy = (int)Math.Floor(pos.Y / 32.0);
+            int cz = (int)Math.Floor(pos.Z / 32.0);
+
+            string unmeshedSummary = unmeshed.Count <= 10
+                ? string.Join(", ", unmeshed)
+                : $"{string.Join(", ", unmeshed.Take(10))}... ({unmeshed.Count} total)";
+
+            throw new TimeoutException(
+                $"World was not ready within {maxFrames} frames (dt={dt:F4}s). " +
+                $"Player chunk: ({cx}, {cy}, {cz}), radius: {radius}. " +
+                $"Unmeshed chunks remaining ({unmeshed.Count}): [{unmeshedSummary}]. " +
+                $"Queues: awaitingTesselation={RuntimeStats.chunksAwaitingTesselation}, awaitingPooling={RuntimeStats.chunksAwaitingPooling}, " +
+                $"dirtyPriority={DirtyChunksPriorityCount}, dirtyNormal={DirtyChunksCount}.");
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Advances frames until the specified chunk radius around a center coordinate is loaded and meshed.
+    /// </summary>
+    public async Task<bool> WaitForWorldReadyAsync(ChunkPos center, int radius = 1, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
+    {
+        List<ChunkPos> unmeshed = new();
+        bool ready = await WaitForAsync(() => IsWorldReady(radius, out unmeshed, center), maxFrames, dt, ct);
+        if (!ready)
+        {
+            string unmeshedSummary = unmeshed.Count <= 10
+                ? string.Join(", ", unmeshed)
+                : $"{string.Join(", ", unmeshed.Take(10))}... ({unmeshed.Count} total)";
+
+            throw new TimeoutException(
+                $"World was not ready within {maxFrames} frames (dt={dt:F4}s). " +
+                $"Center chunk: {center}, radius: {radius}. " +
+                $"Unmeshed chunks remaining ({unmeshed.Count}): [{unmeshedSummary}]. " +
+                $"Queues: awaitingTesselation={RuntimeStats.chunksAwaitingTesselation}, awaitingPooling={RuntimeStats.chunksAwaitingPooling}, " +
+                $"dirtyPriority={DirtyChunksPriorityCount}, dirtyNormal={DirtyChunksCount}.");
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Advances frames until the specified chunk radius around a block position is loaded and meshed.
+    /// </summary>
+    public Task<bool> WaitForWorldReadyAsync(BlockPos center, int radius = 1, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(center);
+        return WaitForWorldReadyAsync(ChunkPos.FromBlockPos(center), radius, maxFrames, dt, ct);
+    }
+
+    /// <summary>
+    /// Advances frames until all background chunk tessellation and upload queues have drained.
+    /// Throws TimeoutException if the queues do not drain within the frame budget.
+    /// </summary>
+    public async Task<bool> WaitForAllMeshesReadyAsync(int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
+    {
+        bool ready = await WaitForAsync(AreAllMeshesReady, maxFrames, dt, ct);
+        if (!ready)
+        {
+            throw new TimeoutException(
+                $"Background mesh tessellation queue was not drained within {maxFrames} frames (dt={dt:F4}s). " +
+                $"Queues remaining: awaitingTesselation={RuntimeStats.chunksAwaitingTesselation}, awaitingPooling={RuntimeStats.chunksAwaitingPooling}, " +
+                $"dirtyPriority={DirtyChunksPriorityCount}, dirtyNormal={DirtyChunksCount}, dirtyLast={DirtyChunksLastCount}, " +
+                $"tessPriority={TesselatedChunksPriorityCount}, tessNormal={TesselatedChunksCount}.");
+        }
+
+        return true;
     }
 }
