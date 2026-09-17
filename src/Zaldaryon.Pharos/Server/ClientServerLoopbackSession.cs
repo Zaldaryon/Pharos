@@ -2,6 +2,7 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Zaldaryon.Pharos.Core;
+using Zaldaryon.Pharos.Player;
 
 namespace Zaldaryon.Pharos.Server;
 
@@ -15,6 +16,7 @@ public sealed class ClientServerLoopbackSession : IDisposable
 
     public HeadlessClient Client { get; }
     public AtlasServerHost Server { get; }
+    public IClientTestPlayer Player => Client.TestPlayer;
     public bool IsConnected { get; private set; }
 
     internal ClientServerLoopbackSession(HeadlessClient client, AtlasServerHost server)
