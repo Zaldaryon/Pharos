@@ -87,7 +87,17 @@ public sealed class HeadlessClient : IDisposable
         return FrameController.WaitForChunkMeshedAsync(chunkPos, maxFrames, dt, ct);
     }
 
+    public Task<bool> WaitForChunkMeshedAsync(ChunkPos chunkPos, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
+    {
+        return FrameController.WaitForChunkMeshedAsync(chunkPos, maxFrames, dt, ct);
+    }
+
     public Task<bool> WaitForChunkMeshed(int chunkX, int chunkY, int chunkZ, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
+    {
+        return FrameController.WaitForChunkMeshedAsync(chunkX, chunkY, chunkZ, maxFrames, dt, ct);
+    }
+
+    public Task<bool> WaitForChunkMeshedAsync(int chunkX, int chunkY, int chunkZ, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
     {
         return FrameController.WaitForChunkMeshedAsync(chunkX, chunkY, chunkZ, maxFrames, dt, ct);
     }
@@ -97,9 +107,65 @@ public sealed class HeadlessClient : IDisposable
         return FrameController.WaitForChunkMeshedAsync(chunkPos, maxFrames, dt, ct);
     }
 
+    public Task<bool> WaitForChunkMeshedAsync(Vec3i chunkPos, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
+    {
+        return FrameController.WaitForChunkMeshedAsync(chunkPos, maxFrames, dt, ct);
+    }
+
     public Task<bool> WaitForChunkMeshed(BlockPos blockPos, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
     {
         return FrameController.WaitForChunkMeshedAsync(blockPos, maxFrames, dt, ct);
+    }
+
+    public Task<bool> WaitForChunkMeshedAsync(BlockPos blockPos, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
+    {
+        return FrameController.WaitForChunkMeshedAsync(blockPos, maxFrames, dt, ct);
+    }
+
+    /// <summary>
+    /// Advances frames until the specified chunk radius around the player is loaded and meshed.
+    /// </summary>
+    public Task<bool> WaitForWorldReady(int radius = 1, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
+    {
+        return FrameController.WaitForWorldReadyAsync(radius, maxFrames, dt, ct);
+    }
+
+    public Task<bool> WaitForWorldReadyAsync(int radius = 1, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
+    {
+        return FrameController.WaitForWorldReadyAsync(radius, maxFrames, dt, ct);
+    }
+
+    public Task<bool> WaitForWorldReady(ChunkPos center, int radius = 1, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
+    {
+        return FrameController.WaitForWorldReadyAsync(center, radius, maxFrames, dt, ct);
+    }
+
+    public Task<bool> WaitForWorldReadyAsync(ChunkPos center, int radius = 1, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
+    {
+        return FrameController.WaitForWorldReadyAsync(center, radius, maxFrames, dt, ct);
+    }
+
+    public Task<bool> WaitForWorldReady(BlockPos center, int radius = 1, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
+    {
+        return FrameController.WaitForWorldReadyAsync(center, radius, maxFrames, dt, ct);
+    }
+
+    public Task<bool> WaitForWorldReadyAsync(BlockPos center, int radius = 1, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
+    {
+        return FrameController.WaitForWorldReadyAsync(center, radius, maxFrames, dt, ct);
+    }
+
+    /// <summary>
+    /// Advances frames until all background chunk tessellation and upload queues have drained.
+    /// </summary>
+    public Task<bool> WaitForAllMeshesReady(int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
+    {
+        return FrameController.WaitForAllMeshesReadyAsync(maxFrames, dt, ct);
+    }
+
+    public Task<bool> WaitForAllMeshesReadyAsync(int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
+    {
+        return FrameController.WaitForAllMeshesReadyAsync(maxFrames, dt, ct);
     }
 
     /// <summary>
