@@ -17,6 +17,9 @@ public sealed class HeadlessFramebuffer : IDisposable
 
     public HeadlessFramebuffer(int width, int height)
     {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(width);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(height);
+
         Width = width;
         Height = height;
 
