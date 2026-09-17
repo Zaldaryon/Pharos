@@ -81,6 +81,54 @@ public sealed class HeadlessFramebuffer : IDisposable
         GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
     }
 
+    /// <summary>
+    /// Reads back the current framebuffer contents as a top-down RGBA pixel snapshot.
+    /// Binds this FBO before reading so the method is safe to call at any point after a frame step.
+    /// </summary>
+    public FramebufferSnapshot Capture()
+    {
+        if (_disposed) throw new ObjectDisposedException(nameof(HeadlessFramebuffer));
+
+        Bind();
+
+        byte[] pixels = new byte[Width * Height * 4];
+        GL.ReadPixels(0, 0, Width, Height, PixelFormat.Rgba, PixelType.UnsignedByte, pixels);
+
+        // GL.ReadPixels returns rows bottom-up; flip to top-down for standard image conventions.
+        FlipVertically(pixels, Width, Height);
+
+        return new FramebufferSnapshot(pixels, Width, Height);
+    }
+
+    /// <summary>
+    /// Captures the current framebuffer and saves it as a PNG file at the given path.
+    /// </summary>
+    public void CaptureToFile(string path) => Capture().SaveToPng(path);
+
+    /// <summary>
+    /// Captures the current framebuffer and compares it against the provided RGBA reference bytes.
+    /// The reference must have length Width * Height * 4 in top-down RGBA order.
+    /// </summary>
+    public FramebufferComparisonResult CompareWith(byte[] reference, float tolerance = 0.01f)
+        => Capture().Compare(reference, tolerance);
+
+    /// <summary>
+    /// Flips the rows of a flat RGBA byte array in-place (converts bottom-up to top-down or vice versa).
+    /// </summary>
+    private static void FlipVertically(byte[] rgba, int width, int height)
+    {
+        int stride = width * 4;
+        byte[] row = new byte[stride];
+        for (int y = 0; y < height / 2; y++)
+        {
+            int top = y * stride;
+            int bottom = (height - 1 - y) * stride;
+            System.Buffer.BlockCopy(rgba, top, row, 0, stride);
+            System.Buffer.BlockCopy(rgba, bottom, rgba, top, stride);
+            System.Buffer.BlockCopy(row, 0, rgba, bottom, stride);
+        }
+    }
+
     public void Dispose()
     {
         if (_disposed) return;
