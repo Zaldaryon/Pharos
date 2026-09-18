@@ -114,6 +114,12 @@ public sealed class HeadlessClient : IDisposable
     /// </summary>
     public PacketRecorder PacketRecorder { get; } = new();
 
+    /// <summary>
+    /// Network degradation simulator for testing client behavior under adverse network conditions.
+    /// Supports configurable latency, packet drop, jitter, and corruption with deterministic seeding.
+    /// </summary>
+    public NetworkDegradationSimulator NetworkDegradation { get; } = new();
+
     internal HeadlessClient(
         ClientMain client,
         ClientPlatformWindows platform,
