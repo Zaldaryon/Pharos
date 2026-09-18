@@ -11,7 +11,7 @@
     <IsPackable>true</IsPackable>
     <IsTestProject>false</IsTestProject>
     <PackageId>Zaldaryon.Pharos.XUnit</PackageId>
-    <Version>0.1.0</Version>
+    <Version>0.3.0</Version>
     <Authors>Zaldaryon</Authors>
     <Description>xUnit integration metapackage for Pharos. Install this package to get Pharos headless client test harness with xUnit framework support.</Description>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>

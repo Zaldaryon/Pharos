@@ -1,0 +1,87 @@
+name: Release
+
+on:
+  release:
+    types: [published]
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  VS_VERSION: "1.22.7"
+
+jobs:
+  publish:
+    name: Pack and Publish to NuGet
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write  # required for trusted publishing OIDC token
+
+    env:
+      VS_CACHE_PATH: /home/runner/.vintagestory-cache
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Install Mesa and Xvfb
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y mesa-utils libgl1-mesa-dri xvfb libopenal1 libglfw3 libglfw3-dev libcairo2 libcairo2-dev
+
+      - name: Cache Vintage Story
+        id: cache-vs
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.VS_CACHE_PATH }}/${{ env.VS_VERSION }}
+          key: vintagestory-linux-${{ env.VS_VERSION }}-v2
+
+      - name: Download Vintage Story
+        if: steps.cache-vs.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p ${{ env.VS_CACHE_PATH }}/${{ env.VS_VERSION }}
+          wget -q https://cdn.vintagestory.at/gamefiles/stable/vs_client_linux-x64_${{ env.VS_VERSION }}.tar.gz -O /tmp/vs.tar.gz
+          tar xzf /tmp/vs.tar.gz -C ${{ env.VS_CACHE_PATH }}/${{ env.VS_VERSION }} --strip-components=1
+          rm /tmp/vs.tar.gz
+
+      - name: Build
+        env:
+          VINTAGE_STORY: ${{ env.VS_CACHE_PATH }}/${{ env.VS_VERSION }}
+        run: dotnet build Pharos.sln -c Release
+
+      - name: Stage assets
+        run: |
+          ln -sf ${{ env.VS_CACHE_PATH }}/${{ env.VS_VERSION }}/assets tests/Zaldaryon.Pharos.Tests/bin/Release/net10.0/assets || true
+          ln -sf ${{ env.VS_CACHE_PATH }}/${{ env.VS_VERSION }}/assets ./assets || true
+
+      - name: Test
+        env:
+          VINTAGE_STORY: ${{ env.VS_CACHE_PATH }}/${{ env.VS_VERSION }}
+          LD_LIBRARY_PATH: ${{ env.VS_CACHE_PATH }}/${{ env.VS_VERSION }}/Lib:${{ env.VS_CACHE_PATH }}/${{ env.VS_VERSION }}:/usr/lib/x86_64-linux-gnu
+          LIBGL_ALWAYS_SOFTWARE: 1
+          GALLIUM_DRIVER: llvmpipe
+          MESA_LOADER_DRIVER_OVERRIDE: llvmpipe
+          LIBGL_ALWAYS_INDIRECT: 0
+          MESA_GL_VERSION_OVERRIDE: "4.5"
+          MESA_GLSL_VERSION_OVERRIDE: "450"
+          ALSOFT_DRIVERS: null
+        run: xvfb-run -a -s "-screen 0 1280x720x24" dotnet test Pharos.sln -c Release --no-build
+
+      - name: Pack
+        env:
+          VINTAGE_STORY: ${{ env.VS_CACHE_PATH }}/${{ env.VS_VERSION }}
+        run: |
+          dotnet pack src/Zaldaryon.Pharos/Zaldaryon.Pharos.csproj -c Release --no-build -o ./nupkg
+          dotnet pack src/Zaldaryon.Pharos.Bridge/Zaldaryon.Pharos.Bridge.csproj -c Release --no-build -o ./nupkg
+          dotnet pack src/Zaldaryon.Pharos.XUnit/Zaldaryon.Pharos.XUnit.csproj -c Release --no-build -o ./nupkg
+          dotnet pack src/Zaldaryon.Pharos.AtlasCompat/Zaldaryon.Pharos.AtlasCompat.csproj -c Release --no-build -o ./nupkg
+
+      - name: Push to NuGet (Trusted Publishing)
+        run: |
+          dotnet nuget push ./nupkg/*.nupkg \
+            --source https://api.nuget.org/v3/index.json \
+            --skip-duplicate

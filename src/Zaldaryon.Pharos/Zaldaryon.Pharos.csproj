@@ -17,7 +17,7 @@
     <IsPackable>true</IsPackable>
     <IsTestProject>false</IsTestProject>
     <PackageId>Zaldaryon.Pharos</PackageId>
-    <Version>0.1.0</Version>
+    <Version>0.3.0</Version>
     <Authors>Zaldaryon</Authors>
     <Description>Headless Vintage Story client test harness. Boots an embedded client without a window and drives it frame by frame for xUnit scenario testing.</Description>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
