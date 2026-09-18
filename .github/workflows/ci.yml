@@ -132,3 +132,74 @@ jobs:
           MESA_GL_VERSION_OVERRIDE: "4.5"
           MESA_GLSL_VERSION_OVERRIDE: "450"
         run: dotnet test Pharos.sln -c Release --no-build
+
+  benchmark-baselines:
+    name: Validate Benchmark Baselines
+    runs-on: ubuntu-latest
+    needs: [test-linux]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Validate baselines file exists
+        run: |
+          if [ ! -f "pharos-baselines.json" ]; then
+            echo "ERROR: pharos-baselines.json not found"
+            exit 1
+          fi
+          echo "✓ pharos-baselines.json exists"
+
+      - name: Validate baselines file structure
+        run: |
+          # Check JSON is valid
+          if ! jq empty pharos-baselines.json 2>/dev/null; then
+            echo "ERROR: pharos-baselines.json is not valid JSON"
+            exit 1
+          fi
+          echo "✓ Valid JSON structure"
+
+          # Check required fields
+          if ! jq -e '.version' pharos-baselines.json > /dev/null; then
+            echo "ERROR: Missing 'version' field"
+            exit 1
+          fi
+          echo "✓ Has 'version' field"
+
+          if ! jq -e '.baselines' pharos-baselines.json > /dev/null; then
+            echo "ERROR: Missing 'baselines' field"
+            exit 1
+          fi
+          echo "✓ Has 'baselines' field"
+
+      - name: Validate expected benchmark keys
+        run: |
+          EXPECTED_KEYS=("IndirectDraw" "SimdCulling" "MeshCompression" "FsrPipeline" "ModCompatibility")
+          MISSING_KEYS=()
+
+          for key in "${EXPECTED_KEYS[@]}"; do
+            if ! jq -e ".baselines.\"$key\"" pharos-baselines.json > /dev/null; then
+              MISSING_KEYS+=("$key")
+            fi
+          done
+
+          if [ ${#MISSING_KEYS[@]} -gt 0 ]; then
+            echo "ERROR: Missing baseline keys: ${MISSING_KEYS[*]}"
+            exit 1
+          fi
+
+          echo "✓ All expected benchmark keys present"
+          echo ""
+          echo "Current baselines:"
+          jq '.baselines' pharos-baselines.json
+
+      - name: Validate baseline values are positive
+        run: |
+          # Check all values are positive numbers
+          INVALID=$(jq -r '.baselines | to_entries[] | select(.value <= 0) | .key' pharos-baselines.json)
+
+          if [ -n "$INVALID" ]; then
+            echo "ERROR: Found non-positive baseline values for: $INVALID"
+            exit 1
+          fi
+
+          echo "✓ All baseline values are positive"
