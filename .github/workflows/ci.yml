@@ -29,7 +29,7 @@ jobs:
       - name: Install Mesa and Xvfb
         run: |
           sudo apt-get update
-          sudo apt-get install -y mesa-utils libgl1-mesa-dri xvfb libopenal1
+          sudo apt-get install -y mesa-utils libgl1-mesa-dri xvfb libopenal1 libglfw3 libglfw3-dev
 
       - name: Cache Vintage Story
         id: cache-vs
@@ -49,6 +49,7 @@ jobs:
       - name: Build and test with Mesa headless
         env:
           VINTAGE_STORY: ${{ env.VS_CACHE_PATH }}/${{ env.VS_VERSION }}
+          LD_LIBRARY_PATH: ${{ env.VS_CACHE_PATH }}/${{ env.VS_VERSION }}/Lib:${{ env.VS_CACHE_PATH }}/${{ env.VS_VERSION }}
           LIBGL_ALWAYS_SOFTWARE: 1
           GALLIUM_DRIVER: llvmpipe
           MESA_LOADER_DRIVER_OVERRIDE: llvmpipe
@@ -105,12 +106,12 @@ jobs:
       - name: Install Mesa Windows
         uses: f3d-app/install-mesa-windows-action@v1
         with:
-          path: tests/Zaldaryon.Pharos.Tests/bin/Release/net10.0
+          path: ${{ github.workspace }}\tests\Zaldaryon.Pharos.Tests\bin\Release\net10.0
 
       - name: Copy Mesa to Vintage Story Lib
         shell: pwsh
         run: |
-          Copy-Item "tests\Zaldaryon.Pharos.Tests\bin\Release\net10.0\opengl32.dll" "${{ env.VS_CACHE_PATH }}\${{ env.VS_VERSION }}\Lib\" -Force -ErrorAction SilentlyContinue
+          Copy-Item "${{ github.workspace }}\tests\Zaldaryon.Pharos.Tests\bin\Release\net10.0\opengl32.dll" "${{ env.VS_CACHE_PATH }}\${{ env.VS_VERSION }}\Lib\" -Force -ErrorAction SilentlyContinue
 
       - name: Test
         env:
