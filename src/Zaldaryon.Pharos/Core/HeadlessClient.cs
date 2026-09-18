@@ -22,6 +22,7 @@ using Zaldaryon.Pharos.Player;
 using Zaldaryon.Pharos.Server;
 using Zaldaryon.Pharos.Input;
 using Zaldaryon.Pharos.Timing;
+using Zaldaryon.Pharos.Network;
 using Zaldaryon.Pharos.UI;
 using Zaldaryon.Pharos.World;
 
@@ -106,6 +107,12 @@ public sealed class HeadlessClient : IDisposable
     /// Supports mock mode for pure-logic testing without a live server.
     /// </summary>
     public BlockInteractionSimulator BlockInteraction { get; } = new();
+
+    /// <summary>
+    /// Packet recorder for capturing network packets during live or loopback sessions.
+    /// Supports deterministic recording, JSON serialization, and offline replay.
+    /// </summary>
+    public PacketRecorder PacketRecorder { get; } = new();
 
     internal HeadlessClient(
         ClientMain client,
