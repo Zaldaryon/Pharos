@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Reflection;
 using Xunit;
+using Zaldaryon.Pharos.Benchmarks;
 using Zaldaryon.Pharos.Reporting;
 
 namespace Zaldaryon.Pharos.Cli;
@@ -8,7 +9,7 @@ namespace Zaldaryon.Pharos.Cli;
 /// <summary>
 /// CLI entry point for running Pharos xUnit tests without an IDE.
 /// Discovers and executes [Fact] and [Theory] tests via reflection.
-/// Also provides migration tools via subcommands.
+/// Also provides migration tools and benchmark commands via subcommands.
 /// </summary>
 public static class PhCliRunner
 {
@@ -28,10 +29,15 @@ public static class PhCliRunner
     public const int ExitCodeError = 2;
 
     /// <summary>
+    /// Exit code returned when a benchmark regression is detected.
+    /// </summary>
+    public const int ExitCodeRegression = 3;
+
+    /// <summary>
     /// Runs the CLI with the specified arguments.
     /// </summary>
     /// <param name="args">Command-line arguments.</param>
-    /// <returns>Exit code (0 = pass, 1 = fail, 2 = error).</returns>
+    /// <returns>Exit code (0 = pass, 1 = fail, 2 = error, 3 = regression).</returns>
     public static int Run(string[] args)
     {
         return Run(args, Console.Out, Console.Error);
@@ -44,7 +50,7 @@ public static class PhCliRunner
     /// <param name="args">Command-line arguments.</param>
     /// <param name="stdout">Standard output writer.</param>
     /// <param name="stderr">Standard error writer.</param>
-    /// <returns>Exit code (0 = pass, 1 = fail, 2 = error).</returns>
+    /// <returns>Exit code (0 = pass, 1 = fail, 2 = error, 3 = regression).</returns>
     public static int Run(string[] args, TextWriter stdout, TextWriter stderr)
     {
         ArgumentNullException.ThrowIfNull(args);
@@ -59,8 +65,15 @@ public static class PhCliRunner
                 case "migrate-atlas":
                     return RunMigrateAtlas(args, stdout, stderr);
 
+                case "benchmark":
+                    return RunBenchmark(args, stdout, stderr);
+
                 case "help" when args.Length > 1 && args[1] == "migrate-atlas":
                     stdout.WriteLine(MigrateAtlasCommand.GetHelpText());
+                    return ExitCodeSuccess;
+
+                case "help" when args.Length > 1 && args[1] == "benchmark":
+                    stdout.WriteLine(GetBenchmarkHelpText());
                     return ExitCodeSuccess;
             }
         }
@@ -137,6 +150,123 @@ public static class PhCliRunner
     }
 
     /// <summary>
+    /// Runs the benchmark subcommand.
+    /// </summary>
+    private static int RunBenchmark(string[] args, TextWriter stdout, TextWriter stderr)
+    {
+        try
+        {
+            var options = BenchmarkOptions.Parse(args);
+            if (options is null)
+            {
+                stdout.WriteLine(GetBenchmarkHelpText());
+                return ExitCodeSuccess;
+            }
+
+            return ExecuteBenchmark(options, stdout, stderr);
+        }
+        catch (ArgumentException ex)
+        {
+            stderr.WriteLine($"Error: {ex.Message}");
+            stderr.WriteLine();
+            stderr.WriteLine(GetBenchmarkHelpText());
+            return ExitCodeError;
+        }
+        catch (Exception ex)
+        {
+            stderr.WriteLine($"Fatal error: {ex.Message}");
+            if (args.Contains("--verbose") || args.Contains("-v"))
+            {
+                stderr.WriteLine(ex.StackTrace);
+            }
+            return ExitCodeError;
+        }
+    }
+
+    /// <summary>
+    /// Executes the benchmark command.
+    /// </summary>
+    private static int ExecuteBenchmark(BenchmarkOptions options, TextWriter stdout, TextWriter stderr)
+    {
+        // Update baselines mode
+        if (options.UpdateBaselines)
+        {
+            return UpdateBaselines(options, stdout, stderr);
+        }
+
+        // Run benchmarks and check for regressions
+        var suite = new BenchmarkSuite(options.BaselineFile);
+        var benchmarks = OptimumBenchmarks.CreateAll();
+        
+        if (options.Verbose)
+        {
+            stdout.WriteLine($"Running {benchmarks.Count} benchmarks...");
+            if (suite.HasFileBaselines)
+            {
+                stdout.WriteLine($"Loaded {suite.FileBaselineCount} baselines from file.");
+            }
+        }
+
+        var results = suite.Run(benchmarks);
+        var summary = BenchmarkSuite.Summarize(results);
+
+        stdout.WriteLine(BenchmarkSuite.FormatResults(results));
+
+        // Check for regressions
+        if (options.FailOnRegression && !summary.AllPassed)
+        {
+            if (!options.DryRun)
+            {
+                stderr.WriteLine();
+                stderr.WriteLine($"ERROR: {summary.FailCount} benchmark(s) exceeded regression threshold of {options.RegressionThreshold:P0}");
+                return ExitCodeRegression;
+            }
+            else
+            {
+                stdout.WriteLine();
+                stdout.WriteLine($"[DRY RUN] Would fail with exit code {ExitCodeRegression}: {summary.FailCount} regression(s) detected");
+            }
+        }
+
+        return ExitCodeSuccess;
+    }
+
+    /// <summary>
+    /// Updates the baselines file with current benchmark measurements.
+    /// </summary>
+    private static int UpdateBaselines(BenchmarkOptions options, TextWriter stdout, TextWriter stderr)
+    {
+        var benchmarks = OptimumBenchmarks.CreateAll();
+        var baselines = new Dictionary<string, float>();
+
+        stdout.WriteLine($"Running {benchmarks.Count} benchmarks to update baselines...");
+        stdout.WriteLine();
+
+        foreach (var benchmark in benchmarks)
+        {
+            stdout.Write($"  {benchmark.Name}... ");
+            var result = benchmark.RunBenchmark();
+            baselines[benchmark.Name] = result.ElapsedMs;
+            stdout.WriteLine(FormattableString.Invariant($"{result.ElapsedMs:F2}ms"));
+        }
+
+        var outputPath = options.BaselineFile ?? "pharos-baselines.json";
+
+        if (options.DryRun)
+        {
+            stdout.WriteLine();
+            stdout.WriteLine($"[DRY RUN] Would write {baselines.Count} baselines to: {outputPath}");
+            return ExitCodeSuccess;
+        }
+
+        BaselinesFile.WriteBaselines(outputPath, baselines);
+        stdout.WriteLine();
+        stdout.WriteLine($"Updated {baselines.Count} baselines in: {outputPath}");
+
+        return ExitCodeSuccess;
+    }
+
+    /// <summary>
     /// Gets the main CLI help text including available subcommands.
     /// </summary>
     public static string GetMainHelpText() => """
@@ -146,6 +276,7 @@ public static class PhCliRunner
 
         Commands:
           (default)         Run xUnit tests from a test assembly
+          benchmark         Run performance benchmarks and check for regressions
           migrate-atlas     Migrate Atlas test suites to Pharos
           help <command>    Show help for a specific command
 
@@ -161,12 +292,39 @@ public static class PhCliRunner
           0 - All tests passed (or successful operation)
           1 - One or more tests failed
           2 - Error occurred (invalid arguments, assembly not found, etc.)
+          3 - Benchmark regression detected
 
         Examples:
           pharos MyTests.dll
           pharos -a MyTests.dll -f "Inventory" -v
+          pharos benchmark --baseline-file pharos-baselines.json
           pharos migrate-atlas ./MyTestProject --dry-run
           pharos help migrate-atlas
+        """;
+
+    /// <summary>
+    /// Gets the benchmark subcommand help text.
+    /// </summary>
+    public static string GetBenchmarkHelpText() => """
+        Pharos CLI - Benchmark Command
+
+        Usage: pharos benchmark [options]
+
+        Options:
+          --baseline-file <path>     Path to baselines JSON file
+          --update-baselines         Run benchmarks and update the baselines file
+          --fail-on-regression       Exit with code 3 if any benchmark exceeds threshold
+          --regression-threshold <n> Regression threshold (default: 0.20 = 20%)
+          --dry-run                  Report results without failing or writing files
+          -v, --verbose              Enable verbose output
+          -h, --help                 Show this help message
+
+        Examples:
+          pharos benchmark
+          pharos benchmark --baseline-file pharos-baselines.json
+          pharos benchmark --update-baselines
+          pharos benchmark --fail-on-regression --regression-threshold 0.15
+          pharos benchmark --baseline-file baselines.json --fail-on-regression --dry-run
         """;
 
     /// <summary>
@@ -444,5 +602,97 @@ public static class PhCliRunner
             return true;
 
         return testName.Contains(filter, StringComparison.OrdinalIgnoreCase);
+    }
+}
+
+/// <summary>
+/// Options for the benchmark subcommand.
+/// </summary>
+public sealed record BenchmarkOptions(
+    string? BaselineFile,
+    bool UpdateBaselines,
+    bool FailOnRegression,
+    float RegressionThreshold,
+    bool DryRun,
+    bool Verbose)
+{
+    /// <summary>
+    /// Default regression threshold (20%).
+    /// </summary>
+    public const float DefaultRegressionThreshold = 0.20f;
+
+    /// <summary>
+    /// Parses command-line arguments into benchmark options.
+    /// </summary>
+    /// <param name="args">Command-line arguments to parse.</param>
+    /// <returns>Parsed options or null if help was requested.</returns>
+    public static BenchmarkOptions? Parse(string[] args)
+    {
+        ArgumentNullException.ThrowIfNull(args);
+
+        string? baselineFile = null;
+        bool updateBaselines = false;
+        bool failOnRegression = false;
+        float regressionThreshold = DefaultRegressionThreshold;
+        bool dryRun = false;
+        bool verbose = false;
+
+        // Skip the "benchmark" command itself
+        for (int i = 1; i < args.Length; i++)
+        {
+            string arg = args[i];
+
+            if (arg is "--help" or "-h" or "-?")
+            {
+                return null;
+            }
+
+            if (arg is "--verbose" or "-v")
+            {
+                verbose = true;
+                continue;
+            }
+
+            if (arg is "--baseline-file")
+            {
+                if (i + 1 >= args.Length)
+                    throw new ArgumentException("--baseline-file requires a path argument");
+                baselineFile = args[++i];
+                continue;
+            }
+
+            if (arg is "--update-baselines")
+            {
+                updateBaselines = true;
+                continue;
+            }
+
+            if (arg is "--fail-on-regression")
+            {
+                failOnRegression = true;
+                continue;
+            }
+
+            if (arg is "--regression-threshold")
+            {
+                if (i + 1 >= args.Length)
+                    throw new ArgumentException("--regression-threshold requires a number argument");
+                if (!float.TryParse(args[++i], out regressionThreshold) || regressionThreshold <= 0)
+                    throw new ArgumentException("--regression-threshold must be a positive number");
+                continue;
+            }
+
+            if (arg is "--dry-run")
+            {
+                dryRun = true;
+                continue;
+            }
+
+            // Unknown argument starting with -- is an error
+            if (arg.StartsWith('-'))
+                throw new ArgumentException($"Unknown argument: {arg}");
+        }
+
+        return new BenchmarkOptions(baselineFile, updateBaselines, failOnRegression, regressionThreshold, dryRun, verbose);
     }
 }

@@ -43,11 +43,48 @@ public abstract class PerformanceBenchmark
     public virtual float RegressionThreshold => BenchmarkResult.DefaultThreshold;
 
     /// <summary>
+    /// Tries to load the baseline from an external source (e.g., baselines file).
+    /// Override this to provide external baseline loading.
+    /// </summary>
+    /// <param name="baselines">Dictionary of baseline values from an external source.</param>
+    /// <param name="baseline">The loaded baseline value if successful.</param>
+    /// <returns>True if a baseline was loaded, false to use the hard-coded default.</returns>
+    public virtual bool TryLoadFromFile(IReadOnlyDictionary<string, float>? baselines, out float baseline)
+    {
+        return BaselinesFile.TryGetBaseline(baselines, Name, out baseline);
+    }
+
+    /// <summary>
     /// Runs the benchmark and returns the result.
     /// </summary>
     /// <returns>A BenchmarkResult with timing and pass/fail status.</returns>
     public BenchmarkResult RunBenchmark()
     {
+        return RunBenchmark(null);
+    }
+
+    /// <summary>
+    /// Runs the benchmark with optional external baselines.
+    /// </summary>
+    /// <param name="fileBaselines">Optional dictionary of baselines loaded from file.</param>
+    /// <returns>A BenchmarkResult with timing and pass/fail status.</returns>
+    public BenchmarkResult RunBenchmark(IReadOnlyDictionary<string, float>? fileBaselines)
+    {
+        // Determine baseline source
+        float baselineMs;
+        bool sourcedFromFile;
+
+        if (TryLoadFromFile(fileBaselines, out float fileBaseline))
+        {
+            baselineMs = fileBaseline;
+            sourcedFromFile = true;
+        }
+        else
+        {
+            baselineMs = BaselineMs;
+            sourcedFromFile = false;
+        }
+
         // Warmup iterations (discarded)
         for (int i = 0; i < WarmupIterations; i++)
         {
@@ -97,7 +134,7 @@ public abstract class PerformanceBenchmark
         double avgTicks = sumTicks / (double)count;
         float avgMs = (float)(avgTicks / Stopwatch.Frequency * 1000.0);
 
-        return BenchmarkResult.Create(Name, avgMs, BaselineMs, RegressionThreshold);
+        return BenchmarkResult.Create(Name, avgMs, baselineMs, RegressionThreshold, sourcedFromFile);
     }
 
     /// <summary>
