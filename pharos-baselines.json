@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "generatedAt": "2026-09-18T20:00:00.000Z",
+  "baselines": {
+    "IndirectDraw": 5.0,
+    "SimdCulling": 10.0,
+    "MeshCompression": 15.0,
+    "FsrPipeline": 2.0,
+    "ModCompatibility": 1.0
+  }
+}

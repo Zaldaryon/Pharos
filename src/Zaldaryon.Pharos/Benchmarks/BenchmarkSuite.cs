@@ -9,6 +9,46 @@ namespace Zaldaryon.Pharos.Benchmarks;
 /// </summary>
 public sealed class BenchmarkSuite
 {
+    private readonly IReadOnlyDictionary<string, float>? _fileBaselines;
+
+    /// <summary>
+    /// Creates a new benchmark suite without external baselines.
+    /// </summary>
+    public BenchmarkSuite() : this(baselineFilePath: null)
+    {
+    }
+
+    /// <summary>
+    /// Creates a new benchmark suite with optional external baselines.
+    /// </summary>
+    /// <param name="baselineFilePath">Optional path to a baselines JSON file.</param>
+    public BenchmarkSuite(string? baselineFilePath)
+    {
+        if (!string.IsNullOrEmpty(baselineFilePath))
+        {
+            _fileBaselines = BaselinesFile.TryReadBaselines(baselineFilePath);
+        }
+    }
+
+    /// <summary>
+    /// Creates a new benchmark suite with pre-loaded baselines.
+    /// </summary>
+    /// <param name="fileBaselines">Dictionary of baseline values.</param>
+    public BenchmarkSuite(IReadOnlyDictionary<string, float>? fileBaselines)
+    {
+        _fileBaselines = fileBaselines;
+    }
+
+    /// <summary>
+    /// Gets whether baselines were loaded from a file.
+    /// </summary>
+    public bool HasFileBaselines => _fileBaselines is not null && _fileBaselines.Count > 0;
+
+    /// <summary>
+    /// Gets the number of file baselines loaded.
+    /// </summary>
+    public int FileBaselineCount => _fileBaselines?.Count ?? 0;
+
     /// <summary>
     /// Runs all provided benchmarks and returns results.
     /// </summary>
@@ -21,7 +61,7 @@ public sealed class BenchmarkSuite
         var results = new List<BenchmarkResult>();
         foreach (var benchmark in benchmarks)
         {
-            var result = benchmark.RunBenchmark();
+            var result = benchmark.RunBenchmark(_fileBaselines);
             results.Add(result);
         }
         return results;
@@ -70,6 +110,7 @@ public sealed class BenchmarkSuite
         int failed = 0;
         int improved = 0;
         int regressed = 0;
+        int fromFile = 0;
         float totalElapsed = 0;
         float totalBaseline = 0;
 
@@ -80,6 +121,7 @@ public sealed class BenchmarkSuite
 
             if (result.IsImprovement) improved++;
             if (result.IsSignificantRegression) regressed++;
+            if (result.SourcedFromFile) fromFile++;
 
             totalElapsed += result.ElapsedMs;
             totalBaseline += result.BaselineMs;
@@ -95,6 +137,7 @@ public sealed class BenchmarkSuite
             FailCount: failed,
             ImprovedCount: improved,
             RegressedCount: regressed,
+            FromFileCount: fromFile,
             TotalElapsedMs: totalElapsed,
             TotalBaselineMs: totalBaseline,
             AverageDeltaPercent: avgDelta);
@@ -138,6 +181,7 @@ public sealed class BenchmarkSuite
 /// <param name="FailCount">Number of failing benchmarks.</param>
 /// <param name="ImprovedCount">Number of benchmarks showing improvement.</param>
 /// <param name="RegressedCount">Number of benchmarks with significant regression.</param>
+/// <param name="FromFileCount">Number of benchmarks using file-sourced baselines.</param>
 /// <param name="TotalElapsedMs">Sum of all elapsed times.</param>
 /// <param name="TotalBaselineMs">Sum of all baselines.</param>
 /// <param name="AverageDeltaPercent">Average delta percentage across all benchmarks.</param>
@@ -147,6 +191,7 @@ public sealed record BenchmarkSummary(
     int FailCount,
     int ImprovedCount,
     int RegressedCount,
+    int FromFileCount,
     float TotalElapsedMs,
     float TotalBaselineMs,
     float AverageDeltaPercent)
@@ -168,6 +213,7 @@ public sealed record BenchmarkSummary(
     {
         string status = AllPassed ? "ALL PASSED" : $"{FailCount} FAILED";
         string deltaSign = AverageDeltaPercent >= 0 ? "+" : "";
-        return FormattableString.Invariant($"Summary: {status} ({PassCount}/{TotalCount}), Total: {TotalElapsedMs:F2}ms, Avg delta: {deltaSign}{AverageDeltaPercent:F1}%");
+        string fileInfo = FromFileCount > 0 ? $", {FromFileCount} from file" : "";
+        return FormattableString.Invariant($"Summary: {status} ({PassCount}/{TotalCount}{fileInfo}), Total: {TotalElapsedMs:F2}ms, Avg delta: {deltaSign}{AverageDeltaPercent:F1}%");
     }
 }
