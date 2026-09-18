@@ -1,7 +1,6 @@
 using System;
 using System.IO;
 using System.Threading.Tasks;
-using Atlas.Api;
 using Xunit;
 using Zaldaryon.Pharos.Bootstrap;
 using Zaldaryon.Pharos.Core;
@@ -19,9 +18,9 @@ public class LoopbackServerTests
     }
 
     [Fact]
-    public void AtlasServerHost_Should_BootAndDisposeCleanly()
+    public void EmbeddedServerHost_Should_BootAndDisposeCleanly()
     {
-        WorldOptions options = new()
+        ServerWorldOptions options = new()
         {
             WorldName = "PharosUnitTestWorld",
             Seed = "12345",
@@ -29,7 +28,7 @@ public class LoopbackServerTests
             WorldType = "superflat"
         };
 
-        using AtlasServerHost host = AtlasServerHost.Boot(options);
+        using EmbeddedServerHost host = EmbeddedServerHost.Boot(options);
 
         Assert.True(host.IsRunning);
         Assert.NotNull(host.Server);
@@ -46,7 +45,7 @@ public class LoopbackServerTests
     [Fact]
     public void LoopbackSession_Should_ConnectClientToServerAndStepInLockstep()
     {
-        WorldOptions worldOptions = new()
+        ServerWorldOptions worldOptions = new()
         {
             WorldName = "PharosLockstepWorld",
             Seed = "54321",
@@ -54,7 +53,7 @@ public class LoopbackServerTests
             WorldType = "superflat"
         };
 
-        using AtlasServerHost server = AtlasServerHost.Boot(worldOptions);
+        using EmbeddedServerHost server = EmbeddedServerHost.Boot(worldOptions);
 
         HeadlessClientOptions clientOptions = new()
         {
@@ -84,7 +83,7 @@ public class LoopbackServerTests
     [Fact]
     public async Task LoopbackSession_Should_StepAsynchronouslyInLockstep()
     {
-        WorldOptions worldOptions = new()
+        ServerWorldOptions worldOptions = new()
         {
             WorldName = "PharosAsyncWorld",
             Seed = "98765",
@@ -92,7 +91,7 @@ public class LoopbackServerTests
             WorldType = "superflat"
         };
 
-        using AtlasServerHost server = AtlasServerHost.Boot(worldOptions);
+        using EmbeddedServerHost server = EmbeddedServerHost.Boot(worldOptions);
 
         HeadlessClientOptions clientOptions = new()
         {
@@ -117,7 +116,7 @@ public class LoopbackServerTests
     [Fact]
     public void LoopbackSession_WaitForPlayerJoined_ShouldExecuteWithoutStarvationOrDeadlock()
     {
-        WorldOptions worldOptions = new()
+        ServerWorldOptions worldOptions = new()
         {
             WorldName = "PharosJoinWorld",
             Seed = "13579",
@@ -125,7 +124,7 @@ public class LoopbackServerTests
             WorldType = "superflat"
         };
 
-        using AtlasServerHost server = AtlasServerHost.Boot(worldOptions);
+        using EmbeddedServerHost server = EmbeddedServerHost.Boot(worldOptions);
 
         HeadlessClientOptions clientOptions = new()
         {
@@ -151,7 +150,7 @@ public class LoopbackServerTests
         string? dataPath;
 
         {
-            using AtlasServerHost server = AtlasServerHost.Boot();
+            using EmbeddedServerHost server = EmbeddedServerHost.Boot();
             dataPath = server.DataPath;
 
             using HeadlessClient client = HeadlessClientBootstrap.Boot(new HeadlessClientOptions { DisableAudio = true });
