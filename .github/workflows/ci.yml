@@ -1,0 +1,96 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  VS_VERSION: "1.22.7"
+
+jobs:
+  test-linux:
+    name: Build and Test (Linux)
+    runs-on: ubuntu-latest
+    env:
+      VS_CACHE_PATH: ~/.vintagestory-cache
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Install Mesa and Xvfb
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y mesa-utils libgl1-mesa-dri xvfb libopenal1
+
+      - name: Cache Vintage Story
+        id: cache-vs
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.VS_CACHE_PATH }}/${{ env.VS_VERSION }}
+          key: vintagestory-linux-${{ env.VS_VERSION }}
+
+      - name: Download Vintage Story
+        if: steps.cache-vs.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p ${{ env.VS_CACHE_PATH }}/${{ env.VS_VERSION }}
+          wget -q https://cdn.vintagestory.at/gamefiles/stable/vs_archive_${{ env.VS_VERSION }}.tar.gz -O /tmp/vs.tar.gz
+          tar xzf /tmp/vs.tar.gz -C ${{ env.VS_CACHE_PATH }}/${{ env.VS_VERSION }}
+          rm /tmp/vs.tar.gz
+
+      - name: Build and test with Mesa headless
+        env:
+          VINTAGE_STORY: ${{ env.VS_CACHE_PATH }}/${{ env.VS_VERSION }}
+          LIBGL_ALWAYS_SOFTWARE: 1
+          GALLIUM_DRIVER: llvmpipe
+          MESA_LOADER_DRIVER_OVERRIDE: llvmpipe
+          LIBGL_ALWAYS_INDIRECT: 0
+          MESA_GL_VERSION_OVERRIDE: "4.5"
+          MESA_GLSL_VERSION_OVERRIDE: "450"
+          ALSOFT_DRIVERS: null
+        run: |
+          xvfb-run -a -s "-screen 0 1280x720x24" dotnet test Pharos.sln -c Release
+
+  test-windows:
+    name: Build and Test (Windows)
+    runs-on: windows-latest
+    env:
+      VS_CACHE_PATH: C:\vintagestory-cache
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Cache Vintage Story
+        id: cache-vs
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.VS_CACHE_PATH }}\${{ env.VS_VERSION }}
+          key: vintagestory-windows-${{ env.VS_VERSION }}
+
+      - name: Download and extract Vintage Story
+        if: steps.cache-vs.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path "${{ env.VS_CACHE_PATH }}\${{ env.VS_VERSION }}"
+          $ProgressPreference = 'SilentlyContinue'
+          Invoke-WebRequest -Uri "https://cdn.vintagestory.at/gamefiles/stable/vs_archive_${{ env.VS_VERSION }}.tar.gz" -OutFile "$env:TEMP\vs.tar.gz"
+          tar xzf "$env:TEMP\vs.tar.gz" -C "${{ env.VS_CACHE_PATH }}\${{ env.VS_VERSION }}"
+          Remove-Item "$env:TEMP\vs.tar.gz"
+
+      - name: Build and test
+        env:
+          VINTAGE_STORY: ${{ env.VS_CACHE_PATH }}\${{ env.VS_VERSION }}
+        run: dotnet test Pharos.sln -c Release
