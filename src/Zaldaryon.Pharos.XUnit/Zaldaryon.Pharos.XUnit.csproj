@@ -9,6 +9,7 @@
 
     <!-- NuGet packaging -->
     <IsPackable>true</IsPackable>
+    <IsTestProject>false</IsTestProject>
     <PackageId>Zaldaryon.Pharos.XUnit</PackageId>
     <Version>0.1.0</Version>
     <Authors>Zaldaryon</Authors>

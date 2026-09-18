@@ -168,6 +168,6 @@ public sealed record BenchmarkSummary(
     {
         string status = AllPassed ? "ALL PASSED" : $"{FailCount} FAILED";
         string deltaSign = AverageDeltaPercent >= 0 ? "+" : "";
-        return $"Summary: {status} ({PassCount}/{TotalCount}), Total: {TotalElapsedMs:F2}ms, Avg delta: {deltaSign}{AverageDeltaPercent:F1}%";
+        return FormattableString.Invariant($"Summary: {status} ({PassCount}/{TotalCount}), Total: {TotalElapsedMs:F2}ms, Avg delta: {deltaSign}{AverageDeltaPercent:F1}%");
     }
 }

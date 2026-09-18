@@ -11,6 +11,7 @@
 
     <!-- NuGet packaging -->
     <IsPackable>true</IsPackable>
+    <IsTestProject>false</IsTestProject>
     <PackageId>Zaldaryon.Pharos.Bridge</PackageId>
     <Version>0.1.0</Version>
     <Authors>Zaldaryon</Authors>

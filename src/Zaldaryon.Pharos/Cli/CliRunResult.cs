@@ -87,7 +87,7 @@ public sealed record CliRunResult(
         sb.AppendLine($"  Failed:   {FailCount}");
         sb.AppendLine($"  Skipped:  {SkippedCount}");
         sb.AppendLine($"  Duration: {DurationMs} ms");
-        sb.AppendLine($"  Pass Rate: {PassRate:F1}%");
+        sb.AppendLine(FormattableString.Invariant($"  Pass Rate: {PassRate:F1}%"));
         sb.AppendLine();
 
         if (Failures.Count > 0)

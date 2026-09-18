@@ -26,7 +26,7 @@ public readonly record struct PerceptualDiffResult(
     public float DiffPixelFraction => TotalPixels == 0 ? 0f : (float)DiffPixelCount / TotalPixels;
 
     public override string ToString() =>
-        $"IsSimilar={IsSimilar} MeanDiff={MeanDiff:F4} MaxDiff={MaxDiff:F4} " +
-        $"DiffPixels={DiffPixelCount}/{TotalPixels} Tolerance={Tolerance:F4}" +
+        FormattableString.Invariant($"IsSimilar={IsSimilar} MeanDiff={MeanDiff:F4} MaxDiff={MaxDiff:F4} ") +
+        FormattableString.Invariant($"DiffPixels={DiffPixelCount}/{TotalPixels} Tolerance={Tolerance:F4}") +
         (HeatmapPath is not null ? $" Heatmap={HeatmapPath}" : "");
 }

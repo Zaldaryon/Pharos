@@ -49,7 +49,7 @@ public sealed record BenchmarkResult(
     {
         string status = IsPassing ? "PASS" : "FAIL";
         string deltaSign = DeltaPercent >= 0 ? "+" : "";
-        return $"[{status}] {Name}: {ElapsedMs:F2}ms (baseline: {BaselineMs:F2}ms, {deltaSign}{DeltaPercent:F1}%)";
+        return FormattableString.Invariant($"[{status}] {Name}: {ElapsedMs:F2}ms (baseline: {BaselineMs:F2}ms, {deltaSign}{DeltaPercent:F1}%)");
     }
 
     /// <summary>

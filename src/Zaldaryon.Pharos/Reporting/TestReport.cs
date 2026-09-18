@@ -1,4 +1,5 @@
 using System.Text;
+using static System.FormattableString;
 
 namespace Zaldaryon.Pharos.Reporting;
 
@@ -107,12 +108,12 @@ public sealed record TestReport
         sb.AppendLine("  <div class=\"summary\">");
         sb.AppendLine("    <h2>Summary</h2>");
         sb.AppendLine($"    <p><strong>Duration:</strong> {DurationMs} ms</p>");
-        sb.AppendLine($"    <p><strong>Tests:</strong> <span class=\"pass\">{PassCount} passed</span>, <span class=\"fail\">{FailCount} failed</span> ({PassRate:F1}% pass rate)</p>");
+        sb.AppendLine(Invariant($"    <p><strong>Tests:</strong> <span class=\"pass\">{PassCount} passed</span>, <span class=\"fail\">{FailCount} failed</span> ({PassRate:F1}% pass rate)</p>"));
         sb.AppendLine($"    <p><strong>Frames:</strong> {Frames.Count}</p>");
         if (Frames.Count > 0)
         {
-            sb.AppendLine($"    <p><strong>Avg Frame Time:</strong> {AverageFrameTimeMs:F2} ms</p>");
-            sb.AppendLine($"    <p><strong>Max Frame Time:</strong> {MaxFrameTimeMs:F2} ms</p>");
+            sb.AppendLine(Invariant($"    <p><strong>Avg Frame Time:</strong> {AverageFrameTimeMs:F2} ms</p>"));
+            sb.AppendLine(Invariant($"    <p><strong>Max Frame Time:</strong> {MaxFrameTimeMs:F2} ms</p>"));
             sb.AppendLine($"    <p><strong>Total Draw Calls:</strong> {TotalDrawCalls} ({TotalIndirectDrawCalls} indirect)</p>");
         }
         sb.AppendLine("  </div>");
@@ -147,7 +148,7 @@ public sealed record TestReport
             {
                 sb.AppendLine($"    <tr>" +
                     $"<td>{frame.FrameIndex}</td>" +
-                    $"<td>{frame.FrameTimeMs:F2}</td>" +
+                    Invariant($"<td>{frame.FrameTimeMs:F2}</td>") +
                     $"<td>{frame.DrawCalls}</td>" +
                     $"<td>{frame.IndirectDrawCalls}</td>" +
                     $"<td>{frame.VisibleChunks}</td>" +
@@ -180,12 +181,12 @@ public sealed record TestReport
         sb.AppendLine("## Summary");
         sb.AppendLine();
         sb.AppendLine($"- **Duration:** {DurationMs} ms");
-        sb.AppendLine($"- **Tests:** {PassCount} passed, {FailCount} failed ({PassRate:F1}% pass rate)");
+        sb.AppendLine(Invariant($"- **Tests:** {PassCount} passed, {FailCount} failed ({PassRate:F1}% pass rate)"));
         sb.AppendLine($"- **Frames:** {Frames.Count}");
         if (Frames.Count > 0)
         {
-            sb.AppendLine($"- **Avg Frame Time:** {AverageFrameTimeMs:F2} ms");
-            sb.AppendLine($"- **Max Frame Time:** {MaxFrameTimeMs:F2} ms");
+            sb.AppendLine(Invariant($"- **Avg Frame Time:** {AverageFrameTimeMs:F2} ms"));
+            sb.AppendLine(Invariant($"- **Max Frame Time:** {MaxFrameTimeMs:F2} ms"));
             sb.AppendLine($"- **Total Draw Calls:** {TotalDrawCalls} ({TotalIndirectDrawCalls} indirect)");
         }
         sb.AppendLine();
@@ -219,7 +220,7 @@ public sealed record TestReport
 
             foreach (FrameMetricsRecord frame in Frames)
             {
-                sb.AppendLine($"| {frame.FrameIndex} | {frame.FrameTimeMs:F2} | {frame.DrawCalls} | {frame.IndirectDrawCalls} | {frame.VisibleChunks} | {frame.CulledChunks} | {FormatBytes(frame.MemoryBytes)} |");
+                sb.AppendLine(Invariant($"| {frame.FrameIndex} | {frame.FrameTimeMs:F2} | {frame.DrawCalls} | {frame.IndirectDrawCalls} | {frame.VisibleChunks} | {frame.CulledChunks} | {FormatBytes(frame.MemoryBytes)} |"));
             }
             sb.AppendLine();
         }
@@ -268,9 +269,9 @@ public sealed record TestReport
     {
         return bytes switch
         {
-            >= 1024 * 1024 * 1024 => $"{bytes / (1024.0 * 1024.0 * 1024.0):F2} GB",
-            >= 1024 * 1024 => $"{bytes / (1024.0 * 1024.0):F2} MB",
-            >= 1024 => $"{bytes / 1024.0:F2} KB",
+            >= 1024 * 1024 * 1024 => Invariant($"{bytes / (1024.0 * 1024.0 * 1024.0):F2} GB"),
+            >= 1024 * 1024 => Invariant($"{bytes / (1024.0 * 1024.0):F2} MB"),
+            >= 1024 => Invariant($"{bytes / 1024.0:F2} KB"),
             _ => $"{bytes} B"
         };
     }

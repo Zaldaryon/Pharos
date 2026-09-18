@@ -1,3 +1,4 @@
+using static System.FormattableString;
 using Zaldaryon.Pharos.Culling;
 using Zaldaryon.Pharos.Graphics;
 using Zaldaryon.Pharos.Memory;
@@ -97,7 +98,7 @@ public static class PharosAssert
         if (stats.CollapseRatio < minCollapseRatio)
         {
             throw new PharosAssertException(
-                $"Expected collapse ratio of at least {minCollapseRatio:F2}, but got {stats.CollapseRatio:F2}.");
+                Invariant($"Expected collapse ratio of at least {minCollapseRatio:F2}, but got {stats.CollapseRatio:F2}."));
         }
     }
 
@@ -201,8 +202,8 @@ public static class PharosAssert
         if (actualPercent < minReductionPercent)
         {
             throw new PharosAssertException(
-                $"Expected at least {minReductionPercent}% face reduction, but got {actualPercent:F1}% " +
-                $"(before: {before.FaceCount}, after: {after.FaceCount}).");
+                Invariant($"Expected at least {minReductionPercent}% face reduction, but got {actualPercent:F1}% ") +
+                $"({before.FaceCount}, after: {after.FaceCount}).");
         }
     }
 
@@ -237,13 +238,13 @@ public static class PharosAssert
             if (uv.U < min || uv.U > max)
             {
                 throw new PharosAssertException(
-                    $"UV coordinate at index {i} has U={uv.U:F4} outside valid range [{-tolerance:F3}, {1 + tolerance:F3}].");
+                    Invariant($"UV coordinate at index {i} has U={uv.U:F4} outside valid range [{-tolerance:F3}, {1 + tolerance:F3}]."));
             }
 
             if (uv.V < min || uv.V > max)
             {
                 throw new PharosAssertException(
-                    $"UV coordinate at index {i} has V={uv.V:F4} outside valid range [{-tolerance:F3}, {1 + tolerance:F3}].");
+                    Invariant($"UV coordinate at index {i} has V={uv.V:F4} outside valid range [{-tolerance:F3}, {1 + tolerance:F3}]."));
             }
         }
     }
@@ -273,8 +274,8 @@ public static class PharosAssert
         if (diff > tolerance)
         {
             throw new PharosAssertException(
-                $"Expected render scale {expectedScale:F2} (±{tolerance:F2}), but got {snapshot.RenderScale:F2} " +
-                $"(difference: {diff:F3}).");
+                Invariant($"Expected render scale {expectedScale:F2} (±{tolerance:F2}), but got {snapshot.RenderScale:F2} ") +
+                Invariant($"(difference: {diff:F3})."));
         }
 
         // Verify pre-upscale dimensions are consistent with the actual render scale (not expected)
@@ -285,15 +286,15 @@ public static class PharosAssert
         if (snapshot.PreUpscaleWidth != expectedWidth)
         {
             throw new PharosAssertException(
-                $"Pre-upscale width {snapshot.PreUpscaleWidth} does not match expected {expectedWidth} " +
-                $"(DisplayWidth {snapshot.DisplayWidth} × actual scale {snapshot.RenderScale:F3}).");
+                Invariant($"Pre-upscale width {snapshot.PreUpscaleWidth} does not match expected {expectedWidth} ") +
+                Invariant($"(DisplayWidth {snapshot.DisplayWidth} × actual scale {snapshot.RenderScale:F3})."));
         }
 
         if (snapshot.PreUpscaleHeight != expectedHeight)
         {
             throw new PharosAssertException(
-                $"Pre-upscale height {snapshot.PreUpscaleHeight} does not match expected {expectedHeight} " +
-                $"(DisplayHeight {snapshot.DisplayHeight} × actual scale {snapshot.RenderScale:F3}).");
+                Invariant($"Pre-upscale height {snapshot.PreUpscaleHeight} does not match expected {expectedHeight} ") +
+                Invariant($"(DisplayHeight {snapshot.DisplayHeight} × actual scale {snapshot.RenderScale:F3})."));
         }
     }
 
@@ -339,7 +340,7 @@ public static class PharosAssert
         if (!snapshot.IsFallbackMode)
         {
             throw new PharosAssertException(
-                $"Expected FSR fallback/native mode, but FSR is enabled with render scale {snapshot.RenderScale:F2}.");
+                Invariant($"Expected FSR fallback/native mode, but FSR is enabled with render scale {snapshot.RenderScale:F2}."));
         }
 
         if (snapshot.EasuShaderDispatched || snapshot.RcasShaderDispatched)
@@ -523,10 +524,10 @@ public static class PharosAssert
             : "";
 
         throw new PharosAssertException(
-            $"{prefix}Golden image match failed. " +
-            $"MeanDiff={result.MeanDiff:F4} (tolerance={result.Tolerance:F4}), " +
-            $"MaxDiff={result.MaxDiff:F4}, " +
-            $"DiffPixels={result.DiffPixelCount}/{result.TotalPixels} ({result.DiffPixelFraction:P1}).{heatmapInfo}");
+            Invariant($"{prefix}Golden image match failed. ") +
+            Invariant($"MeanDiff={result.MeanDiff:F4} (tolerance={result.Tolerance:F4}), ") +
+            Invariant($"MaxDiff={result.MaxDiff:F4}, ") +
+            Invariant($"DiffPixels={result.DiffPixelCount}/{result.TotalPixels} ({result.DiffPixelFraction:P1}).{heatmapInfo}"));
     }
 
     // -------------------------------------------------------------------------
@@ -574,9 +575,9 @@ public static class PharosAssert
         {
             return bytes switch
             {
-                >= 1024 * 1024 * 1024 => $"{bytes / (1024.0 * 1024.0 * 1024.0):F2} GB",
-                >= 1024 * 1024 => $"{bytes / (1024.0 * 1024.0):F2} MB",
-                >= 1024 => $"{bytes / 1024.0:F2} KB",
+                >= 1024 * 1024 * 1024 => Invariant($"{bytes / (1024.0 * 1024.0 * 1024.0):F2} GB"),
+                >= 1024 * 1024 => Invariant($"{bytes / (1024.0 * 1024.0):F2} MB"),
+                >= 1024 => Invariant($"{bytes / 1024.0:F2} KB"),
                 _ => $"{bytes} bytes"
             };
         }

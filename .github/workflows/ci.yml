@@ -24,7 +24,7 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: "8.0.x"
+          dotnet-version: "10.0.x"
 
       - name: Install Mesa and Xvfb
         run: |
@@ -36,14 +36,14 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ env.VS_CACHE_PATH }}/${{ env.VS_VERSION }}
-          key: vintagestory-linux-${{ env.VS_VERSION }}
+          key: vintagestory-linux-${{ env.VS_VERSION }}-v2
 
       - name: Download Vintage Story
         if: steps.cache-vs.outputs.cache-hit != 'true'
         run: |
           mkdir -p ${{ env.VS_CACHE_PATH }}/${{ env.VS_VERSION }}
-          wget -q https://cdn.vintagestory.at/gamefiles/stable/vs_archive_${{ env.VS_VERSION }}.tar.gz -O /tmp/vs.tar.gz
-          tar xzf /tmp/vs.tar.gz -C ${{ env.VS_CACHE_PATH }}/${{ env.VS_VERSION }}
+          wget -q https://cdn.vintagestory.at/gamefiles/stable/vs_client_linux-x64_${{ env.VS_VERSION }}.tar.gz -O /tmp/vs.tar.gz
+          tar xzf /tmp/vs.tar.gz -C ${{ env.VS_CACHE_PATH }}/${{ env.VS_VERSION }} --strip-components=1
           rm /tmp/vs.tar.gz
 
       - name: Build and test with Mesa headless
@@ -71,14 +71,14 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: "8.0.x"
+          dotnet-version: "10.0.x"
 
       - name: Cache Vintage Story
         id: cache-vs
         uses: actions/cache@v4
         with:
           path: ${{ env.VS_CACHE_PATH }}\${{ env.VS_VERSION }}
-          key: vintagestory-windows-${{ env.VS_VERSION }}
+          key: vintagestory-windows-${{ env.VS_VERSION }}-v2
 
       - name: Download and extract Vintage Story
         if: steps.cache-vs.outputs.cache-hit != 'true'
@@ -86,9 +86,16 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force -Path "${{ env.VS_CACHE_PATH }}\${{ env.VS_VERSION }}"
           $ProgressPreference = 'SilentlyContinue'
-          Invoke-WebRequest -Uri "https://cdn.vintagestory.at/gamefiles/stable/vs_archive_${{ env.VS_VERSION }}.tar.gz" -OutFile "$env:TEMP\vs.tar.gz"
-          tar xzf "$env:TEMP\vs.tar.gz" -C "${{ env.VS_CACHE_PATH }}\${{ env.VS_VERSION }}"
-          Remove-Item "$env:TEMP\vs.tar.gz"
+          Invoke-WebRequest -Uri "https://github.com/crazy-max/innoextract/releases/download/v1.13.0/innoextract-windows-amd64.exe" -OutFile "$env:TEMP\innoextract.exe"
+          Invoke-WebRequest -Uri "https://cdn.vintagestory.at/gamefiles/stable/vs_install_win-x64_${{ env.VS_VERSION }}.exe" -OutFile "$env:TEMP\vs_setup.exe"
+          $extractStage = "$env:TEMP\vs_extract"
+          New-Item -ItemType Directory -Force -Path $extractStage | Out-Null
+          & "$env:TEMP\innoextract.exe" --silent --extract --output-dir $extractStage "$env:TEMP\vs_setup.exe"
+          $sourceDir = if (Test-Path (Join-Path $extractStage "app\Vintagestory.exe")) { Join-Path $extractStage "app" } else { $extractStage }
+          Copy-Item -Path "$sourceDir\*" -Destination "${{ env.VS_CACHE_PATH }}\${{ env.VS_VERSION }}" -Recurse -Force
+          Remove-Item -Recurse -Force $extractStage -ErrorAction SilentlyContinue
+          Remove-Item -Force "$env:TEMP\vs_setup.exe" -ErrorAction SilentlyContinue
+          Remove-Item -Force "$env:TEMP\innoextract.exe" -ErrorAction SilentlyContinue
 
       - name: Build and test
         env:
