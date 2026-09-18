@@ -122,44 +122,44 @@ Command-line test runner, chunk fixture generator, 2D slice visualization, and p
 
 ---
 
-## v0.3.0 100% Atlas Independence (Planned)
+## v0.3.0 100% Atlas Independence (Complete)
 
-Eliminate all third-party dependencies on `Pixnop.Atlas` and provide a unified native embedded server engine, server scenarios, lockstep client-server integration, and a legacy compatibility shim.
+All 14 issues across milestones M11 through M14 are complete. Pixnop.Atlas has been removed as a dependency. Pharos now ships a native embedded server engine, deterministic tick control, in-memory world rollback, server scenario xUnit attributes, lockstep client-server testing, and a compatibility shim for existing Atlas test suites.
 
 ### M11: Embedded Server Engine
 Implement native embedded Vintage Story server engine, deterministic tick controllers, data isolation sandboxes, in-memory world rollback, and native loopback bindings.
 
 | Order | Issue | Title | Type | Status |
 |---|---|---|---|---|
-| 1 | [#80](https://github.com/Zaldaryon/Pharos/issues/80) | Native EmbeddedServerHost and ServerWorldOptions replacing AtlasServerHost | core | Planned |
-| 2 | [#81](https://github.com/Zaldaryon/Pharos/issues/81) | Deterministic server tick controller and condition-based tick waiter | core | Planned |
-| 3 | [#82](https://github.com/Zaldaryon/Pharos/issues/82) | Server data path isolation, savegame management, and in-memory world rollback | core | Planned |
-| 4 | [#83](https://github.com/Zaldaryon/Pharos/issues/83) | Loopback network binding and HeadlessClient native server connection | core | Planned |
+| 1 | [#80](https://github.com/Zaldaryon/Pharos/issues/80) | Native EmbeddedServerHost and ServerWorldOptions replacing AtlasServerHost | core | Complete |
+| 2 | [#81](https://github.com/Zaldaryon/Pharos/issues/81) | Deterministic server tick controller and condition-based tick waiter | core | Complete |
+| 3 | [#82](https://github.com/Zaldaryon/Pharos/issues/82) | Server data path isolation, savegame management, and in-memory world rollback | core | Complete |
+| 4 | [#83](https://github.com/Zaldaryon/Pharos/issues/83) | Loopback network binding and HeadlessClient native server connection | core | Complete |
 
 ### M12: Server Scenarios & Testing Framework
 Provide native xUnit server scenario attributes, base test class, player fixtures, command dispatch, and server world manipulation helpers.
 
 | Order | Issue | Title | Type | Status |
 |---|---|---|---|---|
-| 5 | [#84](https://github.com/Zaldaryon/Pharos/issues/84) | [ServerScenario] and [ServerTheory] xUnit attributes with server lifecycle and rollback | core | Planned |
-| 6 | [#85](https://github.com/Zaldaryon/Pharos/issues/85) | ServerScenarioBase with console and player command execution APIs | core | Planned |
-| 7 | [#86](https://github.com/Zaldaryon/Pharos/issues/86) | IServerTestPlayer fixture with genuine ConnectedClient and cleanup handling | core | Planned |
-| 8 | [#87](https://github.com/Zaldaryon/Pharos/issues/87) | Server world state helpers: block placement, entity spawning, and event waiting | enhancement | Planned |
+| 5 | [#84](https://github.com/Zaldaryon/Pharos/issues/84) | [ServerScenario] and [ServerTheory] xUnit attributes with server lifecycle and rollback | core | Complete |
+| 6 | [#85](https://github.com/Zaldaryon/Pharos/issues/85) | ServerScenarioBase with console and player command execution APIs | core | Complete |
+| 7 | [#86](https://github.com/Zaldaryon/Pharos/issues/86) | IServerTestPlayer fixture with genuine ConnectedClient and cleanup handling | core | Complete |
+| 8 | [#87](https://github.com/Zaldaryon/Pharos/issues/87) | Server world state helpers: block placement, entity spawning, and event waiting | enhancement | Complete |
 
 ### M13: Unified Client-Server Testing
 Unify client testing and server testing into synchronized in-process lockstep scenarios with packet and state assertions.
 
 | Order | Issue | Title | Type | Status |
 |---|---|---|---|---|
-| 9 | [#88](https://github.com/Zaldaryon/Pharos/issues/88) | [ClientServerScenario] attribute and ClientServerScenarioBase scaffold | core | Planned |
-| 10 | [#89](https://github.com/Zaldaryon/Pharos/issues/89) | Lockstep client-server synchronization: ClientServerSession frame and tick coordination | core | Planned |
-| 11 | [#90](https://github.com/Zaldaryon/Pharos/issues/90) | End-to-end client-server action verification helpers and packet assertion APIs | enhancement | Planned |
+| 9 | [#88](https://github.com/Zaldaryon/Pharos/issues/88) | [ClientServerScenario] attribute and ClientServerScenarioBase scaffold | core | Complete |
+| 10 | [#89](https://github.com/Zaldaryon/Pharos/issues/89) | Lockstep client-server synchronization: ClientServerSession frame and tick coordination | core | Complete |
+| 11 | [#90](https://github.com/Zaldaryon/Pharos/issues/90) | End-to-end client-server action verification helpers and packet assertion APIs | enhancement | Complete |
 
 ### M14: Atlas Package Removal & Migration Shim
 Remove Pixnop.Atlas package reference, migrate internal tests, build drop-in compatibility shim, and provide migration CLI tooling.
 
 | Order | Issue | Title | Type | Status |
 |---|---|---|---|---|
-| 12 | [#91](https://github.com/Zaldaryon/Pharos/issues/91) | Drop Pixnop.Atlas dependency and migrate Pharos internal test suite | core | Planned |
-| 13 | [#92](https://github.com/Zaldaryon/Pharos/issues/92) | Zaldaryon.Pharos.AtlasCompat drop-in compatibility shim for Atlas test suites | core | Planned |
-| 14 | [#93](https://github.com/Zaldaryon/Pharos/issues/93) | Atlas to Pharos migration documentation and CLI migration tool | docs | Planned |
+| 12 | [#91](https://github.com/Zaldaryon/Pharos/issues/91) | Drop Pixnop.Atlas dependency and migrate Pharos internal test suite | core | Complete |
+| 13 | [#92](https://github.com/Zaldaryon/Pharos/issues/92) | Zaldaryon.Pharos.AtlasCompat drop-in compatibility shim for Atlas test suites | core | Complete |
+| 14 | [#93](https://github.com/Zaldaryon/Pharos/issues/93) | Atlas to Pharos migration documentation and CLI migration tool | docs | Complete |
