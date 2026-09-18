@@ -127,13 +127,13 @@ Command-line test runner, chunk fixture generator, 2D slice visualization, and p
 Eliminate all third-party dependencies on `Pixnop.Atlas` and provide a unified native embedded server engine, server scenarios, lockstep client-server integration, and a legacy compatibility shim.
 
 ### M11: Embedded Server Engine
-Implement native embedded Vintage Story server engine, deterministic tick controllers, data isolation sandboxes, and native loopback bindings.
+Implement native embedded Vintage Story server engine, deterministic tick controllers, data isolation sandboxes, in-memory world rollback, and native loopback bindings.
 
 | Order | Issue | Title | Type | Status |
 |---|---|---|---|---|
 | 1 | [#80](https://github.com/Zaldaryon/Pharos/issues/80) | Native EmbeddedServerHost and ServerWorldOptions replacing AtlasServerHost | core | Planned |
 | 2 | [#81](https://github.com/Zaldaryon/Pharos/issues/81) | Deterministic server tick controller and condition-based tick waiter | core | Planned |
-| 3 | [#82](https://github.com/Zaldaryon/Pharos/issues/82) | Server data path isolation, savegame management, and auto-cleanup | core | Planned |
+| 3 | [#82](https://github.com/Zaldaryon/Pharos/issues/82) | Server data path isolation, savegame management, and in-memory world rollback | core | Planned |
 | 4 | [#83](https://github.com/Zaldaryon/Pharos/issues/83) | Loopback network binding and HeadlessClient native server connection | core | Planned |
 
 ### M12: Server Scenarios & Testing Framework
@@ -141,9 +141,9 @@ Provide native xUnit server scenario attributes, base test class, player fixture
 
 | Order | Issue | Title | Type | Status |
 |---|---|---|---|---|
-| 5 | [#84](https://github.com/Zaldaryon/Pharos/issues/84) | [ServerScenario] and [ServerTheory] xUnit attributes with server lifecycle | core | Planned |
+| 5 | [#84](https://github.com/Zaldaryon/Pharos/issues/84) | [ServerScenario] and [ServerTheory] xUnit attributes with server lifecycle and rollback | core | Planned |
 | 6 | [#85](https://github.com/Zaldaryon/Pharos/issues/85) | ServerScenarioBase with console and player command execution APIs | core | Planned |
-| 7 | [#86](https://github.com/Zaldaryon/Pharos/issues/86) | IServerTestPlayer fixture with role, privilege, and inventory control | core | Planned |
+| 7 | [#86](https://github.com/Zaldaryon/Pharos/issues/86) | IServerTestPlayer fixture with genuine ConnectedClient and cleanup handling | core | Planned |
 | 8 | [#87](https://github.com/Zaldaryon/Pharos/issues/87) | Server world state helpers: block placement, entity spawning, and event waiting | enhancement | Planned |
 
 ### M13: Unified Client-Server Testing
