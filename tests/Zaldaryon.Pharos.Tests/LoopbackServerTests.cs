@@ -68,7 +68,7 @@ public class LoopbackServerTests
 
         Assert.NotNull(session);
         Assert.Same(client, session.Client);
-        Assert.Same(server, session.Server);
+        Assert.Same(server, session.NativeServer);
         Assert.NotNull(session.Client.Client.MainNetClient);
         Assert.NotNull(session.Client.Client.UdpNetClient);
 
