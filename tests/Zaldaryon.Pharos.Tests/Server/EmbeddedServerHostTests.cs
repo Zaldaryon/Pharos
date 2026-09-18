@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Reflection;
 using Xunit;
 using Zaldaryon.Pharos.Server;
@@ -122,11 +123,14 @@ public class EmbeddedServerHostTests
     public void EmbeddedServerHost_HasBootFactoryMethod()
     {
         Type type = typeof(EmbeddedServerHost);
-        MethodInfo? bootMethod = type.GetMethod("Boot", BindingFlags.Public | BindingFlags.Static);
+        // Get all Boot methods since there are now multiple overloads
+        MethodInfo[] bootMethods = type.GetMethods(BindingFlags.Public | BindingFlags.Static)
+            .Where(m => m.Name == "Boot")
+            .ToArray();
 
-        Assert.NotNull(bootMethod);
-        Assert.True(bootMethod.IsStatic);
-        Assert.Equal(type, bootMethod.ReturnType);
+        Assert.NotEmpty(bootMethods);
+        Assert.All(bootMethods, m => Assert.True(m.IsStatic));
+        Assert.All(bootMethods, m => Assert.Equal(type, m.ReturnType));
     }
 
     [Fact]
