@@ -13,6 +13,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Zaldaryon.Pharos.Tests", "t
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Zaldaryon.Pharos.Bridge", "src\Zaldaryon.Pharos.Bridge\Zaldaryon.Pharos.Bridge.csproj", "{DD31A283-2D29-492B-B8F9-B52CA13F96BD}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Zaldaryon.Pharos.XUnit", "src\Zaldaryon.Pharos.XUnit\Zaldaryon.Pharos.XUnit.csproj", "{ED6353D5-CB81-4B58-92FD-32CFD645ACE3}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -59,6 +61,18 @@ Global
 		{DD31A283-2D29-492B-B8F9-B52CA13F96BD}.Release|x64.Build.0 = Release|Any CPU
 		{DD31A283-2D29-492B-B8F9-B52CA13F96BD}.Release|x86.ActiveCfg = Release|Any CPU
 		{DD31A283-2D29-492B-B8F9-B52CA13F96BD}.Release|x86.Build.0 = Release|Any CPU
+		{ED6353D5-CB81-4B58-92FD-32CFD645ACE3}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{ED6353D5-CB81-4B58-92FD-32CFD645ACE3}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{ED6353D5-CB81-4B58-92FD-32CFD645ACE3}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{ED6353D5-CB81-4B58-92FD-32CFD645ACE3}.Debug|x64.Build.0 = Debug|Any CPU
+		{ED6353D5-CB81-4B58-92FD-32CFD645ACE3}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{ED6353D5-CB81-4B58-92FD-32CFD645ACE3}.Debug|x86.Build.0 = Debug|Any CPU
+		{ED6353D5-CB81-4B58-92FD-32CFD645ACE3}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{ED6353D5-CB81-4B58-92FD-32CFD645ACE3}.Release|Any CPU.Build.0 = Release|Any CPU
+		{ED6353D5-CB81-4B58-92FD-32CFD645ACE3}.Release|x64.ActiveCfg = Release|Any CPU
+		{ED6353D5-CB81-4B58-92FD-32CFD645ACE3}.Release|x64.Build.0 = Release|Any CPU
+		{ED6353D5-CB81-4B58-92FD-32CFD645ACE3}.Release|x86.ActiveCfg = Release|Any CPU
+		{ED6353D5-CB81-4B58-92FD-32CFD645ACE3}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -67,5 +81,6 @@ Global
 		{E61FC291-BFE8-4094-B106-B574173B45FB} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 		{621BF70A-E3D7-4D62-8573-A84AE21B2793} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 		{DD31A283-2D29-492B-B8F9-B52CA13F96BD} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
+		{ED6353D5-CB81-4B58-92FD-32CFD645ACE3} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 	EndGlobalSection
 EndGlobal

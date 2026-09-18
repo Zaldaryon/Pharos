@@ -8,7 +8,24 @@
     <AssemblyName>Zaldaryon.Pharos.Bridge</AssemblyName>
     <VintageStoryPath Condition="'$(VintageStoryPath)' == ''">$(VINTAGE_STORY)</VintageStoryPath>
     <VintageStoryPath Condition="'$(VintageStoryPath)' == '' and Exists('C:\Games\VintageStory')">C:\Games\VintageStory</VintageStoryPath>
+
+    <!-- NuGet packaging -->
+    <IsPackable>true</IsPackable>
+    <PackageId>Zaldaryon.Pharos.Bridge</PackageId>
+    <Version>0.1.0</Version>
+    <Authors>Zaldaryon</Authors>
+    <Description>Bridge mod for Pharos headless client. Provides in-game communication channel between test harness and embedded Vintage Story client.</Description>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <RepositoryUrl>https://github.com/Zaldaryon/Pharos</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageTags>vintagestory;testing;headless;bridge;mod</PackageTags>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
   </PropertyGroup>
+  <ItemGroup>
+    <None Include="..\..\README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
   </ItemGroup>
