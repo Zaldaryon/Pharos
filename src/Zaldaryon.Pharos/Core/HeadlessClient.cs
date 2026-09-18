@@ -94,7 +94,11 @@ public sealed class HeadlessClient : IDisposable
     /// </summary>
     public GuiInspector Gui { get; }
 
-
+    /// <summary>
+    /// Inventory automation controller for slot operations, drag-and-drop, and crafting grid manipulation.
+    /// Supports deterministic inventory interactions without a live server using mock state.
+    /// </summary>
+    public InventoryAutomation Inventory { get; }
 
     internal HeadlessClient(
         ClientMain client,
@@ -116,6 +120,7 @@ public sealed class HeadlessClient : IDisposable
         Gui = new GuiInspector(screenManager);
         TestPlayer = new ClientTestPlayer(client);
         Culling = new CullingInspector(client);
+        Inventory = new InventoryAutomation(TestPlayer.Inventory);
     }
 
     /// <summary>
