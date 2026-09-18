@@ -9,6 +9,9 @@
     "ModCompatibility": 1.0,
     "GreedyMesh_Uniform": 2.0,
     "GreedyMesh_Checkerboard": 5.0,
-    "GreedyMesh_Random": 3.5
+    "GreedyMesh_Random": 3.5,
+    "BfsThroughput_ViewDistance64": 5.0,
+    "BfsThroughput_ViewDistance128": 20.0,
+    "BfsThroughput_ViewDistance256": 80.0
   }
 }
