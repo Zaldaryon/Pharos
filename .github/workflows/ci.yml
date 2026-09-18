@@ -58,6 +58,9 @@ jobs:
           MESA_GLSL_VERSION_OVERRIDE: "450"
           ALSOFT_DRIVERS: null
         run: |
+          mkdir -p tests/Zaldaryon.Pharos.Tests/bin/Release/net10.0
+          ln -sf ${{ env.VS_CACHE_PATH }}/${{ env.VS_VERSION }}/assets tests/Zaldaryon.Pharos.Tests/bin/Release/net10.0/assets || true
+          ln -sf ${{ env.VS_CACHE_PATH }}/${{ env.VS_VERSION }}/assets ./assets || true
           xvfb-run -a -s "-screen 0 1280x720x24" dotnet test Pharos.sln -c Release
 
   test-windows:

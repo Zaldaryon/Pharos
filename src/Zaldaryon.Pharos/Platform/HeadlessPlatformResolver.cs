@@ -203,6 +203,8 @@ public static class HeadlessPlatformResolver
 
         LinkOrCopyDirectory(Path.Combine(gamePath, "Lib"), Path.Combine(baseDir, "Lib"));
         LinkOrCopyDirectory(Path.Combine(gamePath, "Mods"), Path.Combine(baseDir, "Mods"));
+        LinkOrCopyDirectory(Path.Combine(gamePath, "assets"), Path.Combine(baseDir, "assets"));
+        EnsureAssetsPath(Path.Combine(gamePath, "assets"));
     }
 
     private static void LinkOrCopyDirectory(string sourceDir, string targetDir)
@@ -220,17 +222,27 @@ public static class HeadlessPlatformResolver
         {
             try
             {
-                Directory.CreateDirectory(targetDir);
-                foreach (string file in Directory.GetFiles(sourceDir))
-                {
-                    string destFile = Path.Combine(targetDir, Path.GetFileName(file));
-                    File.Copy(file, destFile, overwrite: true);
-                }
+                CopyDirectoryRecursive(sourceDir, targetDir);
             }
             catch
             {
                 // Best-effort staging
             }
+        }
+    }
+
+    private static void CopyDirectoryRecursive(string sourceDir, string targetDir)
+    {
+        Directory.CreateDirectory(targetDir);
+        foreach (string file in Directory.GetFiles(sourceDir))
+        {
+            string destFile = Path.Combine(targetDir, Path.GetFileName(file));
+            File.Copy(file, destFile, overwrite: true);
+        }
+        foreach (string subDir in Directory.GetDirectories(sourceDir))
+        {
+            string destSubDir = Path.Combine(targetDir, Path.GetFileName(subDir));
+            CopyDirectoryRecursive(subDir, destSubDir);
         }
     }
 
