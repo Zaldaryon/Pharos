@@ -371,4 +371,130 @@ public static class PharosAssert
                 $"Display height {snapshot.DisplayHeight} does not match target {targetHeight}.");
         }
     }
+
+    // -------------------------------------------------------------------------
+    // Mod compatibility assertions
+    // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// Asserts that a subsystem is disabled in the feature registry.
+    /// </summary>
+    /// <param name="registry">The subsystem feature registry to check.</param>
+    /// <param name="subsystemName">The subsystem name to verify is disabled.</param>
+    /// <exception cref="PharosAssertException">Thrown when the subsystem is not disabled.</exception>
+    public static void SubsystemDisabled(Mods.SubsystemFeatureRegistry registry, string subsystemName)
+    {
+        ArgumentNullException.ThrowIfNull(registry);
+        ArgumentException.ThrowIfNullOrWhiteSpace(subsystemName);
+
+        if (!registry.IsFeatureRegistered(subsystemName))
+        {
+            throw new PharosAssertException(
+                $"Subsystem '{subsystemName}' is not registered in the feature registry.");
+        }
+
+        if (registry.IsFeatureEnabled(subsystemName))
+        {
+            throw new PharosAssertException(
+                $"Expected subsystem '{subsystemName}' to be disabled, but it is currently enabled.");
+        }
+    }
+
+    /// <summary>
+    /// Asserts that a subsystem is enabled in the feature registry.
+    /// </summary>
+    /// <param name="registry">The subsystem feature registry to check.</param>
+    /// <param name="subsystemName">The subsystem name to verify is enabled.</param>
+    /// <exception cref="PharosAssertException">Thrown when the subsystem is not enabled.</exception>
+    public static void SubsystemEnabled(Mods.SubsystemFeatureRegistry registry, string subsystemName)
+    {
+        ArgumentNullException.ThrowIfNull(registry);
+        ArgumentException.ThrowIfNullOrWhiteSpace(subsystemName);
+
+        if (!registry.IsFeatureRegistered(subsystemName))
+        {
+            throw new PharosAssertException(
+                $"Subsystem '{subsystemName}' is not registered in the feature registry.");
+        }
+
+        if (!registry.IsFeatureEnabled(subsystemName))
+        {
+            string? reason = registry.GetDisableReason(subsystemName);
+            string reasonPart = reason != null ? $" Reason: {reason}" : "";
+            throw new PharosAssertException(
+                $"Expected subsystem '{subsystemName}' to be enabled, but it is disabled.{reasonPart}");
+        }
+    }
+
+    /// <summary>
+    /// Asserts that the mod compatibility snapshot has no conflicts.
+    /// </summary>
+    /// <param name="snapshot">The mod compatibility snapshot to validate.</param>
+    /// <exception cref="PharosAssertException">Thrown when conflicts are detected.</exception>
+    public static void ModCompatibilityClean(Mods.ModCompatibilitySnapshot snapshot)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+
+        if (snapshot.HasConflicts)
+        {
+            string disabled = snapshot.DisabledSubsystems.Count > 0
+                ? $" Disabled subsystems: {string.Join(", ", snapshot.DisabledSubsystems)}."
+                : "";
+            string mods = snapshot.ActiveMockMods.Count > 0
+                ? $" Active mods: {string.Join(", ", snapshot.ActiveMockMods)}."
+                : "";
+            throw new PharosAssertException(
+                $"Expected clean mod compatibility (no conflicts), but conflicts were detected.{disabled}{mods}");
+        }
+
+        if (snapshot.DisabledSubsystems.Count > 0)
+        {
+            throw new PharosAssertException(
+                $"Expected clean mod compatibility, but {snapshot.DisabledSubsystems.Count} subsystem(s) are disabled: " +
+                $"{string.Join(", ", snapshot.DisabledSubsystems)}.");
+        }
+    }
+
+    /// <summary>
+    /// Asserts that a specific mod is detected in the compatibility snapshot.
+    /// </summary>
+    /// <param name="snapshot">The mod compatibility snapshot to check.</param>
+    /// <param name="modId">The mod ID to verify is present.</param>
+    /// <exception cref="PharosAssertException">Thrown when the mod is not detected.</exception>
+    public static void ModDetected(Mods.ModCompatibilitySnapshot snapshot, string modId)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        ArgumentException.ThrowIfNullOrWhiteSpace(modId);
+
+        if (!snapshot.ActiveMockMods.Contains(modId, StringComparer.OrdinalIgnoreCase))
+        {
+            throw new PharosAssertException(
+                $"Expected mod '{modId}' to be detected, but it was not in ActiveMockMods. " +
+                $"Active mods: [{string.Join(", ", snapshot.ActiveMockMods)}].");
+        }
+    }
+
+    /// <summary>
+    /// Asserts that conflicts exist and at least the specified number of subsystems are disabled.
+    /// </summary>
+    /// <param name="snapshot">The mod compatibility snapshot to validate.</param>
+    /// <param name="minDisabledSubsystems">Minimum number of disabled subsystems expected.</param>
+    /// <exception cref="PharosAssertException">Thrown when conflict requirements are not met.</exception>
+    public static void ModConflictsExist(Mods.ModCompatibilitySnapshot snapshot, int minDisabledSubsystems = 1)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+
+        if (!snapshot.HasConflicts)
+        {
+            throw new PharosAssertException(
+                "Expected mod conflicts to exist, but snapshot reports HasConflicts=false.");
+        }
+
+        if (snapshot.DisabledSubsystems.Count < minDisabledSubsystems)
+        {
+            throw new PharosAssertException(
+                $"Expected at least {minDisabledSubsystems} disabled subsystem(s), but only " +
+                $"{snapshot.DisabledSubsystems.Count} found: [{string.Join(", ", snapshot.DisabledSubsystems)}].");
+        }
+    }
 }
