@@ -23,6 +23,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Zaldaryon.Pharos\Zaldaryon.Pharos.csproj" />
+    <ProjectReference Include="..\..\src\Zaldaryon.Pharos.Bridge\Zaldaryon.Pharos.Bridge.csproj" />
   </ItemGroup>
 
   <ItemGroup>
