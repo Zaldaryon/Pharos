@@ -1,4 +1,6 @@
+using Zaldaryon.Pharos.Culling;
 using Zaldaryon.Pharos.Graphics;
+using Zaldaryon.Pharos.Timing;
 
 namespace Zaldaryon.Pharos.Assertions;
 
@@ -94,6 +96,62 @@ public static class PharosAssert
         {
             throw new PharosAssertException(
                 $"Expected collapse ratio of at least {minCollapseRatio:F2}, but got {stats.CollapseRatio:F2}.");
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Chunk visibility assertions
+    // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// Asserts that a chunk is visible (passed frustum and view distance tests).
+    /// </summary>
+    /// <param name="snapshot">Culling snapshot to query.</param>
+    /// <param name="chunk">Chunk position to verify.</param>
+    /// <exception cref="PharosAssertException">Thrown when the chunk is not in VisibleChunks.</exception>
+    public static void ChunkVisible(CullingSnapshot snapshot, ChunkPos chunk)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+
+        if (!snapshot.VisibleChunks.Contains(chunk))
+        {
+            throw new PharosAssertException(
+                $"Expected chunk {chunk} to be visible, but it was not in VisibleChunks (culled or not loaded).");
+        }
+    }
+
+    /// <summary>
+    /// Asserts that a chunk is culled (failed frustum or view distance tests).
+    /// </summary>
+    /// <param name="snapshot">Culling snapshot to query.</param>
+    /// <param name="chunk">Chunk position to verify.</param>
+    /// <exception cref="PharosAssertException">Thrown when the chunk is not in CulledChunks.</exception>
+    public static void ChunkCulled(CullingSnapshot snapshot, ChunkPos chunk)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+
+        if (!snapshot.CulledChunks.Contains(chunk))
+        {
+            throw new PharosAssertException(
+                $"Expected chunk {chunk} to be culled, but it was not in CulledChunks (visible or not loaded).");
+        }
+    }
+
+    /// <summary>
+    /// Asserts that a chunk is occlusion-culled (passed frustum test but marked
+    /// invisible by the occlusion culler).
+    /// </summary>
+    /// <param name="snapshot">Culling snapshot to query.</param>
+    /// <param name="chunk">Chunk position to verify.</param>
+    /// <exception cref="PharosAssertException">Thrown when the chunk is not in OcclusionCulledChunks.</exception>
+    public static void ChunkOccluded(CullingSnapshot snapshot, ChunkPos chunk)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+
+        if (!snapshot.OcclusionCulledChunks.Contains(chunk))
+        {
+            throw new PharosAssertException(
+                $"Expected chunk {chunk} to be occlusion-culled, but it was not in OcclusionCulledChunks.");
         }
     }
 }
