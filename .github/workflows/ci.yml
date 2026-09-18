@@ -16,7 +16,7 @@ jobs:
     name: Build and Test (Linux)
     runs-on: ubuntu-latest
     env:
-      VS_CACHE_PATH: ~/.vintagestory-cache
+      VS_CACHE_PATH: /home/runner/.vintagestory-cache
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -97,7 +97,28 @@ jobs:
           Remove-Item -Force "$env:TEMP\vs_setup.exe" -ErrorAction SilentlyContinue
           Remove-Item -Force "$env:TEMP\innoextract.exe" -ErrorAction SilentlyContinue
 
-      - name: Build and test
+      - name: Build
         env:
           VINTAGE_STORY: ${{ env.VS_CACHE_PATH }}\${{ env.VS_VERSION }}
-        run: dotnet test Pharos.sln -c Release
+        run: dotnet build Pharos.sln -c Release
+
+      - name: Install Mesa Windows
+        uses: f3d-app/install-mesa-windows-action@v1
+        with:
+          path: tests/Zaldaryon.Pharos.Tests/bin/Release/net10.0
+
+      - name: Copy Mesa to Vintage Story Lib
+        shell: pwsh
+        run: |
+          Copy-Item "tests\Zaldaryon.Pharos.Tests\bin\Release\net10.0\opengl32.dll" "${{ env.VS_CACHE_PATH }}\${{ env.VS_VERSION }}\Lib\" -Force -ErrorAction SilentlyContinue
+
+      - name: Test
+        env:
+          VINTAGE_STORY: ${{ env.VS_CACHE_PATH }}\${{ env.VS_VERSION }}
+          GALLIUM_DRIVER: llvmpipe
+          LIBGL_ALWAYS_SOFTWARE: 1
+          MESA_LOADER_DRIVER_OVERRIDE: llvmpipe
+          LIBGL_ALWAYS_INDIRECT: 0
+          MESA_GL_VERSION_OVERRIDE: "4.5"
+          MESA_GLSL_VERSION_OVERRIDE: "450"
+        run: dotnet test Pharos.sln -c Release --no-build
