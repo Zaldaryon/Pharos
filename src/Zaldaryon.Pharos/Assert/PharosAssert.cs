@@ -758,4 +758,120 @@ public static class PharosAssert
                 $"Managed object leaks exceed thresholds. {string.Join(", ", violations)}.");
         }
     }
+
+    // -------------------------------------------------------------------------
+    // Animation LOD assertions
+    // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// Asserts that animation LOD throttling is active based on tier tick counts.
+    /// Verifies that far-distance entities are ticked less frequently than near-distance entities.
+    /// </summary>
+    /// <param name="result">The animation LOD tier result to validate.</param>
+    /// <param name="maxFarRatio">Maximum allowed ratio of far ticks to near ticks (default: 0.25).
+    /// Lower values indicate more aggressive throttling.</param>
+    /// <exception cref="PharosAssertException">Thrown when throttling is insufficient or not detected.</exception>
+    public static void AnimationLodThrottled(World.AnimationLodTierResult result, float maxFarRatio = 0.25f)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        if (result.IsEmpty)
+        {
+            throw new PharosAssertException(
+                "Animation LOD result is empty (no ticks recorded). Cannot verify throttling.");
+        }
+
+        if (result.NearTickCount == 0)
+        {
+            throw new PharosAssertException(
+                "Near-tier tick count is zero. Cannot calculate throttle ratio.");
+        }
+
+        if (!result.ThrottleDetected)
+        {
+            throw new PharosAssertException(
+                Invariant($"Animation LOD throttling not detected. ") +
+                Invariant($"FarTickCount ({result.FarTickCount}) should be less than half of NearTickCount ({result.NearTickCount}). ") +
+                Invariant($"Ratio: {result.NearToFarRatio:F3}"));
+        }
+
+        if (result.NearToFarRatio > maxFarRatio)
+        {
+            throw new PharosAssertException(
+                Invariant($"Animation LOD throttling is insufficient. ") +
+                Invariant($"Far/Near ratio {result.NearToFarRatio:F3} exceeds maximum {maxFarRatio:F3}. ") +
+                Invariant($"Near={result.NearTickCount}, Mid={result.MidTickCount}, Far={result.FarTickCount}."));
+        }
+    }
+
+    /// <summary>
+    /// Asserts that animation LOD throttling is NOT active (uniform tick distribution).
+    /// Useful for testing scenarios where throttling should be disabled.
+    /// </summary>
+    /// <param name="result">The animation LOD tier result to validate.</param>
+    /// <param name="minFarRatio">Minimum expected ratio of far ticks to near ticks (default: 0.9).
+    /// Higher values indicate less throttling.</param>
+    /// <exception cref="PharosAssertException">Thrown when unexpected throttling is detected.</exception>
+    public static void AnimationLodNotThrottled(World.AnimationLodTierResult result, float minFarRatio = 0.9f)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        if (result.IsEmpty)
+        {
+            return; // Empty result has no throttling
+        }
+
+        if (result.NearTickCount == 0)
+        {
+            return; // Cannot determine throttling without near ticks
+        }
+
+        if (result.ThrottleDetected)
+        {
+            throw new PharosAssertException(
+                Invariant($"Unexpected animation LOD throttling detected. ") +
+                Invariant($"FarTickCount ({result.FarTickCount}) is less than half of NearTickCount ({result.NearTickCount}). ") +
+                Invariant($"Ratio: {result.NearToFarRatio:F3}"));
+        }
+
+        if (result.NearToFarRatio < minFarRatio)
+        {
+            throw new PharosAssertException(
+                Invariant($"Animation distribution is not uniform. ") +
+                Invariant($"Far/Near ratio {result.NearToFarRatio:F3} is below minimum {minFarRatio:F3}. ") +
+                Invariant($"Near={result.NearTickCount}, Mid={result.MidTickCount}, Far={result.FarTickCount}."));
+        }
+    }
+
+    /// <summary>
+    /// Asserts that the animation tier result has minimum tick counts for all tiers.
+    /// </summary>
+    /// <param name="result">The animation LOD tier result to validate.</param>
+    /// <param name="minNearTicks">Minimum expected near-tier ticks.</param>
+    /// <param name="minMidTicks">Minimum expected mid-tier ticks.</param>
+    /// <param name="minFarTicks">Minimum expected far-tier ticks.</param>
+    /// <exception cref="PharosAssertException">Thrown when tick counts are below minimums.</exception>
+    public static void AnimationTicksAtLeast(
+        World.AnimationLodTierResult result,
+        int minNearTicks,
+        int minMidTicks,
+        int minFarTicks)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        List<string> violations = [];
+
+        if (result.NearTickCount < minNearTicks)
+            violations.Add($"Near: {result.NearTickCount} < {minNearTicks}");
+        if (result.MidTickCount < minMidTicks)
+            violations.Add($"Mid: {result.MidTickCount} < {minMidTicks}");
+        if (result.FarTickCount < minFarTicks)
+            violations.Add($"Far: {result.FarTickCount} < {minFarTicks}");
+
+        if (violations.Count > 0)
+        {
+            throw new PharosAssertException(
+                $"Animation tick counts below minimum. {string.Join(", ", violations)}.");
+        }
+    }
 }
