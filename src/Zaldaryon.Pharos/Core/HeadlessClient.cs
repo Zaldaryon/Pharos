@@ -23,6 +23,7 @@ using Zaldaryon.Pharos.Server;
 using Zaldaryon.Pharos.Input;
 using Zaldaryon.Pharos.Timing;
 using Zaldaryon.Pharos.UI;
+using Zaldaryon.Pharos.World;
 
 namespace Zaldaryon.Pharos.Core;
 
@@ -99,6 +100,12 @@ public sealed class HeadlessClient : IDisposable
     /// Supports deterministic inventory interactions without a live server using mock state.
     /// </summary>
     public InventoryAutomation Inventory { get; }
+
+    /// <summary>
+    /// Block interaction simulator for deterministic placement, breaking, and tool usage.
+    /// Supports mock mode for pure-logic testing without a live server.
+    /// </summary>
+    public BlockInteractionSimulator BlockInteraction { get; } = new();
 
     internal HeadlessClient(
         ClientMain client,
