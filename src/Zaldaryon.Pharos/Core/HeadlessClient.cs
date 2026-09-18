@@ -66,6 +66,14 @@ public sealed class HeadlessClient : IDisposable
     /// </summary>
     public MemoryInspector Memory { get; } = new();
 
+    /// <summary>
+    /// Shader program state inspector. Captures the active program, uniform values, bound textures,
+    /// and redundant upload counts per frame. Recording is disabled by default; call
+    /// <see cref="ShaderInspector.Enable"/> before a frame and <see cref="ShaderInspector.Snapshot"/>
+    /// after to capture shader state.
+    /// </summary>
+    public ShaderInspector Shaders { get; } = new();
+
     internal HeadlessClient(
         ClientMain client,
         ClientPlatformWindows platform,
@@ -531,6 +539,15 @@ public sealed class HeadlessClient : IDisposable
         catch
         {
             // Ignore memory inspector teardown errors
+        }
+
+        try
+        {
+            Shaders.Disable();
+        }
+        catch
+        {
+            // Ignore shader inspector teardown errors
         }
 
         try
