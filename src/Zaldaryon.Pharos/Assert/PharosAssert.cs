@@ -249,6 +249,96 @@ public static class PharosAssert
         }
     }
 
+    /// <summary>
+    /// Asserts that UV coordinates are continuous across adjacent merged quad seams.
+    /// Checks that vertices sharing an edge have matching UV coordinates within tolerance.
+    /// </summary>
+    /// <param name="snapshot">Mesh snapshot with QuadEdges populated.</param>
+    /// <param name="tolerance">Maximum allowed UV discontinuity across edges (default: 0.001f).</param>
+    /// <exception cref="PharosAssertException">Thrown when UV seams are detected.</exception>
+    public static void UvContinuous(MeshSnapshot snapshot, float tolerance = 0.001f)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+
+        if (!snapshot.IsValid)
+        {
+            throw new PharosAssertException($"Snapshot is invalid: {snapshot.ErrorMessage}");
+        }
+
+        if (snapshot.QuadEdges.Count == 0)
+        {
+            return; // No edges to check
+        }
+
+        if (snapshot.UvSamples.Count == 0)
+        {
+            return; // No UV data to validate
+        }
+
+        const int verticesPerQuad = 4;
+        List<(QuadEdge edge, float maxDelta)> discontinuities = [];
+
+        foreach (QuadEdge edge in snapshot.QuadEdges)
+        {
+            float maxDelta = CheckEdgeUvContinuity(snapshot, edge, verticesPerQuad, tolerance);
+            if (maxDelta > tolerance)
+            {
+                discontinuities.Add((edge, maxDelta));
+            }
+        }
+
+        if (discontinuities.Count > 0)
+        {
+            var worst = discontinuities.OrderByDescending(d => d.maxDelta).First();
+            throw new PharosAssertException(
+                Invariant($"UV discontinuity detected at {discontinuities.Count} edge(s). ") +
+                Invariant($"Worst: quads {worst.edge.QuadAIndex}-{worst.edge.QuadBIndex} on {worst.edge.AxisName} axis, ") +
+                Invariant($"delta={worst.maxDelta:F6} (tolerance={tolerance:F6})."));
+        }
+    }
+
+    private static float CheckEdgeUvContinuity(MeshSnapshot snapshot, QuadEdge edge, int verticesPerQuad, float posTolerance)
+    {
+        int baseA = edge.QuadAIndex * verticesPerQuad;
+        int baseB = edge.QuadBIndex * verticesPerQuad;
+        float maxDelta = 0f;
+        float posToleranceSq = posTolerance * posTolerance;
+
+        // Find matching vertices between the two quads and compare their UVs
+        for (int i = 0; i < verticesPerQuad; i++)
+        {
+            int idxA = baseA + i;
+            if (idxA >= snapshot.VertexPositions.Count || idxA >= snapshot.UvSamples.Count)
+                continue;
+
+            VertexPosition posA = snapshot.VertexPositions[idxA];
+
+            for (int j = 0; j < verticesPerQuad; j++)
+            {
+                int idxB = baseB + j;
+                if (idxB >= snapshot.VertexPositions.Count || idxB >= snapshot.UvSamples.Count)
+                    continue;
+
+                VertexPosition posB = snapshot.VertexPositions[idxB];
+
+                // If positions match, compare UVs
+                if (posA.DistanceSquaredTo(posB) < posToleranceSq)
+                {
+                    UvSample uvA = snapshot.UvSamples[idxA];
+                    UvSample uvB = snapshot.UvSamples[idxB];
+
+                    float deltaU = Math.Abs(uvA.U - uvB.U);
+                    float deltaV = Math.Abs(uvA.V - uvB.V);
+                    float delta = Math.Max(deltaU, deltaV);
+
+                    maxDelta = Math.Max(maxDelta, delta);
+                }
+            }
+        }
+
+        return maxDelta;
+    }
+
     // -------------------------------------------------------------------------
     // FSR render scale assertions
     // -------------------------------------------------------------------------

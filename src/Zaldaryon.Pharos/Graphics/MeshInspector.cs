@@ -111,4 +111,119 @@ public sealed class MeshInspector
         }
         return samples;
     }
+
+    /// <summary>
+    /// Extracts quad adjacency information from a mesh snapshot for UV continuity analysis.
+    /// Identifies pairs of quads that share an edge by analyzing vertex positions.
+    /// </summary>
+    /// <param name="snapshot">The mesh snapshot to analyze.</param>
+    /// <param name="positionTolerance">Tolerance for matching vertex positions (default: 0.001f).</param>
+    /// <returns>List of quad edges representing adjacencies found in the mesh.</returns>
+    public static IReadOnlyList<QuadEdge> ExtractQuadAdjacency(MeshSnapshot snapshot, float positionTolerance = 0.001f)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+
+        if (!snapshot.IsValid || snapshot.QuadCount < 2 || snapshot.VertexPositions.Count == 0)
+        {
+            return [];
+        }
+
+        List<QuadEdge> edges = [];
+        int verticesPerQuad = 4;
+        float toleranceSq = positionTolerance * positionTolerance;
+
+        // For each pair of quads, check if they share an edge
+        for (int quadA = 0; quadA < snapshot.QuadCount; quadA++)
+        {
+            for (int quadB = quadA + 1; quadB < snapshot.QuadCount; quadB++)
+            {
+                QuadEdge? edge = FindSharedEdge(snapshot, quadA, quadB, verticesPerQuad, toleranceSq);
+                if (edge.HasValue)
+                {
+                    edges.Add(edge.Value);
+                }
+            }
+        }
+
+        return edges;
+    }
+
+    private static QuadEdge? FindSharedEdge(MeshSnapshot snapshot, int quadA, int quadB, int verticesPerQuad, float toleranceSq)
+    {
+        int baseA = quadA * verticesPerQuad;
+        int baseB = quadB * verticesPerQuad;
+
+        // Check if any two vertices from quadA match two vertices from quadB
+        // A shared edge means 2 coincident vertices
+        List<(int, int)> matchingPairs = [];
+
+        for (int i = 0; i < verticesPerQuad && matchingPairs.Count < 2; i++)
+        {
+            if (baseA + i >= snapshot.VertexPositions.Count) continue;
+            VertexPosition posA = snapshot.VertexPositions[baseA + i];
+
+            for (int j = 0; j < verticesPerQuad; j++)
+            {
+                if (baseB + j >= snapshot.VertexPositions.Count) continue;
+                VertexPosition posB = snapshot.VertexPositions[baseB + j];
+
+                if (posA.DistanceSquaredTo(posB) < toleranceSq)
+                {
+                    matchingPairs.Add((baseA + i, baseB + j));
+                    break;
+                }
+            }
+        }
+
+        if (matchingPairs.Count < 2) return null;
+
+        // Determine shared axis from the two matching vertices
+        VertexPosition v1 = snapshot.VertexPositions[matchingPairs[0].Item1];
+        VertexPosition v2 = snapshot.VertexPositions[matchingPairs[1].Item1];
+
+        // Find which axis has the same value (shared edge axis)
+        int sharedAxis;
+        float sharedValue;
+
+        float dx = Math.Abs(v1.X - v2.X);
+        float dy = Math.Abs(v1.Y - v2.Y);
+        float dz = Math.Abs(v1.Z - v2.Z);
+
+        if (dx < toleranceSq && dy >= toleranceSq && dz >= toleranceSq)
+        {
+            sharedAxis = 0; // X is shared
+            sharedValue = v1.X;
+        }
+        else if (dy < toleranceSq && dx >= toleranceSq && dz >= toleranceSq)
+        {
+            sharedAxis = 1; // Y is shared
+            sharedValue = v1.Y;
+        }
+        else if (dz < toleranceSq && dx >= toleranceSq && dy >= toleranceSq)
+        {
+            sharedAxis = 2; // Z is shared
+            sharedValue = v1.Z;
+        }
+        else
+        {
+            // Edge is along one axis, determine which
+            if (dx < dy && dx < dz)
+            {
+                sharedAxis = 0;
+                sharedValue = v1.X;
+            }
+            else if (dy < dz)
+            {
+                sharedAxis = 1;
+                sharedValue = v1.Y;
+            }
+            else
+            {
+                sharedAxis = 2;
+                sharedValue = v1.Z;
+            }
+        }
+
+        return new QuadEdge(quadA, quadB, sharedAxis, sharedValue);
+    }
 }
