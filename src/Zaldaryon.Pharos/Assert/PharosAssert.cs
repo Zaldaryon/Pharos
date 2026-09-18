@@ -1,5 +1,6 @@
 using Zaldaryon.Pharos.Culling;
 using Zaldaryon.Pharos.Graphics;
+using Zaldaryon.Pharos.Memory;
 using Zaldaryon.Pharos.Timing;
 using Zaldaryon.Pharos.Visual;
 
@@ -526,5 +527,90 @@ public static class PharosAssert
             $"MeanDiff={result.MeanDiff:F4} (tolerance={result.Tolerance:F4}), " +
             $"MaxDiff={result.MaxDiff:F4}, " +
             $"DiffPixels={result.DiffPixelCount}/{result.TotalPixels} ({result.DiffPixelFraction:P1}).{heatmapInfo}");
+    }
+
+    // -------------------------------------------------------------------------
+    // GL resource leak assertions
+    // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// Asserts that no OpenGL resource leaks were detected.
+    /// </summary>
+    /// <param name="report">The GL leak report to validate.</param>
+    /// <exception cref="PharosAssertException">Thrown when resource leaks are detected.</exception>
+    public static void NoGlLeaks(GlLeakReport report)
+    {
+        ArgumentNullException.ThrowIfNull(report);
+
+        if (!report.HasLeaks)
+        {
+            return;
+        }
+
+        List<string> leaks = [];
+        if (report.BufferLeaks > 0) leaks.Add($"Buffers: {report.BufferLeaks}");
+        if (report.TextureLeaks > 0) leaks.Add($"Textures: {report.TextureLeaks}");
+        if (report.VAOLeaks > 0) leaks.Add($"VAOs: {report.VAOLeaks}");
+
+        throw new PharosAssertException(
+            $"OpenGL resource leaks detected. {string.Join(", ", leaks)}. " +
+            $"Total: {report.TotalResourceLeaks} leaked resources.");
+    }
+
+    /// <summary>
+    /// Asserts that memory growth is below the specified threshold.
+    /// </summary>
+    /// <param name="actualGrowthBytes">The actual memory growth in bytes.</param>
+    /// <param name="maxAllowedBytes">The maximum allowed memory growth in bytes.</param>
+    /// <exception cref="PharosAssertException">Thrown when memory growth exceeds the threshold.</exception>
+    public static void MemoryGrowthBelow(long actualGrowthBytes, long maxAllowedBytes)
+    {
+        if (actualGrowthBytes <= maxAllowedBytes)
+        {
+            return;
+        }
+
+        string FormatBytes(long bytes)
+        {
+            return bytes switch
+            {
+                >= 1024 * 1024 * 1024 => $"{bytes / (1024.0 * 1024.0 * 1024.0):F2} GB",
+                >= 1024 * 1024 => $"{bytes / (1024.0 * 1024.0):F2} MB",
+                >= 1024 => $"{bytes / 1024.0:F2} KB",
+                _ => $"{bytes} bytes"
+            };
+        }
+
+        throw new PharosAssertException(
+            $"Memory growth exceeds threshold. " +
+            $"Actual: {FormatBytes(actualGrowthBytes)}, Max allowed: {FormatBytes(maxAllowedBytes)}.");
+    }
+
+    /// <summary>
+    /// Asserts that GL resource leaks are within the specified thresholds.
+    /// </summary>
+    /// <param name="report">The GL leak report to validate.</param>
+    /// <param name="maxBufferLeaks">Maximum allowed buffer leaks.</param>
+    /// <param name="maxTextureLeaks">Maximum allowed texture leaks.</param>
+    /// <param name="maxVaoLeaks">Maximum allowed VAO leaks.</param>
+    /// <exception cref="PharosAssertException">Thrown when any leak count exceeds its threshold.</exception>
+    public static void GlLeaksBelow(GlLeakReport report, int maxBufferLeaks, int maxTextureLeaks, int maxVaoLeaks)
+    {
+        ArgumentNullException.ThrowIfNull(report);
+
+        List<string> violations = [];
+
+        if (report.BufferLeaks > maxBufferLeaks)
+            violations.Add($"Buffers: {report.BufferLeaks} > {maxBufferLeaks}");
+        if (report.TextureLeaks > maxTextureLeaks)
+            violations.Add($"Textures: {report.TextureLeaks} > {maxTextureLeaks}");
+        if (report.VAOLeaks > maxVaoLeaks)
+            violations.Add($"VAOs: {report.VAOLeaks} > {maxVaoLeaks}");
+
+        if (violations.Count > 0)
+        {
+            throw new PharosAssertException(
+                $"GL resource leaks exceed thresholds. {string.Join(", ", violations)}.");
+        }
     }
 }
