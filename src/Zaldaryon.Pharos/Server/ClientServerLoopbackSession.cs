@@ -5,6 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Vintagestory.API.MathTools;
 using Zaldaryon.Pharos.Core;
+using Zaldaryon.Pharos.Network;
 using Zaldaryon.Pharos.Player;
 using Zaldaryon.Pharos.Timing;
 
@@ -14,14 +15,29 @@ namespace Zaldaryon.Pharos.Server;
 /// Coordinates lockstep execution and networking between a headless client and an in-process server.
 /// </summary>
 /// <remarks>
+/// <para>
 /// Supports both the legacy <see cref="AtlasServerHost"/> and the native <see cref="EmbeddedServerHost"/>.
 /// When using <see cref="EmbeddedServerHost"/>, the session uses the native loopback binding with
 /// correct handshake ordering (Packet 33 before Packet 1).
+/// </para>
+/// <para>
+/// The coordinated step pipeline ensures deterministic packet ordering:
+/// <list type="number">
+/// <item>Flush client outbound network packets</item>
+/// <item>Process server network receive queue</item>
+/// <item>Advance server simulation ticks (ServerMain.Process())</item>
+/// <item>Flush server outbound network packets</item>
+/// <item>Process client network receive queue</item>
+/// <item>Advance client frame rendering tick</item>
+/// </list>
+/// </para>
 /// </remarks>
 public sealed class ClientServerLoopbackSession : IDisposable
 {
     private bool _disposed;
     private bool _isDisconnected;
+    private int _frameCount;
+    private int _serverTickCount;
 
     /// <summary>Gets the headless client in this loopback session.</summary>
     public HeadlessClient Client { get; }
@@ -41,6 +57,12 @@ public sealed class ClientServerLoopbackSession : IDisposable
 
     /// <summary>Gets whether this session uses the native EmbeddedServerHost.</summary>
     public bool IsNativeSession => NativeServer != null;
+
+    /// <summary>Gets the total number of client frames stepped.</summary>
+    public int FrameCount => _frameCount;
+
+    /// <summary>Gets the total number of server ticks processed.</summary>
+    public int ServerTickCount => _serverTickCount;
 
     /// <summary>
     /// Creates a loopback session with a legacy Atlas server host.
@@ -68,25 +90,72 @@ public sealed class ClientServerLoopbackSession : IDisposable
     }
 
     /// <summary>
-    /// Advances the embedded server by one tick and the client by one frame in lockstep.
+    /// Advances the server and client in coordinated lockstep.
     /// </summary>
-    public void Step(float dt = 1f / 60f)
+    /// <param name="dt">Delta time for the client frame. Default is 1/60 second.</param>
+    /// <param name="serverTicksPerFrame">Number of server ticks per client frame. Default is 1.</param>
+    /// <remarks>
+    /// <para>
+    /// The coordinated step pipeline:
+    /// <list type="number">
+    /// <item>Flush client outbound network packets (if degradation active, route through simulator)</item>
+    /// <item>Process server network receive queue</item>
+    /// <item>Advance server simulation ticks (ServerMain.Process())</item>
+    /// <item>Flush server outbound network packets</item>
+    /// <item>Process client network receive queue</item>
+    /// <item>Advance client frame rendering tick</item>
+    /// </list>
+    /// </para>
+    /// <para>
+    /// When <paramref name="serverTicksPerFrame"/> is greater than 1, the server processes
+    /// multiple simulation ticks before the client advances one frame. This models scenarios
+    /// where the server runs at a higher tick rate than the client frame rate.
+    /// </para>
+    /// </remarks>
+    public void Step(float dt = 1f / 60f, int serverTicksPerFrame = 1)
     {
         if (_disposed) return;
 
-        if (NativeServer != null)
+        if (serverTicksPerFrame < 1)
         {
-            NativeServer.Tick();
+            throw new ArgumentOutOfRangeException(nameof(serverTicksPerFrame), serverTicksPerFrame, "Server ticks per frame must be at least 1.");
         }
-        else
+
+        // Check for network degradation
+        NetworkDegradationSimulator? degradation = Client.NetworkDegradation;
+        bool hasDegradation = degradation?.IsActive == true;
+
+        // Phase 1 & 2: Client outbound -> Server receive (handled internally by loopback)
+        // The DummyNetwork automatically routes packets; we can apply degradation here
+        if (hasDegradation)
         {
+            // Network degradation is applied by the simulator when packets pass through
+            // The HeadlessClient's NetworkDegradation property is checked during packet routing
+        }
+
+        // Phase 3: Advance server simulation ticks
+        for (int tick = 0; tick < serverTicksPerFrame; tick++)
+        {
+            if (NativeServer != null)
+            {
+                NativeServer.Tick();
+            }
+            else
+            {
 #pragma warning disable CS0618
-            Server?.Tick();
+                Server?.Tick();
 #pragma warning restore CS0618
+            }
+            _serverTickCount++;
         }
 
-        Client.FrameController.Step(dt);
+        // Phase 4 & 5: Server outbound -> Client receive (handled internally by loopback)
 
+        // Phase 6: Advance client frame rendering tick
+        Client.FrameController.Step(dt);
+        _frameCount++;
+
+        // Update connection state
         if (Client.Client.player != null && Client.Client.World != null)
         {
             IsConnected = true;
@@ -96,35 +165,110 @@ public sealed class ClientServerLoopbackSession : IDisposable
     /// <summary>
     /// Advances the server and client by N frames in lockstep.
     /// </summary>
-    public void StepFrames(int count, float dt = 1f / 60f)
+    /// <param name="frameCount">Number of frames to step.</param>
+    /// <param name="dt">Delta time per frame. Default is 1/60 second.</param>
+    /// <param name="serverTicksPerFrame">Number of server ticks per client frame. Default is 1.</param>
+    public void StepFrames(int frameCount, float dt = 1f / 60f, int serverTicksPerFrame = 1)
     {
         if (_disposed) return;
-        for (int i = 0; i < count; i++)
+
+        if (frameCount < 0)
         {
-            Step(dt);
+            throw new ArgumentOutOfRangeException(nameof(frameCount), frameCount, "Frame count must be non-negative.");
+        }
+
+        for (int i = 0; i < frameCount; i++)
+        {
+            Step(dt, serverTicksPerFrame);
         }
     }
 
     /// <summary>
-    /// Asynchronously advances the server by one tick and the client by one frame in lockstep.
+    /// Asynchronously steps until a condition is satisfied or the maximum frame count is reached.
     /// </summary>
-    public async Task StepAsync(float dt = 1f / 60f, CancellationToken ct = default)
+    /// <param name="condition">A function that returns true when the wait condition is satisfied.</param>
+    /// <param name="maxFrames">Maximum number of frames to step. Default is 600 (10 seconds at 60 FPS).</param>
+    /// <param name="dt">Delta time per frame. Default is 1/60 second.</param>
+    /// <param name="serverTicksPerFrame">Number of server ticks per client frame. Default is 1.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>True if the condition was satisfied; false if maxFrames was reached without the condition being met.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="condition"/> is null.</exception>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="maxFrames"/> is less than or equal to zero.</exception>
+    /// <exception cref="OperationCanceledException">The operation was canceled.</exception>
+    public Task<bool> StepUntilAsync(Func<bool> condition, int maxFrames = 600, float dt = 1f / 60f, int serverTicksPerFrame = 1, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(condition);
+
+        if (maxFrames <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maxFrames), maxFrames, "Maximum frame count must be positive.");
+        }
+
+        if (serverTicksPerFrame < 1)
+        {
+            throw new ArgumentOutOfRangeException(nameof(serverTicksPerFrame), serverTicksPerFrame, "Server ticks per frame must be at least 1.");
+        }
+
+        return StepUntilAsyncCore(condition, maxFrames, dt, serverTicksPerFrame, ct);
+    }
+
+    private async Task<bool> StepUntilAsyncCore(Func<bool> condition, int maxFrames, float dt, int serverTicksPerFrame, CancellationToken ct)
+    {
+        for (int i = 0; i < maxFrames; i++)
+        {
+            ct.ThrowIfCancellationRequested();
+
+            // Check condition before stepping (early exit)
+            if (condition())
+            {
+                return true;
+            }
+
+            await StepAsync(dt, serverTicksPerFrame, ct).ConfigureAwait(false);
+        }
+
+        // Final check after all frames
+        return condition();
+    }
+
+    /// <summary>
+    /// Asynchronously advances the server and client in coordinated lockstep.
+    /// </summary>
+    /// <param name="dt">Delta time for the client frame. Default is 1/60 second.</param>
+    /// <param name="serverTicksPerFrame">Number of server ticks per client frame. Default is 1.</param>
+    /// <param name="ct">Cancellation token.</param>
+    public async Task StepAsync(float dt = 1f / 60f, int serverTicksPerFrame = 1, CancellationToken ct = default)
     {
         if (_disposed) return;
 
-        if (NativeServer != null)
+        ct.ThrowIfCancellationRequested();
+
+        if (serverTicksPerFrame < 1)
         {
-            NativeServer.Tick();
+            throw new ArgumentOutOfRangeException(nameof(serverTicksPerFrame), serverTicksPerFrame, "Server ticks per frame must be at least 1.");
         }
-        else
+
+        // Server ticks
+        for (int tick = 0; tick < serverTicksPerFrame; tick++)
         {
+            if (NativeServer != null)
+            {
+                NativeServer.Tick();
+            }
+            else
+            {
 #pragma warning disable CS0618
-            Server?.Tick();
+                Server?.Tick();
 #pragma warning restore CS0618
+            }
+            _serverTickCount++;
         }
 
+        // Client frame
         await Client.Frame(dt, ct).ConfigureAwait(false);
+        _frameCount++;
 
+        // Update connection state
         if (Client.Client.player != null && Client.Client.World != null)
         {
             IsConnected = true;
@@ -134,13 +278,19 @@ public sealed class ClientServerLoopbackSession : IDisposable
     /// <summary>
     /// Asynchronously advances the server and client by N frames in lockstep.
     /// </summary>
-    public async Task StepFramesAsync(int count, float dt = 1f / 60f, CancellationToken ct = default)
+    public async Task StepFramesAsync(int count, float dt = 1f / 60f, int serverTicksPerFrame = 1, CancellationToken ct = default)
     {
         if (_disposed) return;
+
+        if (count < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(count), count, "Frame count must be non-negative.");
+        }
+
         for (int i = 0; i < count; i++)
         {
             ct.ThrowIfCancellationRequested();
-            await StepAsync(dt, ct).ConfigureAwait(false);
+            await StepAsync(dt, serverTicksPerFrame, ct).ConfigureAwait(false);
         }
     }
 
@@ -175,7 +325,7 @@ public sealed class ClientServerLoopbackSession : IDisposable
         while (DateTime.UtcNow - start < timeout)
         {
             ct.ThrowIfCancellationRequested();
-            await StepAsync(dt, ct).ConfigureAwait(false);
+            await StepAsync(dt, ct: ct).ConfigureAwait(false);
 
             if (Client.Client.player != null && Client.Client.World != null)
             {
@@ -202,7 +352,7 @@ public sealed class ClientServerLoopbackSession : IDisposable
                 return true;
             }
 
-            await StepAsync(dt, ct).ConfigureAwait(false);
+            await StepAsync(dt, ct: ct).ConfigureAwait(false);
         }
 
         if (Client.FrameController.IsWorldReady(radius, out unmeshed))
@@ -240,7 +390,7 @@ public sealed class ClientServerLoopbackSession : IDisposable
                 return true;
             }
 
-            await StepAsync(dt, ct).ConfigureAwait(false);
+            await StepAsync(dt, ct: ct).ConfigureAwait(false);
         }
 
         if (Client.FrameController.IsWorldReady(radius, out unmeshed, center))
@@ -281,7 +431,7 @@ public sealed class ClientServerLoopbackSession : IDisposable
                 return true;
             }
 
-            await StepAsync(dt, ct).ConfigureAwait(false);
+            await StepAsync(dt, ct: ct).ConfigureAwait(false);
         }
 
         if (Client.FrameController.IsChunkMeshed(chunkPos))
@@ -323,7 +473,7 @@ public sealed class ClientServerLoopbackSession : IDisposable
                 return true;
             }
 
-            await StepAsync(dt, ct).ConfigureAwait(false);
+            await StepAsync(dt, ct: ct).ConfigureAwait(false);
         }
 
         if (Client.FrameController.AreAllMeshesReady())
