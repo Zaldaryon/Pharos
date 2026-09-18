@@ -22,6 +22,7 @@ using Zaldaryon.Pharos.Player;
 using Zaldaryon.Pharos.Server;
 using Zaldaryon.Pharos.Input;
 using Zaldaryon.Pharos.Timing;
+using Zaldaryon.Pharos.UI;
 
 namespace Zaldaryon.Pharos.Core;
 
@@ -87,6 +88,12 @@ public sealed class HeadlessClient : IDisposable
     /// Supports synthetic input injection, state queries, and thread-safe snapshots.
     /// </summary>
     public VirtualInputController Input { get; } = new();
+    /// <summary>
+    /// GUI inspector for headless dialog and widget inspection.
+    /// Supports enumerating open dialogs, HUD elements, and simulating button clicks.
+    /// </summary>
+    public GuiInspector Gui { get; }
+
 
 
     internal HeadlessClient(
@@ -106,6 +113,7 @@ public sealed class HeadlessClient : IDisposable
         Options = options;
         _tempDataPath = tempDataPath;
         FrameController = new DeterministicFrameController(client, platform, screenManager, runningGameScreen, window);
+        Gui = new GuiInspector(screenManager);
         TestPlayer = new ClientTestPlayer(client);
         Culling = new CullingInspector(client);
     }
