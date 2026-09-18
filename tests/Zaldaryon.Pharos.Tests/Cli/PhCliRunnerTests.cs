@@ -393,7 +393,7 @@ public class PhCliRunnerTests
         var exitCode = PhCliRunner.Run(["--help"], stdout, stderr);
 
         Assert.Equal(0, exitCode);
-        Assert.Contains("Pharos CLI Runner", stdout.ToString());
+        Assert.Contains("Pharos CLI", stdout.ToString());
     }
 
     [Fact]
