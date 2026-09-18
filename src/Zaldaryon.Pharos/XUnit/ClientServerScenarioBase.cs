@@ -263,7 +263,7 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime
                 return true;
             }
 
-            await _session.StepAsync(dt, ct).ConfigureAwait(false);
+            await _session.StepAsync(dt, 1, ct).ConfigureAwait(false);
         }
 
         return condition();
