@@ -1,7 +1,8 @@
 using System;
 using System.IO;
 using System.Reflection;
-using Atlas.Api;
+using System.Threading;
+using System.Threading.Tasks;
 using Vintagestory;
 using Vintagestory.API.Common;
 using Vintagestory.API.Config;
@@ -14,28 +15,54 @@ using Zaldaryon.Pharos.Platform;
 namespace Zaldaryon.Pharos.Server;
 
 /// <summary>
-/// Hosts an embedded, in-process Vintage Story server configured with Pixnop.Atlas world options and loopback networking.
+/// Hosts an embedded, in-process Vintage Story server with loopback networking.
 /// </summary>
-[Obsolete("Use EmbeddedServerHost instead. AtlasServerHost will be removed in a future version.", false)]
-public sealed class AtlasServerHost : IDisposable
+/// <remarks>
+/// <para>
+/// This host replaces <see cref="AtlasServerHost"/> with native Pharos types, removing
+/// the dependence on Pixnop.Atlas.WorldOptions.
+/// </para>
+/// <para>
+/// The host provides lifecycle guards for known engine race conditions:
+/// <list type="bullet">
+/// <item>Exit state: <c>server.exitState</c> is assigned before <c>PreLaunch()</c> to prevent NRE in packet parser threads.</item>
+/// <item>Asset drain: Shutdown waits for background <c>BuildServerAssetsPacket</c> tasks to complete.</item>
+/// <item>Exception containment: Known NREs in <c>ServerSystemMonitor.Dispose()</c> are caught and logged.</item>
+/// </list>
+/// </para>
+/// </remarks>
+public sealed class EmbeddedServerHost : IDisposable, IAsyncDisposable
 {
     private bool _disposed;
     private readonly bool _ownsDataPath;
+    private readonly MethodInfo? _waitOnBuildServerAssetsPacket;
 
+    /// <summary>The underlying Vintage Story server instance.</summary>
     public ServerMain Server { get; }
+
+    /// <summary>The dummy TCP transport layer used for in-process connections.</summary>
     public DummyNetwork TcpNetwork { get; }
+
+    /// <summary>The dummy UDP transport layer used for in-process connections.</summary>
     public DummyNetwork UdpNetwork { get; }
-    public WorldOptions Options { get; }
+
+    /// <summary>The world configuration options used to create this server.</summary>
+    public ServerWorldOptions Options { get; }
+
+    /// <summary>The data directory path used for server storage.</summary>
     public string DataPath { get; }
 
+    /// <summary>Returns true if the server is running and not disposed.</summary>
     public bool IsRunning => !_disposed && !Server.stopped;
+
+    /// <summary>Returns the current number of connected clients.</summary>
     public int ConnectedClientCount => Server.Clients?.Count ?? 0;
 
-    private AtlasServerHost(
+    private EmbeddedServerHost(
         ServerMain server,
         DummyNetwork tcpNetwork,
         DummyNetwork udpNetwork,
-        WorldOptions options,
+        ServerWorldOptions options,
         string dataPath,
         bool ownsDataPath)
     {
@@ -45,26 +72,27 @@ public sealed class AtlasServerHost : IDisposable
         Options = options;
         DataPath = dataPath;
         _ownsDataPath = ownsDataPath;
+
+        _waitOnBuildServerAssetsPacket = typeof(ServerMain).GetMethod(
+            "WaitOnBuildServerAssetsPacket",
+            BindingFlags.Instance | BindingFlags.NonPublic);
     }
 
     /// <summary>
-    /// Boots an embedded Atlas server instance with the specified world options and isolated scratch storage.
+    /// Boots an embedded server instance with the specified world options and isolated scratch storage.
     /// </summary>
-    public static AtlasServerHost Boot(WorldOptions? options = null, string? customDataPath = null)
+    /// <param name="options">World configuration options. When null, uses default superflat creative settings.</param>
+    /// <param name="customDataPath">Optional data directory. When null, creates a temporary scratch directory.</param>
+    /// <returns>A running embedded server host.</returns>
+    public static EmbeddedServerHost Boot(ServerWorldOptions? options = null, string? customDataPath = null)
     {
         HeadlessPlatformResolver.Initialize();
         HeadlessPlatformResolver.EnsureAssetsPath();
 
-        options ??= new WorldOptions
-        {
-            Seed = "424242",
-            WorldName = "PharosAtlasWorld",
-            PlayStyle = "creativebuilding",
-            WorldType = "superflat"
-        };
+        options ??= new ServerWorldOptions();
 
         bool ownsDataPath = string.IsNullOrEmpty(customDataPath);
-        string dataPath = customDataPath ?? Path.Combine(Path.GetTempPath(), "pharos-atlas-" + Guid.NewGuid().ToString("N")[..8]);
+        string dataPath = customDataPath ?? Path.Combine(Path.GetTempPath(), "pharos-embedded-" + Guid.NewGuid().ToString("N")[..8]);
 
         GamePaths.DataPath = dataPath;
         GamePaths.EnsurePathsExist();
@@ -88,7 +116,7 @@ public sealed class AtlasServerHost : IDisposable
         DummyUdpNetServer dummyUdpServer = new();
         dummyUdpServer.SetNetwork(udpNetwork);
 
-        string saveLocation = options.SaveFile ?? Path.Combine(dataPath, "Saves", options.WorldName + ".vcdbs");
+        string saveLocation = options.SaveFileLocation ?? Path.Combine(dataPath, "Saves", options.WorldName + ".vcdbs");
 
         StartServerArgs startArgs = new()
         {
@@ -99,19 +127,23 @@ public sealed class AtlasServerHost : IDisposable
             PlayStyle = options.PlayStyle,
             PlayStyleLangCode = options.PlayStyle,
             WorldType = options.WorldType,
-            WorldConfiguration = JsonObject.FromJson("{}"),
+            WorldConfiguration = JsonObject.FromJson(options.WorldConfigurationJson),
             Language = "en",
             IsNew = true
         };
 
         ServerMain server = new(startArgs, new[] { "--dataPath", dataPath }, progArgs, isDedicatedServer: false);
+
+        // CRITICAL: Assign exitState BEFORE PreLaunch() to prevent NRE in packet parser threads
         server.exitState = new GameExitState();
+
         server.MainSockets[0] = dummyTcpServer;
         server.UdpSockets[0] = dummyUdpServer;
 
         server.PreLaunch();
         server.Launch();
 
+        // Wait for background asset build tasks to settle
         try
         {
             MethodInfo? waitMethod = typeof(ServerMain).GetMethod("WaitOnBuildServerAssetsPacket", BindingFlags.Instance | BindingFlags.NonPublic);
@@ -122,7 +154,7 @@ public sealed class AtlasServerHost : IDisposable
             // Best effort wait
         }
 
-        return new AtlasServerHost(server, tcpNetwork, udpNetwork, options, dataPath, ownsDataPath);
+        return new EmbeddedServerHost(server, tcpNetwork, udpNetwork, options, dataPath, ownsDataPath);
     }
 
     /// <summary>
@@ -154,16 +186,33 @@ public sealed class AtlasServerHost : IDisposable
         if (_disposed) return;
         _disposed = true;
 
+        DrainAndDisposeCore();
+    }
+
+    /// <summary>
+    /// Asynchronously stops the server and cleans up resources.
+    /// </summary>
+    public async ValueTask DisposeAsync()
+    {
+        if (_disposed) return;
+        _disposed = true;
+
+        await Task.Run(DrainAndDisposeCore).ConfigureAwait(false);
+    }
+
+    private void DrainAndDisposeCore()
+    {
+        // Wait for background BuildServerAssetsPacket tasks to settle
         try
         {
-            MethodInfo? waitMethod = typeof(ServerMain).GetMethod("WaitOnBuildServerAssetsPacket", BindingFlags.Instance | BindingFlags.NonPublic);
-            waitMethod?.Invoke(Server, null);
+            _waitOnBuildServerAssetsPacket?.Invoke(Server, null);
         }
         catch
         {
-            // Best effort wait
+            // Best effort drain
         }
 
+        // Stop the server
         try
         {
             if (!Server.stopped)
@@ -176,15 +225,29 @@ public sealed class AtlasServerHost : IDisposable
             // Ignore server stop failures during teardown
         }
 
+        // Dispose server with exception containment for known ServerSystemMonitor NRE
         try
         {
             Server.Dispose();
         }
+        catch (NullReferenceException nre)
+        {
+            // Known NRE in ServerSystemMonitor.Dispose() during teardown
+            try
+            {
+                ServerMain.Logger?.Warning("ServerSystemMonitor.Dispose() NRE during teardown (expected): {0}", nre.Message);
+            }
+            catch
+            {
+                // Ignore logging failures
+            }
+        }
         catch
         {
-            // Ignore server dispose failures during teardown
+            // Ignore other server dispose failures during teardown
         }
 
+        // Cleanup scratch directory if we own it
         if (_ownsDataPath && Directory.Exists(DataPath))
         {
             try
