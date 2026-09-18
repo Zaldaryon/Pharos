@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.IO;
 using System.Reflection;
 using System.Threading;
@@ -30,12 +31,25 @@ namespace Zaldaryon.Pharos.Server;
 /// <item>Exception containment: Known NREs in <c>ServerSystemMonitor.Dispose()</c> are caught and logged.</item>
 /// </list>
 /// </para>
+/// <para>
+/// The host provides deterministic tick control:
+/// <list type="bullet">
+/// <item><see cref="Tick"/>: Advances the server by exactly one simulation tick.</item>
+/// <item><see cref="Ticks"/>: Advances the server by N consecutive ticks.</item>
+/// <item><see cref="TickUntilAsync(Func{bool}, int, CancellationToken)"/>: Ticks until a condition is met.</item>
+/// <item><see cref="RunOnGameThreadAsync(Action)"/>: Queues work to execute on the game thread during tick processing.</item>
+/// </list>
+/// </para>
 /// </remarks>
 public sealed class EmbeddedServerHost : IDisposable, IAsyncDisposable
 {
     private bool _disposed;
     private readonly bool _ownsDataPath;
     private readonly MethodInfo? _waitOnBuildServerAssetsPacket;
+    private int _tickCount;
+    private Exception? _serverException;
+    private readonly ConcurrentQueue<(Action action, TaskCompletionSource tcs)> _gameThreadQueue = new();
+    private readonly ConcurrentQueue<(Func<object?> func, TaskCompletionSource<object?> tcs)> _gameThreadFuncQueue = new();
 
     /// <summary>The underlying Vintage Story server instance.</summary>
     public ServerMain Server { get; }
@@ -57,6 +71,11 @@ public sealed class EmbeddedServerHost : IDisposable, IAsyncDisposable
 
     /// <summary>Returns the current number of connected clients.</summary>
     public int ConnectedClientCount => Server.Clients?.Count ?? 0;
+
+    /// <summary>
+    /// Gets the number of simulation ticks that have been processed.
+    /// </summary>
+    public int TickCount => _tickCount;
 
     private EmbeddedServerHost(
         ServerMain server,
@@ -158,23 +177,245 @@ public sealed class EmbeddedServerHost : IDisposable, IAsyncDisposable
     }
 
     /// <summary>
-    /// Advances the server by one tick.
+    /// Advances the server by exactly one simulation tick.
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// This method processes one server tick via <c>ServerMain.Process()</c> and drains
+    /// any pending game thread dispatch queue items before and after the tick.
+    /// </para>
+    /// <para>
+    /// If the server has crashed, this method throws <see cref="ServerCrashedException"/>
+    /// wrapping the original exception.
+    /// </para>
+    /// </remarks>
+    /// <exception cref="ServerCrashedException">The server previously crashed during tick processing.</exception>
     public void Tick()
     {
         if (_disposed) return;
-        Server.Process();
+
+        // Check for prior crash
+        if (_serverException is not null)
+        {
+            throw ServerCrashedException.FromServerException(_serverException);
+        }
+
+        // Drain pending game thread actions before the tick
+        DrainGameThreadQueue();
+
+        try
+        {
+            Server.Process();
+            _tickCount++;
+        }
+        catch (Exception ex)
+        {
+            _serverException = ex;
+            FaultPendingWaiters(ex);
+            throw ServerCrashedException.FromServerException(ex);
+        }
+
+        // Drain any actions queued during the tick
+        DrainGameThreadQueue();
     }
 
     /// <summary>
-    /// Advances the server by N ticks.
+    /// Advances the server by the specified number of consecutive ticks.
     /// </summary>
+    /// <param name="count">The number of ticks to process.</param>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="count"/> is negative.</exception>
+    /// <exception cref="ServerCrashedException">The server crashed during tick processing.</exception>
     public void Ticks(int count)
     {
+        if (count < 0)
+            throw new ArgumentOutOfRangeException(nameof(count), count, "Tick count must be non-negative.");
+
         if (_disposed) return;
+
         for (int i = 0; i < count; i++)
         {
-            Server.Process();
+            Tick();
+        }
+    }
+
+    /// <summary>
+    /// Advances the server until the specified predicate returns true or the maximum tick count is reached.
+    /// </summary>
+    /// <param name="predicate">A function that returns true when the wait condition is satisfied.</param>
+    /// <param name="maxTicks">The maximum number of ticks to wait. Default is 600 (10 seconds at 60 TPS).</param>
+    /// <param name="ct">A cancellation token to cancel the wait.</param>
+    /// <returns>True if the predicate was satisfied; false if maxTicks was reached.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="predicate"/> is null.</exception>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="maxTicks"/> is less than or equal to zero.</exception>
+    /// <exception cref="OperationCanceledException">The operation was canceled.</exception>
+    /// <exception cref="ServerCrashedException">The server crashed during tick processing.</exception>
+    public Task<bool> TickUntilAsync(Func<bool> predicate, int maxTicks = 600, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(predicate);
+
+        if (maxTicks <= 0)
+            throw new ArgumentOutOfRangeException(nameof(maxTicks), maxTicks, "Maximum tick count must be positive.");
+
+        return TickUntilAsyncCore(predicate, maxTicks, ct);
+    }
+
+    /// <summary>
+    /// Advances the server until the specified async predicate returns true or the maximum tick count is reached.
+    /// </summary>
+    /// <param name="asyncPredicate">An async function that returns true when the wait condition is satisfied.</param>
+    /// <param name="maxTicks">The maximum number of ticks to wait. Default is 600 (10 seconds at 60 TPS).</param>
+    /// <param name="ct">A cancellation token to cancel the wait.</param>
+    /// <returns>True if the predicate was satisfied; false if maxTicks was reached.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="asyncPredicate"/> is null.</exception>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="maxTicks"/> is less than or equal to zero.</exception>
+    /// <exception cref="OperationCanceledException">The operation was canceled.</exception>
+    /// <exception cref="ServerCrashedException">The server crashed during tick processing.</exception>
+    public Task<bool> TickUntilAsync(Func<Task<bool>> asyncPredicate, int maxTicks = 600, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(asyncPredicate);
+
+        if (maxTicks <= 0)
+            throw new ArgumentOutOfRangeException(nameof(maxTicks), maxTicks, "Maximum tick count must be positive.");
+
+        return TickUntilAsyncCore(asyncPredicate, maxTicks, ct);
+    }
+
+    private async Task<bool> TickUntilAsyncCore(Func<bool> predicate, int maxTicks, CancellationToken ct)
+    {
+        for (int i = 0; i < maxTicks; i++)
+        {
+            ct.ThrowIfCancellationRequested();
+
+            // Check for prior crash before ticking
+            if (_serverException is not null)
+            {
+                throw ServerCrashedException.FromServerException(_serverException);
+            }
+
+            if (predicate())
+            {
+                return true;
+            }
+
+            Tick();
+        }
+
+        return false;
+    }
+
+    private async Task<bool> TickUntilAsyncCore(Func<Task<bool>> asyncPredicate, int maxTicks, CancellationToken ct)
+    {
+        for (int i = 0; i < maxTicks; i++)
+        {
+            ct.ThrowIfCancellationRequested();
+
+            // Check for prior crash before ticking
+            if (_serverException is not null)
+            {
+                throw ServerCrashedException.FromServerException(_serverException);
+            }
+
+            if (await asyncPredicate().ConfigureAwait(false))
+            {
+                return true;
+            }
+
+            Tick();
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Queues an action to execute on the game thread during the next tick.
+    /// </summary>
+    /// <param name="action">The action to execute.</param>
+    /// <returns>A task that completes when the action has executed.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="action"/> is null.</exception>
+    /// <exception cref="ServerCrashedException">The server crashed before the action could execute.</exception>
+    public Task RunOnGameThreadAsync(Action action)
+    {
+        ArgumentNullException.ThrowIfNull(action);
+
+        // Check for prior crash
+        if (_serverException is not null)
+        {
+            return Task.FromException(ServerCrashedException.FromServerException(_serverException));
+        }
+
+        TaskCompletionSource tcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        _gameThreadQueue.Enqueue((action, tcs));
+        return tcs.Task;
+    }
+
+    /// <summary>
+    /// Queues a function to execute on the game thread during the next tick.
+    /// </summary>
+    /// <typeparam name="T">The return type of the function.</typeparam>
+    /// <param name="func">The function to execute.</param>
+    /// <returns>A task that completes with the function's result when the function has executed.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="func"/> is null.</exception>
+    /// <exception cref="ServerCrashedException">The server crashed before the function could execute.</exception>
+    public Task<T> RunOnGameThreadAsync<T>(Func<T> func)
+    {
+        ArgumentNullException.ThrowIfNull(func);
+
+        // Check for prior crash
+        if (_serverException is not null)
+        {
+            return Task.FromException<T>(ServerCrashedException.FromServerException(_serverException));
+        }
+
+        TaskCompletionSource<object?> tcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        _gameThreadFuncQueue.Enqueue((() => func(), tcs));
+        return tcs.Task.ContinueWith(t => (T)t.Result!, TaskContinuationOptions.ExecuteSynchronously);
+    }
+
+    private void DrainGameThreadQueue()
+    {
+        // Drain action queue
+        while (_gameThreadQueue.TryDequeue(out var item))
+        {
+            try
+            {
+                item.action();
+                item.tcs.TrySetResult();
+            }
+            catch (Exception ex)
+            {
+                item.tcs.TrySetException(ex);
+            }
+        }
+
+        // Drain func queue
+        while (_gameThreadFuncQueue.TryDequeue(out var item))
+        {
+            try
+            {
+                object? result = item.func();
+                item.tcs.TrySetResult(result);
+            }
+            catch (Exception ex)
+            {
+                item.tcs.TrySetException(ex);
+            }
+        }
+    }
+
+    private void FaultPendingWaiters(Exception serverException)
+    {
+        ServerCrashedException crashEx = ServerCrashedException.FromServerException(serverException);
+
+        // Fault all pending action queue items
+        while (_gameThreadQueue.TryDequeue(out var item))
+        {
+            item.tcs.TrySetException(crashEx);
+        }
+
+        // Fault all pending func queue items
+        while (_gameThreadFuncQueue.TryDequeue(out var item))
+        {
+            item.tcs.TrySetException(crashEx);
         }
     }
 
