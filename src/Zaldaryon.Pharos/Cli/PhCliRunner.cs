@@ -8,6 +8,7 @@ namespace Zaldaryon.Pharos.Cli;
 /// <summary>
 /// CLI entry point for running Pharos xUnit tests without an IDE.
 /// Discovers and executes [Fact] and [Theory] tests via reflection.
+/// Also provides migration tools via subcommands.
 /// </summary>
 public static class PhCliRunner
 {
@@ -50,12 +51,26 @@ public static class PhCliRunner
         ArgumentNullException.ThrowIfNull(stdout);
         ArgumentNullException.ThrowIfNull(stderr);
 
+        // Check for subcommands first
+        if (args.Length > 0)
+        {
+            switch (args[0])
+            {
+                case "migrate-atlas":
+                    return RunMigrateAtlas(args, stdout, stderr);
+
+                case "help" when args.Length > 1 && args[1] == "migrate-atlas":
+                    stdout.WriteLine(MigrateAtlasCommand.GetHelpText());
+                    return ExitCodeSuccess;
+            }
+        }
+
         try
         {
             var options = CliRunOptions.Parse(args);
             if (options is null)
             {
-                stdout.WriteLine(CliRunOptions.GetHelpText());
+                stdout.WriteLine(GetMainHelpText());
                 return ExitCodeSuccess;
             }
 
@@ -73,7 +88,7 @@ public static class PhCliRunner
         {
             stderr.WriteLine($"Error: {ex.Message}");
             stderr.WriteLine();
-            stderr.WriteLine(CliRunOptions.GetHelpText());
+            stderr.WriteLine(GetMainHelpText());
             return ExitCodeError;
         }
         catch (Exception ex)
@@ -86,6 +101,73 @@ public static class PhCliRunner
             return ExitCodeError;
         }
     }
+
+    /// <summary>
+    /// Runs the migrate-atlas subcommand.
+    /// </summary>
+    private static int RunMigrateAtlas(string[] args, TextWriter stdout, TextWriter stderr)
+    {
+        try
+        {
+            var options = MigrateAtlasCommand.ParseArgs(args);
+            if (options is null)
+            {
+                stdout.WriteLine(MigrateAtlasCommand.GetHelpText());
+                return ExitCodeSuccess;
+            }
+
+            return MigrateAtlasCommand.Run(options, stdout, stderr);
+        }
+        catch (ArgumentException ex)
+        {
+            stderr.WriteLine($"Error: {ex.Message}");
+            stderr.WriteLine();
+            stderr.WriteLine(MigrateAtlasCommand.GetHelpText());
+            return ExitCodeError;
+        }
+        catch (Exception ex)
+        {
+            stderr.WriteLine($"Fatal error: {ex.Message}");
+            if (args.Contains("--verbose") || args.Contains("-v"))
+            {
+                stderr.WriteLine(ex.StackTrace);
+            }
+            return ExitCodeError;
+        }
+    }
+
+    /// <summary>
+    /// Gets the main CLI help text including available subcommands.
+    /// </summary>
+    public static string GetMainHelpText() => """
+        Pharos CLI - Headless test execution and migration tools
+
+        Usage: pharos [command] [options] [arguments]
+
+        Commands:
+          (default)         Run xUnit tests from a test assembly
+          migrate-atlas     Migrate Atlas test suites to Pharos
+          help <command>    Show help for a specific command
+
+        Test Runner Options:
+          -a, --assembly <path>      Path to the test assembly
+          -f, --filter <pattern>     Filter tests by name (case-insensitive contains)
+          -o, --output-dir <path>    Directory for test output files
+          -v, --verbose              Enable verbose output
+          -p, --max-parallel <n>     Maximum parallel test execution (default: 1)
+          -h, --help                 Show this help message
+
+        Exit codes:
+          0 - All tests passed (or successful operation)
+          1 - One or more tests failed
+          2 - Error occurred (invalid arguments, assembly not found, etc.)
+
+        Examples:
+          pharos MyTests.dll
+          pharos -a MyTests.dll -f "Inventory" -v
+          pharos migrate-atlas ./MyTestProject --dry-run
+          pharos help migrate-atlas
+        """;
 
     /// <summary>
     /// Executes tests based on the provided options.
