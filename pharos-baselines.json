@@ -6,6 +6,9 @@
     "SimdCulling": 10.0,
     "MeshCompression": 15.0,
     "FsrPipeline": 2.0,
-    "ModCompatibility": 1.0
+    "ModCompatibility": 1.0,
+    "GreedyMesh_Uniform": 2.0,
+    "GreedyMesh_Checkerboard": 5.0,
+    "GreedyMesh_Random": 3.5
   }
 }

@@ -16,14 +16,19 @@ public static class OptimumBenchmarks
     /// </summary>
     public static IReadOnlyList<PerformanceBenchmark> CreateAll()
     {
-        return
-        [
+        var benchmarks = new List<PerformanceBenchmark>
+        {
             new IndirectDrawBenchmark(),
             new SimdCullingBenchmark(),
             new MeshCompressionBenchmark(),
             new FsrPipelineBenchmark(),
             new ModCompatibilityBenchmark()
-        ];
+        };
+
+        // Add greedy mesh benchmarks for all complexity tiers
+        benchmarks.AddRange(GreedyMeshBenchmarks.CreateAll());
+
+        return benchmarks;
     }
 }
 
