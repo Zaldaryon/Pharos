@@ -245,4 +245,130 @@ public static class PharosAssert
             }
         }
     }
+
+    // -------------------------------------------------------------------------
+    // FSR render scale assertions
+    // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// Asserts that the render scale is active and matches the expected value within tolerance.
+    /// </summary>
+    /// <param name="snapshot">Render scale snapshot to validate.</param>
+    /// <param name="expectedScale">Expected render scale factor (0.5-1.0).</param>
+    /// <param name="tolerance">Tolerance for scale comparison (default: 0.01f).</param>
+    /// <exception cref="PharosAssertException">Thrown when render scale does not match expected value.</exception>
+    public static void RenderScaleActive(RenderScaleSnapshot snapshot, float expectedScale, float tolerance = 0.01f)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+
+        if (expectedScale < 0.5f || expectedScale > 1.0f)
+        {
+            throw new ArgumentOutOfRangeException(nameof(expectedScale),
+                "Expected scale must be between 0.5 and 1.0.");
+        }
+
+        float diff = Math.Abs(snapshot.RenderScale - expectedScale);
+        if (diff > tolerance)
+        {
+            throw new PharosAssertException(
+                $"Expected render scale {expectedScale:F2} (±{tolerance:F2}), but got {snapshot.RenderScale:F2} " +
+                $"(difference: {diff:F3}).");
+        }
+
+        // Verify pre-upscale dimensions are consistent with the actual render scale (not expected)
+        // This accounts for tolerance in the scale value itself
+        int expectedWidth = (int)(snapshot.DisplayWidth * snapshot.RenderScale);
+        int expectedHeight = (int)(snapshot.DisplayHeight * snapshot.RenderScale);
+
+        if (snapshot.PreUpscaleWidth != expectedWidth)
+        {
+            throw new PharosAssertException(
+                $"Pre-upscale width {snapshot.PreUpscaleWidth} does not match expected {expectedWidth} " +
+                $"(DisplayWidth {snapshot.DisplayWidth} × actual scale {snapshot.RenderScale:F3}).");
+        }
+
+        if (snapshot.PreUpscaleHeight != expectedHeight)
+        {
+            throw new PharosAssertException(
+                $"Pre-upscale height {snapshot.PreUpscaleHeight} does not match expected {expectedHeight} " +
+                $"(DisplayHeight {snapshot.DisplayHeight} × actual scale {snapshot.RenderScale:F3}).");
+        }
+    }
+
+    /// <summary>
+    /// Asserts that the FSR pipeline executed completely (both EASU and RCAS passes).
+    /// </summary>
+    /// <param name="snapshot">Render scale snapshot to validate.</param>
+    /// <exception cref="PharosAssertException">Thrown when FSR pipeline did not execute completely.</exception>
+    public static void FsrPipelineExecuted(RenderScaleSnapshot snapshot)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+
+        if (!snapshot.FsrEnabled)
+        {
+            throw new PharosAssertException(
+                "FSR is not enabled. Cannot verify pipeline execution when FSR is disabled.");
+        }
+
+        if (!snapshot.EasuShaderDispatched)
+        {
+            throw new PharosAssertException(
+                "EASU (Edge-Adaptive Spatial Upsampling) shader was not dispatched. " +
+                "FSR pipeline is incomplete.");
+        }
+
+        if (!snapshot.RcasShaderDispatched)
+        {
+            throw new PharosAssertException(
+                "RCAS (Robust Contrast Adaptive Sharpening) shader was not dispatched. " +
+                "FSR pipeline is incomplete.");
+        }
+    }
+
+    /// <summary>
+    /// Asserts that FSR is disabled and the renderer is in fallback/native resolution mode.
+    /// </summary>
+    /// <param name="snapshot">Render scale snapshot to validate.</param>
+    /// <exception cref="PharosAssertException">Thrown when FSR is enabled or render scale is not native.</exception>
+    public static void FsrFallbackMode(RenderScaleSnapshot snapshot)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+
+        if (!snapshot.IsFallbackMode)
+        {
+            throw new PharosAssertException(
+                $"Expected FSR fallback/native mode, but FSR is enabled with render scale {snapshot.RenderScale:F2}.");
+        }
+
+        if (snapshot.EasuShaderDispatched || snapshot.RcasShaderDispatched)
+        {
+            throw new PharosAssertException(
+                "FSR shaders were dispatched in fallback mode. " +
+                $"EASU dispatched: {snapshot.EasuShaderDispatched}, RCAS dispatched: {snapshot.RcasShaderDispatched}.");
+        }
+    }
+
+    /// <summary>
+    /// Asserts that the upscaled output resolution matches the target window dimensions.
+    /// </summary>
+    /// <param name="snapshot">Render scale snapshot to validate.</param>
+    /// <param name="targetWidth">Expected final output width.</param>
+    /// <param name="targetHeight">Expected final output height.</param>
+    /// <exception cref="PharosAssertException">Thrown when output dimensions do not match target.</exception>
+    public static void OutputResolutionMatches(RenderScaleSnapshot snapshot, int targetWidth, int targetHeight)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+
+        if (snapshot.DisplayWidth != targetWidth)
+        {
+            throw new PharosAssertException(
+                $"Display width {snapshot.DisplayWidth} does not match target {targetWidth}.");
+        }
+
+        if (snapshot.DisplayHeight != targetHeight)
+        {
+            throw new PharosAssertException(
+                $"Display height {snapshot.DisplayHeight} does not match target {targetHeight}.");
+        }
+    }
 }
