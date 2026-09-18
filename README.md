@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/pharos-logo.svg" alt="Pharos logo" width="100" height="120" />
+  <img src="docs/pharos-logo.svg" alt="Pharos logo" width="120" height="120" />
 </p>
 
 # Pharos
