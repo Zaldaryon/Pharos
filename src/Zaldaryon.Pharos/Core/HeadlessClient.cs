@@ -20,6 +20,7 @@ using Zaldaryon.Pharos.Memory;
 using Zaldaryon.Pharos.Platform;
 using Zaldaryon.Pharos.Player;
 using Zaldaryon.Pharos.Server;
+using Zaldaryon.Pharos.Input;
 using Zaldaryon.Pharos.Timing;
 
 namespace Zaldaryon.Pharos.Core;
@@ -81,6 +82,12 @@ public sealed class HeadlessClient : IDisposable
     /// <see cref="IndirectDrawInspector.Snapshot"/> after to capture indirect draw statistics.
     /// </summary>
     public IndirectDrawInspector IndirectDraw { get; } = new();
+    /// <summary>
+    /// Virtual input controller for deterministic mouse and keyboard simulation.
+    /// Supports synthetic input injection, state queries, and thread-safe snapshots.
+    /// </summary>
+    public VirtualInputController Input { get; } = new();
+
 
     internal HeadlessClient(
         ClientMain client,
