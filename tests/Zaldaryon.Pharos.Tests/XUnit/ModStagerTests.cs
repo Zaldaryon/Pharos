@@ -120,8 +120,9 @@ public class ModStagerTests : IDisposable
     [Fact]
     public void ModStager_ResolvePath_Absolute_ReturnsSame()
     {
-        var absolutePath = @"C:\Mods\MyMod";
-        var result = ModStager.ResolvePath(absolutePath, @"C:\Some\Other\Dir");
+        var absolutePath = OperatingSystem.IsWindows() ? @"C:\Mods\MyMod" : "/tmp/Mods/MyMod";
+        var baseDir = OperatingSystem.IsWindows() ? @"C:\Some\Other\Dir" : "/var/Some/Other/Dir";
+        var result = ModStager.ResolvePath(absolutePath, baseDir);
 
         Assert.Equal(absolutePath, result);
     }
@@ -130,11 +131,12 @@ public class ModStagerTests : IDisposable
     public void ModStager_ResolvePath_Relative_ResolvedAgainstBase()
     {
         var relativePath = "mods/mymod";
-        var baseDir = @"C:\TestProject\bin";
+        var baseDir = OperatingSystem.IsWindows() ? @"C:\TestProject\bin" : "/TestProject/bin";
 
         var result = ModStager.ResolvePath(relativePath, baseDir);
 
-        Assert.Equal(@"C:\TestProject\bin\mods\mymod", result);
+        var expected = Path.GetFullPath(Path.Combine(baseDir, relativePath));
+        Assert.Equal(expected, result);
     }
 
     [Fact]

@@ -83,10 +83,60 @@ public static class HeadlessClientBootstrap
             if (amField?.GetValue(platform) == null)
             {
                 var am = new AssetManager(GamePaths.AssetsPath, EnumAppSide.Client);
-                am.Origins = new List<IAssetOrigin>();
-                am.Assets = new Dictionary<AssetLocation, IAsset>();
-                typeof(AssetManager).GetField("assetsByCategory", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public)
-                    ?.SetValue(am, new Dictionary<string, List<IAsset>>());
+                if (Directory.Exists(GamePaths.AssetsPath))
+                {
+                    try
+                    {
+                        am.InitAndLoadBaseAssets(logger, "textures");
+                    }
+                    catch
+                    {
+                        // Fall back to manual collections if base asset discovery fails
+                    }
+                }
+
+                if (am.Origins == null || am.Origins.Count == 0)
+                {
+                    am.Origins = new List<IAssetOrigin>();
+                    am.Assets = new Dictionary<AssetLocation, IAsset>();
+                    typeof(AssetManager).GetField("assetsByCategory", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public)
+                        ?.SetValue(am, new Dictionary<string, List<IAsset>>());
+                }
+
+                AssetLocation cubeLoc = new("shapes/block/basic/cube.json");
+                if (!am.Assets.ContainsKey(cubeLoc))
+                {
+                    const string basicCubeJson = """
+                    {
+                        "textures": { "all": "unknown" },
+                        "elements": [
+                            {
+                                "name": "Cube",
+                                "from": [ 0.0, 0.0, 0.0 ],
+                                "to": [ 16.0, 16.0, 16.0 ],
+                                "faces": {
+                                    "north": { "texture": "#north", "uv": [ 0.0, 0.0, 16.0, 16.0 ] },
+                                    "east": { "texture": "#east", "uv": [ 0.0, 0.0, 16.0, 16.0 ] },
+                                    "south": { "texture": "#south", "uv": [ 0.0, 0.0, 16.0, 16.0 ] },
+                                    "west": { "texture": "#west", "uv": [ 0.0, 0.0, 16.0, 16.0 ] },
+                                    "up": { "texture": "#up", "uv": [ 0.0, 0.0, 16.0, 16.0 ] },
+                                    "down": { "texture": "#down", "uv": [ 0.0, 0.0, 16.0, 16.0 ] }
+                                }
+                            }
+                        ]
+                    }
+                    """;
+                    IAssetOrigin origin = am.Origins.FirstOrDefault() ?? new PathOrigin("game", GamePaths.AssetsPath ?? AppContext.BaseDirectory);
+                    Asset cubeAsset = new(System.Text.Encoding.UTF8.GetBytes(basicCubeJson), cubeLoc, origin)
+                    {
+                        FilePath = "shapes/block/basic/cube.json"
+                    };
+                    am.Assets[cubeLoc] = cubeAsset;
+                }
+
+                typeof(AssetManager).GetField("allAssetsLoaded", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public)
+                    ?.SetValue(am, true);
+
                 amField?.SetValue(platform, am);
             }
 

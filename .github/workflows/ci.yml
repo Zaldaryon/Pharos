@@ -46,10 +46,20 @@ jobs:
           tar xzf /tmp/vs.tar.gz -C ${{ env.VS_CACHE_PATH }}/${{ env.VS_VERSION }} --strip-components=1
           rm /tmp/vs.tar.gz
 
-      - name: Build and test with Mesa headless
+      - name: Build
         env:
           VINTAGE_STORY: ${{ env.VS_CACHE_PATH }}/${{ env.VS_VERSION }}
-          LD_LIBRARY_PATH: ${{ env.VS_CACHE_PATH }}/${{ env.VS_VERSION }}/Lib:${{ env.VS_CACHE_PATH }}/${{ env.VS_VERSION }}
+        run: dotnet build Pharos.sln -c Release
+
+      - name: Stage assets and native libraries
+        run: |
+          ln -sf ${{ env.VS_CACHE_PATH }}/${{ env.VS_VERSION }}/assets tests/Zaldaryon.Pharos.Tests/bin/Release/net10.0/assets || true
+          ln -sf ${{ env.VS_CACHE_PATH }}/${{ env.VS_VERSION }}/assets ./assets || true
+
+      - name: Test with Mesa headless
+        env:
+          VINTAGE_STORY: ${{ env.VS_CACHE_PATH }}/${{ env.VS_VERSION }}
+          LD_LIBRARY_PATH: ${{ env.VS_CACHE_PATH }}/${{ env.VS_VERSION }}/Lib:${{ env.VS_CACHE_PATH }}/${{ env.VS_VERSION }}:/usr/lib/x86_64-linux-gnu
           LIBGL_ALWAYS_SOFTWARE: 1
           GALLIUM_DRIVER: llvmpipe
           MESA_LOADER_DRIVER_OVERRIDE: llvmpipe
@@ -57,11 +67,7 @@ jobs:
           MESA_GL_VERSION_OVERRIDE: "4.5"
           MESA_GLSL_VERSION_OVERRIDE: "450"
           ALSOFT_DRIVERS: null
-        run: |
-          mkdir -p tests/Zaldaryon.Pharos.Tests/bin/Release/net10.0
-          ln -sf ${{ env.VS_CACHE_PATH }}/${{ env.VS_VERSION }}/assets tests/Zaldaryon.Pharos.Tests/bin/Release/net10.0/assets || true
-          ln -sf ${{ env.VS_CACHE_PATH }}/${{ env.VS_VERSION }}/assets ./assets || true
-          xvfb-run -a -s "-screen 0 1280x720x24" dotnet test Pharos.sln -c Release
+        run: xvfb-run -a -s "-screen 0 1280x720x24" dotnet test Pharos.sln -c Release --no-build
 
   test-windows:
     name: Build and Test (Windows)
