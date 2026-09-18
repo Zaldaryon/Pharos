@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Reflection;
 using Atlas.Api;
 using Vintagestory;
 using Vintagestory.API.Common;
@@ -110,6 +111,16 @@ public sealed class AtlasServerHost : IDisposable
         server.PreLaunch();
         server.Launch();
 
+        try
+        {
+            MethodInfo? waitMethod = typeof(ServerMain).GetMethod("WaitOnBuildServerAssetsPacket", BindingFlags.Instance | BindingFlags.NonPublic);
+            waitMethod?.Invoke(server, null);
+        }
+        catch
+        {
+            // Best effort wait
+        }
+
         return new AtlasServerHost(server, tcpNetwork, udpNetwork, options, dataPath, ownsDataPath);
     }
 
@@ -141,6 +152,16 @@ public sealed class AtlasServerHost : IDisposable
     {
         if (_disposed) return;
         _disposed = true;
+
+        try
+        {
+            MethodInfo? waitMethod = typeof(ServerMain).GetMethod("WaitOnBuildServerAssetsPacket", BindingFlags.Instance | BindingFlags.NonPublic);
+            waitMethod?.Invoke(Server, null);
+        }
+        catch
+        {
+            // Best effort wait
+        }
 
         try
         {
