@@ -12,7 +12,25 @@
     <VintageStoryPath Condition="'$(VintageStoryPath)' == ''">$(VINTAGE_STORY)</VintageStoryPath>
     <VintageStoryPath Condition="'$(VintageStoryPath)' == '' and Exists('C:\Games\VintageStory')">C:\Games\VintageStory</VintageStoryPath>
     <VintageStoryPath Condition="'$(VintageStoryPath)' == '' and Exists('$(MSBuildThisFileDirectory)../../../.vanilla/win-x64/vintagestory')">$(MSBuildThisFileDirectory)../../../.vanilla/win-x64/vintagestory</VintageStoryPath>
+
+    <!-- NuGet packaging -->
+    <IsPackable>true</IsPackable>
+    <PackageId>Zaldaryon.Pharos</PackageId>
+    <Version>0.1.0</Version>
+    <Authors>Zaldaryon</Authors>
+    <Description>Headless Vintage Story client test harness. Boots an embedded client without a window and drives it frame by frame for xUnit scenario testing.</Description>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <RepositoryUrl>https://github.com/Zaldaryon/Pharos</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageTags>vintagestory;testing;headless;xunit;game-testing</PackageTags>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
   </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="..\..\README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
 
   <ItemGroup>
     <InternalsVisibleTo Include="Zaldaryon.Pharos.Tests" />
@@ -78,14 +96,17 @@
   <ItemGroup>
     <Content Include="$(VintageStoryPath)\Lib\glfw3.dll" Condition="Exists('$(VintageStoryPath)\Lib\glfw3.dll')">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Pack>false</Pack>
       <Visible>false</Visible>
     </Content>
     <Content Include="$(VintageStoryPath)\Lib\libSkiaSharp.dll" Condition="Exists('$(VintageStoryPath)\Lib\libSkiaSharp.dll')">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Pack>false</Pack>
       <Visible>false</Visible>
     </Content>
     <Content Include="$(VintageStoryPath)\Lib\OpenAL32.dll" Condition="Exists('$(VintageStoryPath)\Lib\OpenAL32.dll')">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Pack>false</Pack>
       <Visible>false</Visible>
     </Content>
   </ItemGroup>
