@@ -66,6 +66,9 @@ public sealed class EmbeddedServerHost : IDisposable, IAsyncDisposable
     /// <summary>The data directory path used for server storage.</summary>
     public string DataPath { get; }
 
+    /// <summary>The sandbox instance used for this server, if any.</summary>
+    public ServerSandbox? Sandbox { get; }
+
     /// <summary>Returns true if the server is running and not disposed.</summary>
     public bool IsRunning => !_disposed && !Server.stopped;
 
@@ -83,7 +86,8 @@ public sealed class EmbeddedServerHost : IDisposable, IAsyncDisposable
         DummyNetwork udpNetwork,
         ServerWorldOptions options,
         string dataPath,
-        bool ownsDataPath)
+        bool ownsDataPath,
+        ServerSandbox? sandbox = null)
     {
         Server = server;
         TcpNetwork = tcpNetwork;
@@ -91,6 +95,7 @@ public sealed class EmbeddedServerHost : IDisposable, IAsyncDisposable
         Options = options;
         DataPath = dataPath;
         _ownsDataPath = ownsDataPath;
+        Sandbox = sandbox;
 
         _waitOnBuildServerAssetsPacket = typeof(ServerMain).GetMethod(
             "WaitOnBuildServerAssetsPacket",
@@ -173,7 +178,129 @@ public sealed class EmbeddedServerHost : IDisposable, IAsyncDisposable
             // Best effort wait
         }
 
-        return new EmbeddedServerHost(server, tcpNetwork, udpNetwork, options, dataPath, ownsDataPath);
+        return new EmbeddedServerHost(server, tcpNetwork, udpNetwork, options, dataPath, ownsDataPath, sandbox: null);
+    }
+
+    /// <summary>
+    /// Boots an embedded server instance using a pre-configured sandbox for filesystem isolation.
+    /// </summary>
+    /// <param name="sandbox">The server sandbox to use for storage paths.</param>
+    /// <param name="options">World configuration options. When null, uses default superflat creative settings.</param>
+    /// <returns>A running embedded server host.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="sandbox"/> is null.</exception>
+    public static EmbeddedServerHost Boot(ServerSandbox sandbox, ServerWorldOptions? options = null)
+    {
+        ArgumentNullException.ThrowIfNull(sandbox);
+
+        HeadlessPlatformResolver.Initialize();
+        HeadlessPlatformResolver.EnsureAssetsPath();
+
+        options ??= new ServerWorldOptions();
+
+        string dataPath = sandbox.RootPath;
+
+        GamePaths.DataPath = dataPath;
+        GamePaths.EnsurePathsExist();
+
+        ServerProgramArgs progArgs = new()
+        {
+            DataPath = dataPath
+        };
+        ServerMain.Logger = (Logger)new ServerLogger(progArgs);
+        Lang.PreLoad((ILogger)(object)ServerMain.Logger, GamePaths.AssetsPath, "en");
+
+        DummyNetwork tcpNetwork = new();
+        tcpNetwork.Start();
+
+        DummyNetwork udpNetwork = new();
+        udpNetwork.Start();
+
+        DummyTcpNetServer dummyTcpServer = new();
+        dummyTcpServer.SetNetwork(tcpNetwork);
+
+        DummyUdpNetServer dummyUdpServer = new();
+        dummyUdpServer.SetNetwork(udpNetwork);
+
+        string saveLocation = options.SaveFileLocation ?? Path.Combine(sandbox.SavesPath, options.WorldName + ".vcdbs");
+
+        StartServerArgs startArgs = new()
+        {
+            Seed = options.Seed,
+            WorldName = options.WorldName,
+            SaveFileLocation = saveLocation,
+            AllowCreativeMode = true,
+            PlayStyle = options.PlayStyle,
+            PlayStyleLangCode = options.PlayStyle,
+            WorldType = options.WorldType,
+            WorldConfiguration = JsonObject.FromJson(options.WorldConfigurationJson),
+            Language = "en",
+            IsNew = true
+        };
+
+        ServerMain server = new(startArgs, new[] { "--dataPath", dataPath }, progArgs, isDedicatedServer: false);
+
+        // CRITICAL: Assign exitState BEFORE PreLaunch() to prevent NRE in packet parser threads
+        server.exitState = new GameExitState();
+
+        server.MainSockets[0] = dummyTcpServer;
+        server.UdpSockets[0] = dummyUdpServer;
+
+        server.PreLaunch();
+        server.Launch();
+
+        // Wait for background asset build tasks to settle
+        try
+        {
+            MethodInfo? waitMethod = typeof(ServerMain).GetMethod("WaitOnBuildServerAssetsPacket", BindingFlags.Instance | BindingFlags.NonPublic);
+            waitMethod?.Invoke(server, null);
+        }
+        catch
+        {
+            // Best effort wait
+        }
+
+        return new EmbeddedServerHost(server, tcpNetwork, udpNetwork, options, dataPath, ownsDataPath: false, sandbox);
+    }
+
+    /// <summary>
+    /// Captures a snapshot of the current world state for later restoration.
+    /// </summary>
+    /// <returns>A snapshot containing the current world state.</returns>
+    /// <exception cref="InvalidOperationException">The server is not running.</exception>
+    /// <remarks>
+    /// The snapshot captures chunk data and server options. Restoration typically completes
+    /// in under 100ms, much faster than restarting the server.
+    /// </remarks>
+    public WorldSnapshot TakeSnapshot()
+    {
+        if (!IsRunning)
+        {
+            throw new InvalidOperationException("Cannot take snapshot from a stopped server.");
+        }
+
+        return WorldSnapshot.CreateFrom(this);
+    }
+
+    /// <summary>
+    /// Restores a previously captured snapshot to this server.
+    /// </summary>
+    /// <param name="snapshot">The snapshot to restore.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="snapshot"/> is null.</exception>
+    /// <exception cref="InvalidOperationException">The server is not running.</exception>
+    /// <remarks>
+    /// After restoration, the server state matches the state at the time the snapshot was captured.
+    /// This allows tests to rapidly reset to a known state without restarting the server.
+    /// </remarks>
+    public void RestoreSnapshot(WorldSnapshot snapshot)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+
+        if (!IsRunning)
+        {
+            throw new InvalidOperationException("Cannot restore snapshot to a stopped server.");
+        }
+
+        snapshot.Restore(this);
     }
 
     /// <summary>
