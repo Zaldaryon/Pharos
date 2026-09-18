@@ -614,4 +614,58 @@ public static class PharosAssert
                 $"GL resource leaks exceed thresholds. {string.Join(", ", violations)}.");
         }
     }
+
+    // -------------------------------------------------------------------------
+    // Managed object leak assertions
+    // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// Asserts that no managed object leaks were detected.
+    /// </summary>
+    /// <param name="report">The managed leak report to validate.</param>
+    /// <exception cref="PharosAssertException">Thrown when managed object leaks are detected.</exception>
+    public static void NoManagedLeaks(ManagedLeakReport report)
+    {
+        ArgumentNullException.ThrowIfNull(report);
+
+        if (!report.HasLeaks)
+        {
+            return;
+        }
+
+        List<string> leaks = [];
+        if (report.UnreturnedMeshParts > 0)
+            leaks.Add($"MeshParts: {report.UnreturnedMeshParts}");
+        if (report.UnrecycledMeshData > 0)
+            leaks.Add($"MeshData: {report.UnrecycledMeshData}");
+
+        throw new PharosAssertException(
+            $"Managed object leaks detected. {string.Join(", ", leaks)}. " +
+            $"Total: {report.TotalLeaks} leaked objects.");
+    }
+
+    /// <summary>
+    /// Asserts that managed object leaks are within the specified thresholds.
+    /// </summary>
+    /// <param name="report">The managed leak report to validate.</param>
+    /// <param name="maxMeshPartLeaks">Maximum allowed mesh part leaks.</param>
+    /// <param name="maxMeshDataLeaks">Maximum allowed MeshData leaks.</param>
+    /// <exception cref="PharosAssertException">Thrown when any leak count exceeds its threshold.</exception>
+    public static void ManagedLeaksBelow(ManagedLeakReport report, int maxMeshPartLeaks, int maxMeshDataLeaks)
+    {
+        ArgumentNullException.ThrowIfNull(report);
+
+        List<string> violations = [];
+
+        if (report.UnreturnedMeshParts > maxMeshPartLeaks)
+            violations.Add($"MeshParts: {report.UnreturnedMeshParts} > {maxMeshPartLeaks}");
+        if (report.UnrecycledMeshData > maxMeshDataLeaks)
+            violations.Add($"MeshData: {report.UnrecycledMeshData} > {maxMeshDataLeaks}");
+
+        if (violations.Count > 0)
+        {
+            throw new PharosAssertException(
+                $"Managed object leaks exceed thresholds. {string.Join(", ", violations)}.");
+        }
+    }
 }

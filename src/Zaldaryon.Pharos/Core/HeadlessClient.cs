@@ -126,6 +126,13 @@ public sealed class HeadlessClient : IDisposable
     /// </summary>
     public DisconnectSimulator DisconnectSimulator { get; } = new();
 
+    /// <summary>
+    /// Managed object leak tracker for detecting unreturned mesh parts and unrecycled MeshData.
+    /// Call <see cref="ManagedLeakTracker.StartBaseline"/> before a scenario and
+    /// <see cref="ManagedLeakTracker.GetLeakReport"/> after to detect leaks.
+    /// </summary>
+    public ManagedLeakTracker ManagedLeaks { get; } = new();
+
     internal HeadlessClient(
         ClientMain client,
         ClientPlatformWindows platform,
@@ -682,6 +689,15 @@ public sealed class HeadlessClient : IDisposable
         catch
         {
             // Ignore indirect draw inspector teardown errors
+        }
+
+        try
+        {
+            ManagedLeaks.Dispose();
+        }
+        catch
+        {
+            // Ignore managed leak tracker teardown errors
         }
 
         try
