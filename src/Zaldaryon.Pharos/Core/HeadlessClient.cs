@@ -74,6 +74,14 @@ public sealed class HeadlessClient : IDisposable
     /// </summary>
     public ShaderInspector Shaders { get; } = new();
 
+    /// <summary>
+    /// Indirect draw inspector for GPU multi-draw verification. Captures indirect dispatch counts,
+    /// command totals, buffer bindings, and direct draw fallback calls per frame. Recording is
+    /// disabled by default; call <see cref="IndirectDrawInspector.Enable"/> before a frame and
+    /// <see cref="IndirectDrawInspector.Snapshot"/> after to capture indirect draw statistics.
+    /// </summary>
+    public IndirectDrawInspector IndirectDraw { get; } = new();
+
     internal HeadlessClient(
         ClientMain client,
         ClientPlatformWindows platform,
@@ -548,6 +556,15 @@ public sealed class HeadlessClient : IDisposable
         catch
         {
             // Ignore shader inspector teardown errors
+        }
+
+        try
+        {
+            IndirectDraw.Disable();
+        }
+        catch
+        {
+            // Ignore indirect draw inspector teardown errors
         }
 
         try
