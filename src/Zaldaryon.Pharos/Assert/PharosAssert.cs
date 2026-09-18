@@ -874,4 +874,114 @@ public static class PharosAssert
                 $"Animation tick counts below minimum. {string.Join(", ", violations)}.");
         }
     }
+
+    // -------------------------------------------------------------------------
+    // Chunk IO timing assertions
+    // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// Asserts that parallel chunk IO achieved at least the specified speedup over serial IO.
+    /// </summary>
+    /// <param name="poolReport">Timing report from parallel/pooled chunk loading.</param>
+    /// <param name="serialReport">Timing report from serial chunk loading (baseline).</param>
+    /// <param name="minSpeedup">Minimum required speedup factor (default: 1.4x).</param>
+    /// <exception cref="PharosAssertException">Thrown when speedup is insufficient.</exception>
+    public static void ChunkIoSpeedupAtLeast(
+        Server.ChunkIoTimingReport poolReport,
+        Server.ChunkIoTimingReport serialReport,
+        double minSpeedup = 1.4)
+    {
+        ArgumentNullException.ThrowIfNull(poolReport);
+        ArgumentNullException.ThrowIfNull(serialReport);
+
+        if (!poolReport.HasData)
+        {
+            throw new PharosAssertException(
+                "Pool report has no chunk load data. Cannot calculate speedup.");
+        }
+
+        if (!serialReport.HasData)
+        {
+            throw new PharosAssertException(
+                "Serial report has no chunk load data. Cannot calculate speedup.");
+        }
+
+        if (serialReport.TotalTimeMs == 0)
+        {
+            throw new PharosAssertException(
+                "Serial report has zero total time. Cannot calculate speedup ratio.");
+        }
+
+        double actualSpeedup = (double)serialReport.TotalTimeMs / poolReport.TotalTimeMs;
+
+        if (actualSpeedup < minSpeedup)
+        {
+            throw new PharosAssertException(
+                Invariant($"Chunk IO speedup {actualSpeedup:F2}x is below minimum {minSpeedup:F2}x. ") +
+                Invariant($"Pool: {poolReport.ChunksLoaded} chunks in {poolReport.TotalTimeMs}ms ") +
+                Invariant($"({poolReport.AverageTimePerChunkMs:F2}ms/chunk). ") +
+                Invariant($"Serial: {serialReport.ChunksLoaded} chunks in {serialReport.TotalTimeMs}ms ") +
+                Invariant($"({serialReport.AverageTimePerChunkMs:F2}ms/chunk)."));
+        }
+    }
+
+    /// <summary>
+    /// Asserts that chunk IO completed within the specified time budget.
+    /// </summary>
+    /// <param name="report">Timing report to validate.</param>
+    /// <param name="maxTotalTimeMs">Maximum allowed total time in milliseconds.</param>
+    /// <exception cref="PharosAssertException">Thrown when time budget is exceeded.</exception>
+    public static void ChunkIoWithinBudget(Server.ChunkIoTimingReport report, long maxTotalTimeMs)
+    {
+        ArgumentNullException.ThrowIfNull(report);
+
+        if (report.TotalTimeMs > maxTotalTimeMs)
+        {
+            throw new PharosAssertException(
+                Invariant($"Chunk IO exceeded time budget. ") +
+                Invariant($"Actual: {report.TotalTimeMs}ms, Budget: {maxTotalTimeMs}ms ") +
+                Invariant($"({report.ChunksLoaded} chunks, {report.AverageTimePerChunkMs:F2}ms/chunk)."));
+        }
+    }
+
+    /// <summary>
+    /// Asserts that chunk IO loaded at least the expected number of chunks.
+    /// </summary>
+    /// <param name="report">Timing report to validate.</param>
+    /// <param name="minChunks">Minimum expected chunk count.</param>
+    /// <exception cref="PharosAssertException">Thrown when chunk count is below minimum.</exception>
+    public static void ChunkIoLoadedAtLeast(Server.ChunkIoTimingReport report, int minChunks)
+    {
+        ArgumentNullException.ThrowIfNull(report);
+
+        if (report.ChunksLoaded < minChunks)
+        {
+            throw new PharosAssertException(
+                $"Chunk IO loaded {report.ChunksLoaded} chunks, but expected at least {minChunks}.");
+        }
+    }
+
+    /// <summary>
+    /// Asserts that average chunk load time is within the specified threshold.
+    /// </summary>
+    /// <param name="report">Timing report to validate.</param>
+    /// <param name="maxAvgTimeMs">Maximum allowed average time per chunk in milliseconds.</param>
+    /// <exception cref="PharosAssertException">Thrown when average time exceeds threshold.</exception>
+    public static void ChunkIoAverageTimeBelow(Server.ChunkIoTimingReport report, double maxAvgTimeMs)
+    {
+        ArgumentNullException.ThrowIfNull(report);
+
+        if (!report.HasData)
+        {
+            return; // No data to validate
+        }
+
+        if (report.AverageTimePerChunkMs > maxAvgTimeMs)
+        {
+            throw new PharosAssertException(
+                Invariant($"Average chunk load time {report.AverageTimePerChunkMs:F2}ms ") +
+                Invariant($"exceeds maximum {maxAvgTimeMs:F2}ms ") +
+                Invariant($"({report.ChunksLoaded} chunks, {report.TotalTimeMs}ms total)."));
+        }
+    }
 }
