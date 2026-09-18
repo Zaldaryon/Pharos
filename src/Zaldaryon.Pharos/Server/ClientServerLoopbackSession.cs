@@ -11,22 +11,60 @@ using Zaldaryon.Pharos.Timing;
 namespace Zaldaryon.Pharos.Server;
 
 /// <summary>
-/// Coordinates lockstep execution and networking between a headless client and an in-process Atlas server.
+/// Coordinates lockstep execution and networking between a headless client and an in-process server.
 /// </summary>
+/// <remarks>
+/// Supports both the legacy <see cref="AtlasServerHost"/> and the native <see cref="EmbeddedServerHost"/>.
+/// When using <see cref="EmbeddedServerHost"/>, the session uses the native loopback binding with
+/// correct handshake ordering (Packet 33 before Packet 1).
+/// </remarks>
 public sealed class ClientServerLoopbackSession : IDisposable
 {
     private bool _disposed;
     private bool _isDisconnected;
 
+    /// <summary>Gets the headless client in this loopback session.</summary>
     public HeadlessClient Client { get; }
-    public AtlasServerHost Server { get; }
+
+    /// <summary>Gets the legacy Atlas server host, or null if using native server.</summary>
+    [Obsolete("Use NativeServer instead. AtlasServerHost support will be removed in a future version.")]
+    public AtlasServerHost? Server { get; }
+
+    /// <summary>Gets the native embedded server host, or null if using legacy Atlas server.</summary>
+    public EmbeddedServerHost? NativeServer { get; }
+
+    /// <summary>Gets the client's test player interface.</summary>
     public IClientTestPlayer Player => Client.TestPlayer;
+
+    /// <summary>Gets whether the client has connected to the server.</summary>
     public bool IsConnected { get; private set; }
 
+    /// <summary>Gets whether this session uses the native EmbeddedServerHost.</summary>
+    public bool IsNativeSession => NativeServer != null;
+
+    /// <summary>
+    /// Creates a loopback session with a legacy Atlas server host.
+    /// </summary>
+    [Obsolete("Use the EmbeddedServerHost constructor instead.")]
     internal ClientServerLoopbackSession(HeadlessClient client, AtlasServerHost server)
     {
-        Client = client;
-        Server = server;
+        Client = client ?? throw new ArgumentNullException(nameof(client));
+#pragma warning disable CS0618 // Suppress obsolete warning for internal use
+        Server = server ?? throw new ArgumentNullException(nameof(server));
+#pragma warning restore CS0618
+        NativeServer = null;
+    }
+
+    /// <summary>
+    /// Creates a loopback session with a native embedded server host.
+    /// </summary>
+    internal ClientServerLoopbackSession(HeadlessClient client, EmbeddedServerHost server)
+    {
+        Client = client ?? throw new ArgumentNullException(nameof(client));
+        NativeServer = server ?? throw new ArgumentNullException(nameof(server));
+#pragma warning disable CS0618 // Suppress obsolete warning for internal use
+        Server = null;
+#pragma warning restore CS0618
     }
 
     /// <summary>
@@ -35,7 +73,18 @@ public sealed class ClientServerLoopbackSession : IDisposable
     public void Step(float dt = 1f / 60f)
     {
         if (_disposed) return;
-        Server.Tick();
+
+        if (NativeServer != null)
+        {
+            NativeServer.Tick();
+        }
+        else
+        {
+#pragma warning disable CS0618
+            Server?.Tick();
+#pragma warning restore CS0618
+        }
+
         Client.FrameController.Step(dt);
 
         if (Client.Client.player != null && Client.Client.World != null)
@@ -62,7 +111,18 @@ public sealed class ClientServerLoopbackSession : IDisposable
     public async Task StepAsync(float dt = 1f / 60f, CancellationToken ct = default)
     {
         if (_disposed) return;
-        Server.Tick();
+
+        if (NativeServer != null)
+        {
+            NativeServer.Tick();
+        }
+        else
+        {
+#pragma warning disable CS0618
+            Server?.Tick();
+#pragma warning restore CS0618
+        }
+
         await Client.Frame(dt, ct).ConfigureAwait(false);
 
         if (Client.Client.player != null && Client.Client.World != null)
@@ -303,7 +363,16 @@ public sealed class ClientServerLoopbackSession : IDisposable
         {
             try
             {
-                Server.Tick();
+                if (NativeServer != null)
+                {
+                    NativeServer.Tick();
+                }
+                else
+                {
+#pragma warning disable CS0618
+                    Server?.Tick();
+#pragma warning restore CS0618
+                }
                 Client.FrameController.Step(1f / 60f);
             }
             catch

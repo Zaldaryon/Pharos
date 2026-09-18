@@ -281,7 +281,78 @@ public sealed class HeadlessClient : IDisposable
     /// <summary>
     /// Connects the headless client to an in-process embedded Atlas server instance using engine singleplayer loopback.
     /// </summary>
+    /// <remarks>
+    /// This overload uses the legacy <see cref="AtlasServerHost"/>. For new code, use
+    /// <see cref="ConnectLoopback(EmbeddedServerHost, string)"/> instead.
+    /// </remarks>
+    [Obsolete("Use ConnectLoopback(EmbeddedServerHost, string) instead. AtlasServerHost will be removed in a future version.")]
     public ClientServerLoopbackSession ConnectLoopback(AtlasServerHost server, string playerName = "PharosTest")
+    {
+        ArgumentNullException.ThrowIfNull(server);
+
+        ClientSettings.PlayerName = playerName;
+        ClientSettings.PlayerUID = "pharos-" + playerName.ToLowerInvariant();
+
+        Client.IsSingleplayer = true;
+        Client.Connectdata = new ServerConnectData
+        {
+            Host = "localhost",
+            Port = 42424
+        };
+
+        FieldInfo? serverInfoField = typeof(ClientMain).GetField("ServerInfo", BindingFlags.NonPublic | BindingFlags.Instance);
+        if (serverInfoField != null)
+        {
+            object? serverInfo = serverInfoField.GetValue(Client);
+            if (serverInfo == null)
+            {
+                serverInfo = Activator.CreateInstance(serverInfoField.FieldType);
+                serverInfoField.SetValue(Client, serverInfo);
+            }
+            serverInfo?.GetType().GetField("connectdata")?.SetValue(serverInfo, Client.Connectdata);
+        }
+
+        Platform.singlePlayerServerDummyNetwork = new DummyNetwork[2]
+        {
+            server.TcpNetwork,
+            server.UdpNetwork
+        };
+
+        DummyTcpNetClient dummyTcp = new();
+        dummyTcp.SetNetwork(server.TcpNetwork);
+        Client.MainNetClient = dummyTcp;
+
+        DummyUdpNetClient dummyUdp = new();
+        dummyUdp.SetNetwork(server.UdpNetwork);
+        Client.UdpNetClient = dummyUdp;
+
+        Client.Connect();
+
+#pragma warning disable CS0618 // Internal use of obsolete constructor
+        return new ClientServerLoopbackSession(this, server);
+#pragma warning restore CS0618
+    }
+
+    /// <summary>
+    /// Connects the headless client to an in-process embedded server instance using native loopback networking.
+    /// </summary>
+    /// <param name="server">The embedded server host to connect to.</param>
+    /// <param name="playerName">The player name for this client connection.</param>
+    /// <returns>A loopback session for coordinating client-server interaction.</returns>
+    /// <remarks>
+    /// <para>
+    /// This method sets up loopback networking between the client and server using the engine's
+    /// singleplayer dummy network transport. The handshake follows the correct two-step sequence:
+    /// </para>
+    /// <list type="number">
+    /// <item>Packet 33 (LoginTokenQuery) - Client requests a login token</item>
+    /// <item>Packet 1 (ClientIdentification) - Client sends identification with the received token</item>
+    /// </list>
+    /// <para>
+    /// Socket slot 0 is reserved by the engine; this connection uses slot 1+.
+    /// </para>
+    /// </remarks>
+    public ClientServerLoopbackSession ConnectLoopback(EmbeddedServerHost server, string playerName = "PharosTest")
     {
         ArgumentNullException.ThrowIfNull(server);
 
