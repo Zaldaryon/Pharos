@@ -423,4 +423,199 @@ public class PhCliRunnerTests
     }
 
     #endregion
+
+    #region BenchmarkOptions.Parse Tests
+
+    [Fact]
+    public void BenchmarkOptions_Parse_DefaultValues()
+    {
+        var options = BenchmarkOptions.Parse(["benchmark"]);
+
+        Assert.NotNull(options);
+        Assert.Null(options.BaselineFile);
+        Assert.False(options.UpdateBaselines);
+        Assert.False(options.FailOnRegression);
+        Assert.Equal(BenchmarkOptions.DefaultRegressionThreshold, options.RegressionThreshold);
+        Assert.False(options.DryRun);
+        Assert.False(options.Verbose);
+    }
+
+    [Fact]
+    public void BenchmarkOptions_Parse_HelpFlag_ReturnsNull()
+    {
+        Assert.Null(BenchmarkOptions.Parse(["benchmark", "--help"]));
+        Assert.Null(BenchmarkOptions.Parse(["benchmark", "-h"]));
+        Assert.Null(BenchmarkOptions.Parse(["benchmark", "-?"]));
+    }
+
+    [Fact]
+    public void BenchmarkOptions_Parse_BaselineFile()
+    {
+        var options = BenchmarkOptions.Parse(["benchmark", "--baseline-file", "baselines.json"]);
+
+        Assert.Equal("baselines.json", options?.BaselineFile);
+    }
+
+    [Fact]
+    public void BenchmarkOptions_Parse_UpdateBaselines()
+    {
+        var options = BenchmarkOptions.Parse(["benchmark", "--update-baselines"]);
+
+        Assert.True(options?.UpdateBaselines);
+    }
+
+    [Fact]
+    public void BenchmarkOptions_Parse_FailOnRegression()
+    {
+        var options = BenchmarkOptions.Parse(["benchmark", "--fail-on-regression"]);
+
+        Assert.True(options?.FailOnRegression);
+    }
+
+    [Fact]
+    public void BenchmarkOptions_Parse_RegressionThreshold()
+    {
+        var options = BenchmarkOptions.Parse(["benchmark", "--regression-threshold", "0.15"]);
+
+        Assert.Equal(0.15f, options?.RegressionThreshold);
+    }
+
+    [Fact]
+    public void BenchmarkOptions_Parse_DryRun()
+    {
+        var options = BenchmarkOptions.Parse(["benchmark", "--dry-run"]);
+
+        Assert.True(options?.DryRun);
+    }
+
+    [Fact]
+    public void BenchmarkOptions_Parse_Verbose()
+    {
+        var options = BenchmarkOptions.Parse(["benchmark", "--verbose"]);
+        Assert.True(options?.Verbose);
+
+        options = BenchmarkOptions.Parse(["benchmark", "-v"]);
+        Assert.True(options?.Verbose);
+    }
+
+    [Fact]
+    public void BenchmarkOptions_Parse_CombinedArgs()
+    {
+        var options = BenchmarkOptions.Parse([
+            "benchmark",
+            "--baseline-file", "test.json",
+            "--fail-on-regression",
+            "--regression-threshold", "0.10",
+            "--dry-run",
+            "-v"
+        ]);
+
+        Assert.NotNull(options);
+        Assert.Equal("test.json", options.BaselineFile);
+        Assert.True(options.FailOnRegression);
+        Assert.Equal(0.10f, options.RegressionThreshold);
+        Assert.True(options.DryRun);
+        Assert.True(options.Verbose);
+    }
+
+    [Fact]
+    public void BenchmarkOptions_Parse_MissingBaselineFileArg_Throws()
+    {
+        Assert.Throws<ArgumentException>(() =>
+            BenchmarkOptions.Parse(["benchmark", "--baseline-file"]));
+    }
+
+    [Fact]
+    public void BenchmarkOptions_Parse_MissingThresholdArg_Throws()
+    {
+        Assert.Throws<ArgumentException>(() =>
+            BenchmarkOptions.Parse(["benchmark", "--regression-threshold"]));
+    }
+
+    [Fact]
+    public void BenchmarkOptions_Parse_InvalidThreshold_Throws()
+    {
+        Assert.Throws<ArgumentException>(() =>
+            BenchmarkOptions.Parse(["benchmark", "--regression-threshold", "invalid"]));
+
+        Assert.Throws<ArgumentException>(() =>
+            BenchmarkOptions.Parse(["benchmark", "--regression-threshold", "-0.5"]));
+
+        Assert.Throws<ArgumentException>(() =>
+            BenchmarkOptions.Parse(["benchmark", "--regression-threshold", "0"]));
+    }
+
+    [Fact]
+    public void BenchmarkOptions_Parse_UnknownArg_Throws()
+    {
+        Assert.Throws<ArgumentException>(() =>
+            BenchmarkOptions.Parse(["benchmark", "--unknown-flag"]));
+    }
+
+    #endregion
+
+    #region Benchmark CLI Integration Tests
+
+    [Fact]
+    public void Run_BenchmarkHelp_ReturnsZero()
+    {
+        using var stdout = new StringWriter();
+        using var stderr = new StringWriter();
+
+        var exitCode = PhCliRunner.Run(["benchmark", "--help"], stdout, stderr);
+
+        Assert.Equal(0, exitCode);
+        Assert.Contains("benchmark", stdout.ToString());
+        Assert.Contains("--baseline-file", stdout.ToString());
+        Assert.Contains("--fail-on-regression", stdout.ToString());
+    }
+
+    [Fact]
+    public void Run_BenchmarkHelpSubcommand_ReturnsZero()
+    {
+        using var stdout = new StringWriter();
+        using var stderr = new StringWriter();
+
+        var exitCode = PhCliRunner.Run(["help", "benchmark"], stdout, stderr);
+
+        Assert.Equal(0, exitCode);
+        Assert.Contains("--update-baselines", stdout.ToString());
+    }
+
+    [Fact]
+    public void Run_BenchmarkInvalidArg_ReturnsErrorCode()
+    {
+        using var stdout = new StringWriter();
+        using var stderr = new StringWriter();
+
+        var exitCode = PhCliRunner.Run(["benchmark", "--invalid"], stdout, stderr);
+
+        Assert.Equal(2, exitCode);
+        Assert.Contains("Unknown argument", stderr.ToString());
+    }
+
+    [Fact]
+    public void GetBenchmarkHelpText_ContainsAllOptions()
+    {
+        var help = PhCliRunner.GetBenchmarkHelpText();
+
+        Assert.Contains("--baseline-file", help);
+        Assert.Contains("--update-baselines", help);
+        Assert.Contains("--fail-on-regression", help);
+        Assert.Contains("--regression-threshold", help);
+        Assert.Contains("--dry-run", help);
+        Assert.Contains("--verbose", help);
+        Assert.Contains("--help", help);
+    }
+
+    [Fact]
+    public void GetMainHelpText_ContainsBenchmarkCommand()
+    {
+        var help = PhCliRunner.GetMainHelpText();
+
+        Assert.Contains("benchmark", help);
+        Assert.Contains("regression", help);
+    }
+
+    #endregion
 }
