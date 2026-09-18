@@ -120,6 +120,12 @@ public sealed class HeadlessClient : IDisposable
     /// </summary>
     public NetworkDegradationSimulator NetworkDegradation { get; } = new();
 
+    /// <summary>
+    /// Disconnect simulator for testing client resilience to server disconnects and crashes.
+    /// Supports various disconnect reasons, reconnect attempt tracking, and crash containment.
+    /// </summary>
+    public DisconnectSimulator DisconnectSimulator { get; } = new();
+
     internal HeadlessClient(
         ClientMain client,
         ClientPlatformWindows platform,
