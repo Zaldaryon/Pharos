@@ -11,7 +11,7 @@
     <IsPackable>true</IsPackable>
     <IsTestProject>false</IsTestProject>
     <PackageId>Zaldaryon.Pharos.AtlasCompat</PackageId>
-    <Version>0.1.0</Version>
+    <Version>0.3.0</Version>
     <Authors>Zaldaryon</Authors>
     <Description>Drop-in compatibility shim for migrating from Pixnop.Atlas to Zaldaryon.Pharos.XUnit. Provides type aliases in Atlas.Api and Atlas.XUnit namespaces that delegate to native Pharos types.</Description>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
