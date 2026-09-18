@@ -11,6 +11,8 @@ namespace Zaldaryon.Pharos.XUnit;
 /// </summary>
 public abstract class ClientScenarioBase
 {
+    private ClientIsolationManager? _isolationManager;
+
     /// <summary>
     /// The headless client instance managed by the fixture.
     /// Null until set by the fixture via <see cref="SetClient"/>.
@@ -32,6 +34,15 @@ public abstract class ClientScenarioBase
     /// Override in derived classes to change isolation behavior.
     /// </summary>
     protected virtual IsolationMode IsolationMode => IsolationMode.SharedClient;
+
+    /// <summary>
+    /// Gets the isolation manager, creating it lazily with the current IsolationMode.
+    /// </summary>
+    /// <returns>The ClientIsolationManager for this scenario.</returns>
+    protected ClientIsolationManager GetIsolationManager()
+    {
+        return _isolationManager ??= new ClientIsolationManager(IsolationMode);
+    }
 
     /// <summary>
     /// Sets the client instance. Called by the fixture during initialization.
