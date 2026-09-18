@@ -154,4 +154,95 @@ public static class PharosAssert
                 $"Expected chunk {chunk} to be occlusion-culled, but it was not in OcclusionCulledChunks.");
         }
     }
+
+    // -------------------------------------------------------------------------
+    // Mesh face reduction assertions
+    // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// Asserts that mesh face count was reduced by at least the specified percentage
+    /// after greedy meshing optimization.
+    /// </summary>
+    /// <param name="before">Mesh snapshot before greedy meshing.</param>
+    /// <param name="after">Mesh snapshot after greedy meshing.</param>
+    /// <param name="minReductionPercent">Minimum expected reduction percentage (0-100).</param>
+    /// <exception cref="PharosAssertException">Thrown when reduction is below threshold.</exception>
+    public static void MeshFaceCountReduced(MeshSnapshot before, MeshSnapshot after, int minReductionPercent)
+    {
+        ArgumentNullException.ThrowIfNull(before);
+        ArgumentNullException.ThrowIfNull(after);
+
+        if (minReductionPercent < 0 || minReductionPercent > 100)
+        {
+            throw new ArgumentOutOfRangeException(nameof(minReductionPercent),
+                "Reduction percentage must be between 0 and 100.");
+        }
+
+        if (!before.IsValid)
+        {
+            throw new PharosAssertException($"Before snapshot is invalid: {before.ErrorMessage}");
+        }
+
+        if (!after.IsValid)
+        {
+            throw new PharosAssertException($"After snapshot is invalid: {after.ErrorMessage}");
+        }
+
+        if (before.FaceCount == 0)
+        {
+            throw new PharosAssertException("Before snapshot has zero faces; cannot compute reduction.");
+        }
+
+        int reduced = before.FaceCount - after.FaceCount;
+        double actualPercent = (double)reduced / before.FaceCount * 100.0;
+
+        if (actualPercent < minReductionPercent)
+        {
+            throw new PharosAssertException(
+                $"Expected at least {minReductionPercent}% face reduction, but got {actualPercent:F1}% " +
+                $"(before: {before.FaceCount}, after: {after.FaceCount}).");
+        }
+    }
+
+    /// <summary>
+    /// Asserts that all UV coordinates in the snapshot are within the valid [0,1] range
+    /// (with optional tolerance for floating-point precision).
+    /// </summary>
+    /// <param name="snapshot">Mesh snapshot to validate.</param>
+    /// <param name="tolerance">Tolerance for coordinates slightly outside [0,1] (default: 0.001f).</param>
+    /// <exception cref="PharosAssertException">Thrown when UV coordinates are out of range.</exception>
+    public static void UvCoordinatesValid(MeshSnapshot snapshot, float tolerance = 0.001f)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+
+        if (!snapshot.IsValid)
+        {
+            throw new PharosAssertException($"Snapshot is invalid: {snapshot.ErrorMessage}");
+        }
+
+        if (snapshot.UvSamples.Count == 0)
+        {
+            return; // No UV data to validate
+        }
+
+        float min = 0f - tolerance;
+        float max = 1f + tolerance;
+
+        for (int i = 0; i < snapshot.UvSamples.Count; i++)
+        {
+            UvSample uv = snapshot.UvSamples[i];
+
+            if (uv.U < min || uv.U > max)
+            {
+                throw new PharosAssertException(
+                    $"UV coordinate at index {i} has U={uv.U:F4} outside valid range [{-tolerance:F3}, {1 + tolerance:F3}].");
+            }
+
+            if (uv.V < min || uv.V > max)
+            {
+                throw new PharosAssertException(
+                    $"UV coordinate at index {i} has V={uv.V:F4} outside valid range [{-tolerance:F3}, {1 + tolerance:F3}].");
+            }
+        }
+    }
 }
