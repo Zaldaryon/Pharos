@@ -82,12 +82,16 @@ jobs:
           dotnet pack src/Zaldaryon.Pharos.AtlasCompat/Zaldaryon.Pharos.AtlasCompat.csproj -c Release --no-build -o ./nupkg
 
       - name: Login to NuGet.org (trusted publishing)
+        id: nuget-login
         uses: NuGet/login@v1
         with:
           user: Zaldaryon
 
       - name: Push to NuGet.org
+        env:
+          NUGET_API_KEY: ${{ steps.nuget-login.outputs.NUGET_API_KEY }}
         run: |
           dotnet nuget push ./nupkg/*.nupkg \
             --source https://api.nuget.org/v3/index.json \
+            --api-key "$NUGET_API_KEY" \
             --skip-duplicate
