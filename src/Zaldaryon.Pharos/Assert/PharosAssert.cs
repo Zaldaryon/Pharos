@@ -1,6 +1,7 @@
 using Zaldaryon.Pharos.Culling;
 using Zaldaryon.Pharos.Graphics;
 using Zaldaryon.Pharos.Timing;
+using Zaldaryon.Pharos.Visual;
 
 namespace Zaldaryon.Pharos.Assertions;
 
@@ -496,5 +497,34 @@ public static class PharosAssert
                 $"Expected at least {minDisabledSubsystems} disabled subsystem(s), but only " +
                 $"{snapshot.DisabledSubsystems.Count} found: [{string.Join(", ", snapshot.DisabledSubsystems)}].");
         }
+    }
+
+    // -------------------------------------------------------------------------
+    // Golden image assertions
+    // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// Asserts that a perceptual diff result indicates images are similar within tolerance.
+    /// </summary>
+    /// <param name="result">The perceptual diff result to validate.</param>
+    /// <param name="message">Optional custom message for the assertion failure.</param>
+    /// <exception cref="PharosAssertException">Thrown when images are not similar.</exception>
+    public static void GoldenImageMatch(PerceptualDiffResult result, string message = "")
+    {
+        if (result.IsSimilar)
+        {
+            return;
+        }
+
+        string prefix = string.IsNullOrEmpty(message) ? "" : $"{message} ";
+        string heatmapInfo = result.HeatmapPath is not null
+            ? $" Heatmap saved to: {result.HeatmapPath}"
+            : "";
+
+        throw new PharosAssertException(
+            $"{prefix}Golden image match failed. " +
+            $"MeanDiff={result.MeanDiff:F4} (tolerance={result.Tolerance:F4}), " +
+            $"MaxDiff={result.MaxDiff:F4}, " +
+            $"DiffPixels={result.DiffPixelCount}/{result.TotalPixels} ({result.DiffPixelFraction:P1}).{heatmapInfo}");
     }
 }
