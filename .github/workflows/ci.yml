@@ -29,7 +29,7 @@ jobs:
       - name: Install Mesa and Xvfb
         run: |
           sudo apt-get update
-          sudo apt-get install -y mesa-utils libgl1-mesa-dri xvfb libopenal1 libglfw3 libglfw3-dev
+          sudo apt-get install -y mesa-utils libgl1-mesa-dri xvfb libopenal1 libglfw3 libglfw3-dev libcairo2 libcairo2-dev
 
       - name: Cache Vintage Story
         id: cache-vs

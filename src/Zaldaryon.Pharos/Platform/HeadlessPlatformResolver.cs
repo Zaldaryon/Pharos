@@ -141,6 +141,50 @@ public static class HeadlessPlatformResolver
             // Register Vintage Story managed assembly resolver as fallback
             AppDomain.CurrentDomain.AssemblyResolve += AssemblyResolver.AssemblyResolve;
 
+            // Register native library resolver for cairo-sharp on Linux
+            void TryRegisterNativeResolvers(Assembly assembly)
+            {
+                string? name = assembly.GetName().Name;
+                if (string.Equals(name, "cairo-sharp", StringComparison.OrdinalIgnoreCase))
+                {
+                    try
+                    {
+                        NativeLibrary.SetDllImportResolver(assembly, (libraryName, asm, searchPath) =>
+                        {
+                            if (libraryName is "libcairo-2" or "libcairo-2.dll" or "cairo")
+                            {
+                                if (OperatingSystem.IsLinux())
+                                {
+                                    string[] candidates = ["libcairo.so.2", "libcairo.so", "libcairo-2.so"];
+                                    foreach (string candidate in candidates)
+                                    {
+                                        if (NativeLibrary.TryLoad(candidate, asm, searchPath, out IntPtr handle))
+                                        {
+                                            return handle;
+                                        }
+                                    }
+                                }
+                            }
+                            return IntPtr.Zero;
+                        });
+                    }
+                    catch (InvalidOperationException)
+                    {
+                        // Resolver already registered for this assembly
+                    }
+                }
+            }
+
+            foreach (Assembly asm in AppDomain.CurrentDomain.GetAssemblies())
+            {
+                TryRegisterNativeResolvers(asm);
+            }
+
+            AppDomain.CurrentDomain.AssemblyLoad += (_, args) =>
+            {
+                TryRegisterNativeResolvers(args.LoadedAssembly);
+            };
+
             // Ensure Lib and Mods directories are staged in AppContext.BaseDirectory for mod compilation
             EnsureStagedBinaries(gamePath);
 
