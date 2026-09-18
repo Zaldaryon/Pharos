@@ -28,6 +28,9 @@ public static class OptimumBenchmarks
         // Add greedy mesh benchmarks for all complexity tiers
         benchmarks.AddRange(GreedyMeshBenchmarks.CreateAll());
 
+        // Add BFS throughput benchmarks for all view distances
+        benchmarks.AddRange(BfsThroughputBenchmarks.CreateAll());
+
         return benchmarks;
     }
 }
