@@ -1,7 +1,6 @@
 using System;
 using System.IO;
 using System.Reflection;
-using Atlas.Api;
 using Vintagestory;
 using Vintagestory.API.Common;
 using Vintagestory.API.Config;
@@ -25,7 +24,7 @@ public sealed class AtlasServerHost : IDisposable
     public ServerMain Server { get; }
     public DummyNetwork TcpNetwork { get; }
     public DummyNetwork UdpNetwork { get; }
-    public WorldOptions Options { get; }
+    public ServerWorldOptions Options { get; }
     public string DataPath { get; }
 
     public bool IsRunning => !_disposed && !Server.stopped;
@@ -35,7 +34,7 @@ public sealed class AtlasServerHost : IDisposable
         ServerMain server,
         DummyNetwork tcpNetwork,
         DummyNetwork udpNetwork,
-        WorldOptions options,
+        ServerWorldOptions options,
         string dataPath,
         bool ownsDataPath)
     {
@@ -50,12 +49,12 @@ public sealed class AtlasServerHost : IDisposable
     /// <summary>
     /// Boots an embedded Atlas server instance with the specified world options and isolated scratch storage.
     /// </summary>
-    public static AtlasServerHost Boot(WorldOptions? options = null, string? customDataPath = null)
+    public static AtlasServerHost Boot(ServerWorldOptions? options = null, string? customDataPath = null)
     {
         HeadlessPlatformResolver.Initialize();
         HeadlessPlatformResolver.EnsureAssetsPath();
 
-        options ??= new WorldOptions
+        options ??= new ServerWorldOptions
         {
             Seed = "424242",
             WorldName = "PharosAtlasWorld",
@@ -88,7 +87,7 @@ public sealed class AtlasServerHost : IDisposable
         DummyUdpNetServer dummyUdpServer = new();
         dummyUdpServer.SetNetwork(udpNetwork);
 
-        string saveLocation = options.SaveFile ?? Path.Combine(dataPath, "Saves", options.WorldName + ".vcdbs");
+        string saveLocation = options.SaveFileLocation ?? Path.Combine(dataPath, "Saves", options.WorldName + ".vcdbs");
 
         StartServerArgs startArgs = new()
         {
