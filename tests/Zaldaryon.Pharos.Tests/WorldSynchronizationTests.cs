@@ -140,7 +140,7 @@ public class WorldSynchronizationTests
             DisableAudio = true
         };
 
-        using AtlasServerHost server = AtlasServerHost.Boot();
+        using EmbeddedServerHost server = EmbeddedServerHost.Boot();
         using HeadlessClient client = HeadlessClientBootstrap.Boot(clientOptions);
         using ClientServerLoopbackSession session = client.ConnectLoopback(server, "SyncPilot");
 
@@ -245,7 +245,7 @@ public class WorldSynchronizationTests
             DisableAudio = true
         };
 
-        using AtlasServerHost server = AtlasServerHost.Boot();
+        using EmbeddedServerHost server = EmbeddedServerHost.Boot();
         using HeadlessClient client = HeadlessClientBootstrap.Boot(clientOptions);
         using ClientServerLoopbackSession session = client.ConnectLoopback(server, "DiagPilot");
 
