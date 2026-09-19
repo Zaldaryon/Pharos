@@ -248,7 +248,7 @@ public class BenchmarkSuiteTests
     {
         var benchmarks = OptimumBenchmarks.CreateAll();
 
-        Assert.Equal(5, benchmarks.Count);
+        Assert.Equal(11, benchmarks.Count);
         Assert.Contains(benchmarks, b => b.Name == "IndirectDraw");
         Assert.Contains(benchmarks, b => b.Name == "SimdCulling");
         Assert.Contains(benchmarks, b => b.Name == "MeshCompression");
@@ -365,7 +365,7 @@ public class BenchmarkSuiteTests
         var benchmarks = OptimumBenchmarks.CreateAll();
         var results = suite.Run(benchmarks);
 
-        Assert.Equal(5, results.Count);
+        Assert.Equal(11, results.Count);
         Assert.All(results, r => Assert.True(r.ElapsedMs >= 0));
     }
 
@@ -378,8 +378,8 @@ public class BenchmarkSuiteTests
         
         var results = suite.RunWithReport(benchmarks, report);
 
-        Assert.Equal(5, results.Count);
-        Assert.Equal(5, report.PassCount + report.FailCount);
+        Assert.Equal(11, results.Count);
+        Assert.Equal(11, report.PassCount + report.FailCount);
     }
 
     [Fact]
