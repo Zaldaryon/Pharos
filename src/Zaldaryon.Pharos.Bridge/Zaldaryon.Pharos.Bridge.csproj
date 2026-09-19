@@ -13,7 +13,7 @@
     <IsPackable>true</IsPackable>
     <IsTestProject>false</IsTestProject>
     <PackageId>Zaldaryon.Pharos.Bridge</PackageId>
-    <Version>0.3.0</Version>
+    <Version>0.4.0</Version>
     <Authors>Zaldaryon</Authors>
     <Description>Bridge mod for Pharos headless client. Provides in-game communication channel between test harness and embedded Vintage Story client.</Description>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
