@@ -155,7 +155,7 @@ public class GreedyMeshBenchmarkTests
         var benchmarks = OptimumBenchmarks.CreateAll();
 
         // Original 5 + 3 greedy mesh tiers
-        Assert.Equal(8, benchmarks.Count);
+        Assert.Equal(11, benchmarks.Count);
     }
 
     [Fact]
