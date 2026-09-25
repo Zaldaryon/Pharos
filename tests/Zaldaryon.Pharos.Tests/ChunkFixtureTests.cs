@@ -197,6 +197,17 @@ public sealed class ChunkFixtureTests
         Assert.Equal(2, injectedChunk.Data[checkIdx]);
 
         // Await chunk meshing through deterministic frame steps
+        if (Type.GetType("Vintagestory.API.Config.OptimumDiagnostics, VintagestoryAPI") is not null)
+        {
+            // Optimum's ChunkTesselatorManager upload-sort pass reads game.EntityPlayer, which a
+            // player-less mock world cannot provide, so the frame loop stalls on it. Drive the
+            // tessellation entry point directly; the mesh upload itself still needs a player.
+            ChunkTesselatorManager manager = client.ChunkTesselatorManager!;
+            manager.TesselateChunk(targetChunk.X, targetChunk.Y, targetChunk.Z, priority: true, skipChunkCenter: false, out bool requeue);
+            Assert.False(requeue, "Optimum tessellation must not requeue a fully loaded injected chunk.");
+            return;
+        }
+
         bool meshed = await client.WaitForChunkMeshed(targetChunk, maxFrames: 10, dt: 1f / 60f);
         Assert.True(meshed);
 
