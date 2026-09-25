@@ -1,7 +1,7 @@
 using System;
 using System.Globalization;
 using System.Reflection;
-using Vintagestory.Client.NoObf;
+using System.Threading.Tasks;
 using Xunit;
 using Zaldaryon.Pharos.Bootstrap;
 using Zaldaryon.Pharos.Core;
@@ -35,7 +35,7 @@ public sealed class OptimumIntegrationTests
     }
 
     [OptimumFact]
-    public void OptimumFork_TessellatesInjectedChunk_RecordsTessellationProgress()
+    public async Task OptimumFork_TessellatesInjectedChunk_RecordsTessellationProgress()
     {
         // VintagestoryAPI.dll is copied from VINTAGE_STORY at build time, so the diagnostics type
         // resolving at all is the proof that the loaded engine is the patched one.
@@ -58,23 +58,15 @@ public sealed class OptimumIntegrationTests
             .SetBlock(16, 2, 16, 2)
             .Build();
 
-        client.InjectChunk(fixture, triggerTesselation: false);
+        client.InjectChunk(fixture, triggerTesselation: true);
 
-        // Optimum's upload-sort pass reads game.EntityPlayer, which a player-less mock world cannot
-        // provide, so the frame loop stalls on it. Drive the tessellation entry point directly:
-        // that is the code Optimum patched (tesselator pool, upload handoff, diagnostics).
-        ChunkTesselatorManager manager = client.ChunkTesselatorManager!;
-        int vertices = manager.TesselateChunk(
-            targetChunk.X,
-            targetChunk.Y,
-            targetChunk.Z,
-            priority: true,
-            skipChunkCenter: false,
-            out bool requeue);
+        // The frame loop drives Optimum's patched tesselator pool, upload handoff and diagnostics,
+        // so assert through it rather than calling the tessellation entry point directly.
+        bool meshed = await client.WaitForChunkMeshed(targetChunk, maxFrames: 10, dt: 1f / 60f);
+        Assert.True(meshed, "Injected chunk must mesh through the frame loop.");
 
         string summary = ReadTessellationSummary(diagnostics);
-        Assert.False(requeue, $"Injected chunk must tessellate without requeue. {summary}");
-        Assert.True(ReadTessellatedChunks(summary) > 0, $"Optimum tessellation counter must advance. {summary} vertices={vertices}");
+        Assert.True(ReadTessellatedChunks(summary) > 0, $"Optimum tessellation counter must advance. {summary}");
     }
 
     private static string ReadTessellationSummary(Type diagnostics)

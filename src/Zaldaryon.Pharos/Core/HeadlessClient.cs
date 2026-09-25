@@ -443,7 +443,25 @@ public sealed class HeadlessClient : IDisposable
         // Enable terrain tessellation and initialize ChunkTesselator
         Client.ShouldTesselateTerrain = true;
 
-        if (Client.TerrainChunkTesselator == null)
+        if (ChunkTesselatorManager == null)
+        {
+            ChunkTesselatorManager = new ChunkTesselatorManager(Client);
+            FrameController.ChunkTesselatorManager = ChunkTesselatorManager;
+        }
+
+        // Optimum's manager owns its tesselator pool and gates its frame pass on
+        // PrimaryTesselator.started, so configure and start that instance when the
+        // build exposes it. Otherwise fall back to a standalone tesselator.
+        ChunkTesselator? primary = ChunkTesselatorManager
+            .GetType()
+            .GetProperty("PrimaryTesselator", BindingFlags.Instance | BindingFlags.Public)
+            ?.GetValue(ChunkTesselatorManager) as ChunkTesselator;
+
+        if (primary != null)
+        {
+            Client.TerrainChunkTesselator = primary;
+        }
+        else if (Client.TerrainChunkTesselator == null)
         {
             Client.TerrainChunkTesselator = new ChunkTesselator(Client);
         }
@@ -462,12 +480,6 @@ public sealed class HeadlessClient : IDisposable
         {
             FieldInfo? startedField = typeof(ChunkTesselator).GetField("started", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
             startedField?.SetValue(tct, true);
-        }
-
-        if (ChunkTesselatorManager == null)
-        {
-            ChunkTesselatorManager = new ChunkTesselatorManager(Client);
-            FrameController.ChunkTesselatorManager = ChunkTesselatorManager;
         }
 
         // Ensure chunk renderer is wired if atlas textures are available
