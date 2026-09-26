@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Reflection;
 using Xunit;
 using Zaldaryon.Pharos.Cli;
@@ -10,6 +11,20 @@ namespace Zaldaryon.Pharos.Tests.Cli;
 /// </summary>
 public class PhCliRunnerTests
 {
+    private static T RunWithPtBrCulture<T>(Func<T> action)
+    {
+        CultureInfo previousCulture = CultureInfo.CurrentCulture;
+        try
+        {
+            CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("pt-BR");
+            return action();
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = previousCulture;
+        }
+    }
+
     #region CliRunOptions.Parse Tests
 
     [Fact]
@@ -475,7 +490,7 @@ public class PhCliRunnerTests
     [Fact]
     public void BenchmarkOptions_Parse_RegressionThreshold()
     {
-        var options = BenchmarkOptions.Parse(["benchmark", "--regression-threshold", "0.15"]);
+        var options = RunWithPtBrCulture(() => BenchmarkOptions.Parse(["benchmark", "--regression-threshold", "0.15"]));
 
         Assert.Equal(0.15f, options?.RegressionThreshold);
     }
@@ -501,14 +516,14 @@ public class PhCliRunnerTests
     [Fact]
     public void BenchmarkOptions_Parse_CombinedArgs()
     {
-        var options = BenchmarkOptions.Parse([
+        var options = RunWithPtBrCulture(() => BenchmarkOptions.Parse([
             "benchmark",
             "--baseline-file", "test.json",
             "--fail-on-regression",
             "--regression-threshold", "0.10",
             "--dry-run",
             "-v"
-        ]);
+        ]));
 
         Assert.NotNull(options);
         Assert.Equal("test.json", options.BaselineFile);

@@ -92,9 +92,9 @@ public sealed record ChunkIoTimingReport(
     public override string ToString()
     {
         string baseline = HasBaseline
-            ? $", Speedup={SpeedupFactor:F2}x, Saved={TimeSavedMs}ms"
+            ? FormattableString.Invariant($", Speedup={SpeedupFactor:F2}x, Saved={TimeSavedMs}ms")
             : "";
-        return $"ChunkIoTimingReport(Chunks={ChunksLoaded}, Total={TotalTimeMs}ms, " +
-               $"Avg={AverageTimePerChunkMs:F2}ms/chunk{baseline})";
+        return FormattableString.Invariant(
+            $"ChunkIoTimingReport(Chunks={ChunksLoaded}, Total={TotalTimeMs}ms, Avg={AverageTimePerChunkMs:F2}ms/chunk{baseline})");
     }
 }

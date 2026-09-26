@@ -1,3 +1,4 @@
+using System.Globalization;
 using Xunit;
 using Zaldaryon.Pharos.Assertions;
 using Zaldaryon.Pharos.Graphics;
@@ -37,6 +38,21 @@ public sealed class UvContinuityTests
         Assert.Equal("Y", new QuadEdge(0, 1, 1, 0f).AxisName);
         Assert.Equal("Z", new QuadEdge(0, 1, 2, 0f).AxisName);
         Assert.Equal("Unknown", new QuadEdge(0, 1, 99, 0f).AxisName);
+    }
+
+    [Fact]
+    public void QuadEdge_ToString_FormatsSharedValueInvariantly()
+    {
+        CultureInfo previousCulture = CultureInfo.CurrentCulture;
+        try
+        {
+            CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("pt-BR");
+            Assert.Equal("QuadEdge(A=0, B=1, Axis=X, Value=1.250)", new QuadEdge(0, 1, 0, 1.25f).ToString());
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = previousCulture;
+        }
     }
 
     // -------------------------------------------------------------------------

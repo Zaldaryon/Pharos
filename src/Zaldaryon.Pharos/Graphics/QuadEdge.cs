@@ -28,7 +28,7 @@ public readonly record struct QuadEdge(int QuadAIndex, int QuadBIndex, int Share
 
     /// <inheritdoc />
     public override string ToString() =>
-        $"QuadEdge(A={QuadAIndex}, B={QuadBIndex}, Axis={AxisName}, Value={SharedValue:F3})";
+        FormattableString.Invariant($"QuadEdge(A={QuadAIndex}, B={QuadBIndex}, Axis={AxisName}, Value={SharedValue:F3})");
 }
 
 /// <summary>

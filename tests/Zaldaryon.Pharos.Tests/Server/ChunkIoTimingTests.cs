@@ -1,3 +1,4 @@
+using System.Globalization;
 using Xunit;
 using Zaldaryon.Pharos.Assertions;
 using Zaldaryon.Pharos.Server;
@@ -122,12 +123,21 @@ public sealed class ChunkIoTimingTests
     public void ChunkIoTimingReport_ToString_FormatsCorrectly()
     {
         ChunkIoTimingReport report = ChunkIoTimingReport.WithBaseline(10, 100, 400);
+        CultureInfo previousCulture = CultureInfo.CurrentCulture;
+        try
+        {
+            CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("pt-BR");
+            string str = report.ToString();
 
-        string str = report.ToString();
-
-        Assert.Contains("Chunks=10", str);
-        Assert.Contains("Total=100ms", str);
-        Assert.Contains("Speedup=4.00x", str);
+            Assert.Contains("Chunks=10", str);
+            Assert.Contains("Total=100ms", str);
+            Assert.Contains("Avg=10.00ms/chunk", str);
+            Assert.Contains("Speedup=4.00x", str);
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = previousCulture;
+        }
     }
 
     // -------------------------------------------------------------------------

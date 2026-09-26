@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.Reflection;
 using Xunit;
 using Zaldaryon.Pharos.Benchmarks;
@@ -677,7 +678,7 @@ public sealed record BenchmarkOptions(
             {
                 if (i + 1 >= args.Length)
                     throw new ArgumentException("--regression-threshold requires a number argument");
-                if (!float.TryParse(args[++i], out regressionThreshold) || regressionThreshold <= 0)
+                if (!float.TryParse(args[++i], NumberStyles.Float, CultureInfo.InvariantCulture, out regressionThreshold) || regressionThreshold <= 0)
                     throw new ArgumentException("--regression-threshold must be a positive number");
                 continue;
             }

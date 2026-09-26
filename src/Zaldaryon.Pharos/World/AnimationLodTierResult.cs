@@ -62,6 +62,6 @@ public sealed record AnimationLodTierResult(
         new(nearTicks, nearTicks / midDivisor, nearTicks / farDivisor);
 
     public override string ToString() =>
-        $"AnimationLodTierResult(Near={NearTickCount}, Mid={MidTickCount}, Far={FarTickCount}, " +
-        $"Ratio={NearToFarRatio:F3}, Throttled={ThrottleDetected})";
+        FormattableString.Invariant(
+            $"AnimationLodTierResult(Near={NearTickCount}, Mid={MidTickCount}, Far={FarTickCount}, Ratio={NearToFarRatio:F3}, Throttled={ThrottleDetected})");
 }

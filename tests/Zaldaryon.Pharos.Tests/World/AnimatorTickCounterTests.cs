@@ -1,3 +1,4 @@
+using System.Globalization;
 using Xunit;
 using Zaldaryon.Pharos.Assertions;
 using Zaldaryon.Pharos.World;
@@ -102,13 +103,22 @@ public sealed class AnimatorTickCounterTests
     public void AnimationLodTierResult_ToString_FormatsCorrectly()
     {
         AnimationLodTierResult result = new(100, 50, 25);
+        CultureInfo previousCulture = CultureInfo.CurrentCulture;
+        try
+        {
+            CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("pt-BR");
+            string str = result.ToString();
 
-        string str = result.ToString();
-
-        Assert.Contains("Near=100", str);
-        Assert.Contains("Mid=50", str);
-        Assert.Contains("Far=25", str);
-        Assert.Contains("Throttled=True", str);
+            Assert.Contains("Near=100", str);
+            Assert.Contains("Mid=50", str);
+            Assert.Contains("Far=25", str);
+            Assert.Contains("Ratio=0.250", str);
+            Assert.Contains("Throttled=True", str);
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = previousCulture;
+        }
     }
 
     // -------------------------------------------------------------------------
