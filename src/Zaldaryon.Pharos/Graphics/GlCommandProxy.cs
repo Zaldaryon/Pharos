@@ -1,3 +1,6 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Reflection;
 using HarmonyLib;
 using OpenTK.Graphics.OpenGL4;
@@ -71,6 +74,7 @@ public sealed class GlCommandProxy
                 _harmony.UnpatchAll(HarmonyId);
                 if (ReferenceEquals(_active, this)) _active = null;
                 _enabled = false;
+                PatchedTypes = Array.Empty<Type>();
             }
         }
     }
@@ -112,9 +116,31 @@ public sealed class GlCommandProxy
     internal static void OnVertexArrayAllocated() => Interlocked.Increment(ref _active!._vertexArrayAllocations);
     internal static void OnError() => Interlocked.Increment(ref _active!._errors);
 
+    /// <summary>
+    /// The OpenGL binding types this proxy patches while recording.
+    /// </summary>
+    /// <remarks>
+    /// Both generations are needed. Vintage Story's <c>ClientPlatformWindows</c> issues its draws
+    /// through the legacy <c>OpenTK.Graphics.OpenGL</c> bindings, while other code paths use
+    /// <c>OpenTK.Graphics.OpenGL4</c>. Patching only one records nothing for the other.
+    /// </remarks>
+    public IReadOnlyList<Type> PatchedTypes { get; private set; } = Array.Empty<Type>();
+
     private void ApplyPatches()
     {
-        Type gl = typeof(GL);
+        // A proxy that only patches the OpenGL4 class silently records nothing at all, so a
+        // draw-call assertion could never fail for the right reason.
+        Type[] bindings = [typeof(GL), typeof(OpenTK.Graphics.OpenGL.GL)];
+        foreach (Type gl in bindings)
+        {
+            ApplyPatchesTo(gl);
+        }
+
+        PatchedTypes = bindings;
+    }
+
+    private void ApplyPatchesTo(Type gl)
+    {
         BindingFlags pub = BindingFlags.Public | BindingFlags.Static;
 
         PatchAllOverloads(gl, "DrawArrays", pub, nameof(Prefix_DrawCall));
@@ -151,13 +177,31 @@ public sealed class GlCommandProxy
 
     private void PatchAllOverloads(Type type, string methodName, BindingFlags flags, string prefixName)
     {
-        foreach (MethodInfo method in type.GetMethods(flags).Where(m => m.Name == methodName && !m.IsGenericMethodDefinition))
+        foreach (MethodInfo method in type.GetMethods(flags).Where(m => m.Name == methodName))
         {
-            _harmony.Patch(method, prefix: new HarmonyMethod(typeof(GlCommandProxy), prefixName));
+            if (method.IsGenericMethodDefinition)
+            {
+                Type[] typeArgs = method.GetGenericArguments();
+                if (typeArgs.Length == 1)
+                {
+                    try
+                    {
+                        MethodInfo constructed = method.MakeGenericMethod(typeof(int));
+                        _harmony.Patch(constructed, prefix: new HarmonyMethod(typeof(GlCommandProxy), prefixName));
+                    }
+                    catch { }
+                }
+            }
+            else
+            {
+                try
+                {
+                    _harmony.Patch(method, prefix: new HarmonyMethod(typeof(GlCommandProxy), prefixName));
+                }
+                catch { }
+            }
         }
     }
-
-    // Static Harmony prefix methods. Return true so the original GL call still executes.
 
     private static void Prefix_DrawCall()
     {

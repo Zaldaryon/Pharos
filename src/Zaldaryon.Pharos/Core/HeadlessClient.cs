@@ -286,6 +286,25 @@ public sealed class HeadlessClient : IDisposable
     }
 
     /// <summary>
+    /// Prepares the engine startup state the vanilla render pass needs, so that
+    /// <c>GuiScreenRunningGame.RenderToPrimary</c> can run in this fixture-mode client.
+    /// </summary>
+    /// <remarks>
+    /// Opt-in. The default boot path leaves this state unset so chunk fixtures keep
+    /// running unchanged. See <see cref="ClientEngineStartup"/> for what is filled in and
+    /// what is still missing.
+    /// </remarks>
+    public string? PrepareRenderPass(Vec3d? playerPosition = null)
+    {
+        return ClientEngineStartup.Prepare(this, playerPosition);
+    }
+
+    /// <summary>
+    /// Whether the vanilla render pass would get past its player null check right now.
+    /// </summary>
+    public bool IsRenderGateOpen => ClientEngineStartup.IsRenderGateOpen(this);
+
+    /// <summary>
     /// Connects the headless client to an in-process embedded Atlas server instance using engine singleplayer loopback.
     /// </summary>
     /// <remarks>
@@ -532,6 +551,16 @@ public sealed class HeadlessClient : IDisposable
         {
             clientChunk.Data[index3d] = blockId;
             if (blockId != 0) hasNonAirBlocks = true;
+        }
+
+        // Placeholder blocks from BlockList.getNoBlock draw as Empty, which makes
+        // ChunkTesselator.TesselateBlock return before emitting any geometry. Register the ids
+        // this fixture uses as drawable cubes so the chunk actually meshes into the render pool.
+        if (hasNonAirBlocks)
+        {
+            List<int> usedIds = [.. fixture.BlockCodes.Values.Select(code => ResolveBlockId(code)),
+                                 .. fixture.BlockIds.Values];
+            FixtureBlockRegistry.EnsureDrawableBlocks(Client, usedIds);
         }
 
         foreach (var (index3d, sunLevel) in fixture.CustomSunlight)
