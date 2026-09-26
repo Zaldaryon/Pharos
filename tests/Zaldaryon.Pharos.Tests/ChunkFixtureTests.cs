@@ -1,5 +1,4 @@
 using System;
-using System.Diagnostics;
 using System.IO;
 using System.Threading.Tasks;
 using Vintagestory.API.Common;
@@ -203,8 +202,29 @@ public sealed class ChunkFixtureTests
         Assert.True(client.FrameController.IsChunkMeshed(targetChunk));
     }
 
+    /// <summary>
+    /// Fixture mode populates a chunk with no live server, and does it with bounded work.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// This test used to assert a 500ms wall-clock budget, which no run could satisfy
+    /// repeatably: it measures a one-time engine bootstrap, so its result tracks machine load
+    /// rather than the code. It failed on an idle box and on a loaded one, and it failed
+    /// identically on an unmodified checkout. Its own comment claimed "well under 100
+    /// milliseconds" while the assertion allowed 500.
+    /// </para>
+    /// <para>
+    /// Performance regression is measured by the benchmark suite against the baselines in
+    /// <c>pharos-baselines.json</c> (ROADMAP #61), not by a wall clock inside a unit test.
+    /// Comparing against a real server boot would be load-insensitive, but it would cost
+    /// roughly 12 seconds per run and would contradict the point of this class, whose other
+    /// tests all assert that fixture mode needs no server. What is asserted here instead is
+    /// the part that is deterministic: the fixture lands intact, and the per-chunk work stays
+    /// proportional to the ids the fixture references.
+    /// </para>
+    /// </remarks>
     [Fact]
-    public void FixtureMode_ExecutesSignificantlyFasterThanServerBoot()
+    public void FixtureMode_PopulatesChunkWithoutBootingAServer()
     {
         HeadlessClientOptions options = new()
         {
@@ -215,8 +235,6 @@ public sealed class ChunkFixtureTests
 
         using HeadlessClient client = HeadlessClientBootstrap.Boot(options);
 
-        Stopwatch sw = Stopwatch.StartNew();
-
         client.InitializeMockWorld();
 
         ChunkFixture fixture = new ChunkFixtureBuilder()
@@ -224,11 +242,40 @@ public sealed class ChunkFixtureTests
             .Fill(0, 0, 0, 31, 2, 31, 1)
             .Build();
 
-        client.InjectChunk(fixture, triggerTesselation: false);
-        sw.Stop();
+        ClientChunk injected = client.InjectChunk(fixture, triggerTesselation: false);
 
-        // Fixture population should complete in well under 100 milliseconds
-        Assert.True(sw.ElapsedMilliseconds < 500, $"Fixture creation took {sw.ElapsedMilliseconds}ms, expected under 500ms.");
+        // The slab must read back in full. A palette trimmed to the wrong BlockList.Count
+        // rewrites every id at or above that count to air, which erases the fixture silently
+        // and leaves the chunk unmeshable.
+        int filled = 0;
+        for (int y = 0; y < ChunkFixture.ChunkSize; y++)
+        {
+            for (int z = 0; z < ChunkFixture.ChunkSize; z++)
+            {
+                for (int x = 0; x < ChunkFixture.ChunkSize; x++)
+                {
+                    byte expected = y <= 2 ? (byte)1 : (byte)0;
+                    Assert.Equal(expected, injected.Data[ChunkFixture.ToIndex(x, y, z)]);
+                    if (expected != 0) filled++;
+                }
+            }
+        }
+
+        Assert.Equal(ChunkFixture.ChunkSize * 3 * ChunkFixture.ChunkSize, filled);
+
+        // FixtureBlockRegistry sizes the block list to the ids the fixture references, so
+        // that ClearPaletteOutsideMaxValue keeps the injected blocks. Sizing it to the
+        // 10,000-slot BlockList capacity instead would allocate thousands of int[7] subid
+        // arrays on a path that runs once per injected chunk, with no timing test able to
+        // notice. Bounding the allocation is deterministic; timing it is not.
+        Assert.Equal(2, client.Client.Blocks.Count);
+        int[][]? subids = client.Client.FastBlockTextureSubidsByBlockAndFace;
+        Assert.NotNull(subids);
+        Assert.True(
+            subids.Length <= 64,
+            $"subid array grew to {subids.Length} slots for a fixture that references 2 block ids");
+        Assert.NotNull(subids[0]);
+        Assert.NotNull(subids[1]);
     }
 
     [Fact]
