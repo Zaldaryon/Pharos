@@ -687,30 +687,26 @@ public sealed class EmbeddedServerHost : IDisposable, IAsyncDisposable
         }
 
         // Cleanup scratch directory if we own it
-        bool existsAtTeardown = Directory.Exists(DataPath);
-        File.AppendAllText(
-            Path.Combine(Path.GetTempPath(), "pharos-teardown-probe.log"),
-            $"owns={_ownsDataPath} existsAtTeardown={existsAtTeardown} stopped={Server.stopped} path={DataPath}{Environment.NewLine}");
-        if (_ownsDataPath && existsAtTeardown)
+        if (_ownsDataPath && Directory.Exists(DataPath))
         {
             try
             {
                 Directory.Delete(DataPath, recursive: true);
-                bool immediately = Directory.Exists(DataPath);
-                Thread.Sleep(250);
-                bool later = Directory.Exists(DataPath);
-                File.AppendAllText(
-                    Path.Combine(Path.GetTempPath(), "pharos-teardown-probe.log"),
-                    $"  delete: existsImmediately={immediately} existsAfter250ms={later}{Environment.NewLine}");
             }
             catch (Exception ex)
             {
-                // A scratch directory that outlives the host is a real leak, so say why instead
-                // of dropping it on the floor: a locked file names the subsystem still holding
-                // the world database open.
-                File.AppendAllText(
-                    Path.Combine(Path.GetTempPath(), "pharos-teardown-probe.log"),
-                    $"  delete threw: {ex.GetType().Name}: {ex.Message}{Environment.NewLine}");
+                // A scratch directory that outlives the host is a real leak, so name the locked
+                // file instead of dropping the failure on the floor. On an Optimum build this is
+                // how a world database still held open at teardown announces itself.
+                try
+                {
+                    ServerMain.Logger?.Warning(
+                        "Scratch data path {0} survived teardown: {1}", DataPath, ex.Message);
+                }
+                catch
+                {
+                    // Ignore logging failures
+                }
             }
         }
     }
