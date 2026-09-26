@@ -429,8 +429,29 @@ public sealed class HeadlessClient : IDisposable
     /// </summary>
     public void InitializeMockWorld(Vec3i? mapSize = null, int defaultSunlight = 31)
     {
+        // Vanilla defaults for the values Packet_LevelInitialize would have carried.
+        const int DefaultChunkSize = 32;
+        const int DefaultRegionSize = 512;
+        const int DefaultMaxViewDistance = 8;
+
         Vec3i size = mapSize ?? new Vec3i(1024, 256, 1024);
         Client.WorldMap.OnMapSizeReceived(size, new Vec3i(32, 256, 32));
+
+        // OnMapSizeReceived only fills mapsize, chunks, chunkMapSizeY, the index multipliers and
+        // the region counts. The chunk and region SIZES arrive separately in
+        // Packet_LevelInitialize, which ClientSystemStartup.HandleLevelInitialize applies, and a
+        // mock world never sees a server. Left at 0 they make
+        // ClientWorldMap.MapRegionSizeInChunks (RegionSize / ServerChunkSize) zero, and
+        // ChunkTesselator.BeginProcessChunk divides by it through
+        // LoadOrCreateLerpedClimateMapOffthread the moment a chunk has any visible face, which is
+        // why tessellation only survived on builds where the fixture tesselated to nothing.
+        // ClientEngineStartup fills these too, but that is the opt-in render path; tessellation
+        // reaches them without it. Only fill what is unset so a real login still wins.
+        if (Client.WorldMap.ClientChunkSize <= 0) Client.WorldMap.ClientChunkSize = DefaultChunkSize;
+        if (Client.WorldMap.ServerChunkSize <= 0) Client.WorldMap.ServerChunkSize = DefaultChunkSize;
+        if (Client.WorldMap.MapChunkSize <= 0) Client.WorldMap.MapChunkSize = DefaultChunkSize;
+        if (Client.WorldMap.regionSize <= 0) Client.WorldMap.regionSize = DefaultRegionSize;
+        if (Client.WorldMap.MaxViewDistance <= 0) Client.WorldMap.MaxViewDistance = DefaultMaxViewDistance;
 
         Client.WorldMap.SunBrightness = Math.Clamp(defaultSunlight, 0, 31);
         Client.WorldMap.BlockLightLevels = new float[32];
