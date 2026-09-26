@@ -568,6 +568,75 @@ public sealed class EmbeddedServerHost : IDisposable, IAsyncDisposable
         await Task.Run(DrainAndDisposeCore).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Waits for the server's separate threads to finish their own shutdown.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <c>ServerMain.Stop</c> only sets the static <c>ServerThread.shouldExit</c> flag. The thread
+    /// observes it at the bottom of <c>ServerThread.Process</c> and calls <c>ShutDown</c>, which is
+    /// what invokes <c>ServerSystem.OnSeperateThreadShutDown</c> on every registered system.
+    /// </para>
+    /// <para>
+    /// That hook is where the world database is released:
+    /// <c>ServerSystemLoadAndSaveGame.OnSeperateThreadShutDown</c> disposes
+    /// <c>chunkthread.gameDatabase</c> and, on Optimum builds, <c>chunkthread.optimumReadPool</c>,
+    /// a pool of SQLite connections. Without this wait the teardown raced those threads, the
+    /// scratch data path could not be deleted, and the surviving connection kept writing
+    /// <c>Saves/World.vcdbs-wal</c> long after the host was gone.
+    /// </para>
+    /// <para>
+    /// Bounded, because a wedged thread must not hang the test host. A timeout is reported and the
+    /// teardown continues, so the leftover directory surfaces as a failed assertion rather than a
+    /// stuck run.
+    /// </para>
+    /// </remarks>
+    private void WaitForServerThreadsToShutDown()
+    {
+        FieldInfo? loopsField = typeof(ServerMain).GetField(
+            "ServerThreadLoops",
+            BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+        if (loopsField?.GetValue(Server) is not System.Collections.IEnumerable loops) return;
+
+        PropertyInfo? aliveProperty = typeof(ServerThread).GetProperty(
+            "Alive", BindingFlags.Instance | BindingFlags.Public);
+        if (aliveProperty is null) return;
+
+        const int TimeoutMs = 5000;
+        const int PollMs = 10;
+        int waited = 0;
+
+        while (waited < TimeoutMs)
+        {
+            bool anyAlive = false;
+            foreach (object? loop in loops)
+            {
+                if (loop is null) continue;
+                if (aliveProperty.GetValue(loop) is true)
+                {
+                    anyAlive = true;
+                    break;
+                }
+            }
+
+            if (!anyAlive) return;
+
+            Thread.Sleep(PollMs);
+            waited += PollMs;
+        }
+
+        try
+        {
+            ServerMain.Logger?.Warning(
+                "Server threads still alive {0}ms after Stop; their OnSeperateThreadShutDown " +
+                "hooks did not run, so the world database may still be open.", TimeoutMs);
+        }
+        catch
+        {
+            // Ignore logging failures
+        }
+    }
+
     private void DrainAndDisposeCore()
     {
         // Wait for background BuildServerAssetsPacket tasks to settle
@@ -593,6 +662,8 @@ public sealed class EmbeddedServerHost : IDisposable, IAsyncDisposable
             // Ignore server stop failures during teardown
         }
 
+        WaitForServerThreadsToShutDown();
+
         // Dispose server with exception containment for known ServerSystemMonitor NRE
         try
         {
@@ -616,15 +687,30 @@ public sealed class EmbeddedServerHost : IDisposable, IAsyncDisposable
         }
 
         // Cleanup scratch directory if we own it
-        if (_ownsDataPath && Directory.Exists(DataPath))
+        bool existsAtTeardown = Directory.Exists(DataPath);
+        File.AppendAllText(
+            Path.Combine(Path.GetTempPath(), "pharos-teardown-probe.log"),
+            $"owns={_ownsDataPath} existsAtTeardown={existsAtTeardown} stopped={Server.stopped} path={DataPath}{Environment.NewLine}");
+        if (_ownsDataPath && existsAtTeardown)
         {
             try
             {
                 Directory.Delete(DataPath, recursive: true);
+                bool immediately = Directory.Exists(DataPath);
+                Thread.Sleep(250);
+                bool later = Directory.Exists(DataPath);
+                File.AppendAllText(
+                    Path.Combine(Path.GetTempPath(), "pharos-teardown-probe.log"),
+                    $"  delete: existsImmediately={immediately} existsAfter250ms={later}{Environment.NewLine}");
             }
-            catch
+            catch (Exception ex)
             {
-                // Ignore scratch cleanup failures during teardown
+                // A scratch directory that outlives the host is a real leak, so say why instead
+                // of dropping it on the floor: a locked file names the subsystem still holding
+                // the world database open.
+                File.AppendAllText(
+                    Path.Combine(Path.GetTempPath(), "pharos-teardown-probe.log"),
+                    $"  delete threw: {ex.GetType().Name}: {ex.Message}{Environment.NewLine}");
             }
         }
     }

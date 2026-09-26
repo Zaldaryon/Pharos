@@ -163,7 +163,9 @@ public sealed class DeterministicFrameController
                     }
                     catch (Exception ex)
                     {
-                        _platform.Logger.Warning($"Error stepping ChunkTesselatorManager: {ex.Message}");
+                        // The full exception, not just Message: a swallowed stack trace is what
+                        // made "Attempted to divide by zero" untraceable back to its frame.
+                        _platform.Logger.Warning($"Error stepping ChunkTesselatorManager: {ex}");
                     }
                 }
 
