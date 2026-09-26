@@ -4,6 +4,8 @@ using OpenTK.Mathematics;
 using OpenTK.Windowing.Common;
 using OpenTK.Windowing.Desktop;
 using OpenTK.Windowing.GraphicsLibraryFramework;
+// ErrorCode exists in both OpenTK.Graphics.OpenGL and the GLFW bindings imported above.
+using GlfwErrorCode = OpenTK.Windowing.GraphicsLibraryFramework.ErrorCode;
 using Vintagestory.Client.NoObf;
 using Zaldaryon.Pharos.Core;
 using Zaldaryon.Pharos.Platform;
@@ -25,6 +27,16 @@ public sealed class HeadlessWindow : IDisposable
 
     public bool IsVisible => !_disposed && NativeWindow.IsVisible;
     public bool IsFocused => !_disposed && NativeWindow.IsFocused;
+
+    /// <summary>
+    /// The most recent error GLFW reported, or null when it has reported none.
+    /// </summary>
+    /// <remarks>
+    /// GLFW reports advisory conditions as errors, so this is diagnostic information rather than
+    /// a failure signal. It exists because the callback that used to be in place threw, which
+    /// turned a Wayland window-icon warning into a dead test host.
+    /// </remarks>
+    public static string? LastGlfwError { get; private set; }
 
     public IntPtr Win32WindowHandle
     {
@@ -62,6 +74,17 @@ public sealed class HeadlessWindow : IDisposable
 
         // Ensure GLFW can run on any test thread
         GLFWProvider.CheckForMainThread = false;
+
+        // OpenTK installs a default GLFW error callback that throws. Under a Wayland session
+        // GLFW selects the Wayland backend and reports "The platform does not support setting
+        // the window icon" as an error, which the default callback turns into an unhandled
+        // exception that kills the test host outright. A headless offscreen window cannot act on
+        // a window-manager decoration warning, so record it and keep going. Recorded rather than
+        // discarded so a test can assert on it, and so CI on an X11-only runner would still show
+        // the message if it ever appeared there.
+        GLFWProvider.SetErrorCallback((GlfwErrorCode code, string description) =>
+            LastGlfwError = $"{code}: {description}");
+        LastGlfwError = null;
 
         // Configure Mesa software rasterization (llvmpipe) and validate virtual display server on Linux
         if (options.ConfigureMesaEnvironment && (OperatingSystem.IsLinux() || options.ForceSoftwareRendering))

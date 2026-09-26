@@ -104,6 +104,20 @@
       <Pack>false</Pack>
       <Visible>false</Visible>
     </Content>
+    <!-- Vintage Story ships the SkiaSharp native per platform: libSkiaSharp.so on Linux, next to
+         the .dll on Windows. Listing only the Windows one left a Linux test host with a managed
+         SkiaSharp.dll and no native library, so the first PNG assertion died inside the SKObject
+         type initializer. The .so is what makes the Visual golden-image tests portable. -->
+    <Content Include="$(VintageStoryPath)/Lib/libSkiaSharp.so" Condition="Exists('$(VintageStoryPath)/Lib/libSkiaSharp.so')">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Pack>false</Pack>
+      <Visible>false</Visible>
+    </Content>
+    <Content Include="$(VintageStoryPath)/Lib/libglfw.so" Condition="Exists('$(VintageStoryPath)/Lib/libglfw.so')">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Pack>false</Pack>
+      <Visible>false</Visible>
+    </Content>
     <Content Include="$(VintageStoryPath)\Lib\OpenAL32.dll" Condition="Exists('$(VintageStoryPath)\Lib\OpenAL32.dll')">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <Pack>false</Pack>
