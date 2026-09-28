@@ -140,7 +140,9 @@ public sealed class HeadlessClient : IDisposable
         GuiScreenRunningGame runningGameScreen,
         HeadlessWindow window,
         HeadlessClientOptions options,
-        string? tempDataPath)
+        string? tempDataPath,
+        SystemNetworkProcess networkProcess,
+        bool nativeClientLifecycle)
     {
         Client = client;
         Platform = platform;
@@ -149,7 +151,7 @@ public sealed class HeadlessClient : IDisposable
         Window = window;
         Options = options;
         _tempDataPath = tempDataPath;
-        FrameController = new DeterministicFrameController(client, platform, screenManager, runningGameScreen, window);
+        FrameController = new DeterministicFrameController(client, platform, screenManager, runningGameScreen, window, networkProcess, nativeClientLifecycle);
         Gui = new GuiInspector(screenManager);
         TestPlayer = new ClientTestPlayer(client);
         Culling = new CullingInspector(client);
@@ -385,6 +387,8 @@ public sealed class HeadlessClient : IDisposable
         ClientSettings.PlayerName = playerName;
         ClientSettings.PlayerUID = "pharos-" + playerName.ToLowerInvariant();
 
+        // This reduced in-process fixture uses the engine's singleplayer startup contract.
+        // Native TCP multiplayer lifecycle is covered by TcpProtocolTestPlayer instead.
         Client.IsSingleplayer = true;
         Client.Connectdata = new ServerConnectData
         {

@@ -19,6 +19,9 @@ Use cases:
 - Automated smoke tests for mod compatibility
 - Lockstep client-server end-to-end scenario testing
 
+See [resource measurement and limits](docs/resource-limits.md) for process
+telemetry and opt-in Windows CPU/memory quotas in benchmark runs.
+
 ## Requirements
 
 - Vintage Story 1.22.x (1.22.7 recommended)

@@ -18,6 +18,12 @@ public sealed record BenchmarkResult(
     bool SourcedFromFile = false)
 {
     /// <summary>
+    /// Raw per-iteration timings and distribution statistics, when produced by a benchmark run.
+    /// Null for results created through the legacy constructor or factory without samples.
+    /// </summary>
+    public BenchmarkTimingSummary? TimingDistribution { get; init; }
+
+    /// <summary>
     /// Default regression threshold: 20% slower than baseline.
     /// </summary>
     public const float DefaultThreshold = 1.2f;
@@ -36,7 +42,8 @@ public sealed record BenchmarkResult(
         float elapsedMs,
         float baselineMs,
         float threshold = DefaultThreshold,
-        bool sourcedFromFile = false)
+        bool sourcedFromFile = false,
+        IEnumerable<double>? sampleTimingsMs = null)
     {
         ArgumentException.ThrowIfNullOrEmpty(name);
         if (baselineMs <= 0)
@@ -47,7 +54,10 @@ public sealed record BenchmarkResult(
         float deltaPercent = (elapsedMs - baselineMs) / baselineMs * 100f;
         bool isPassing = elapsedMs <= baselineMs * threshold;
 
-        return new BenchmarkResult(name, elapsedMs, baselineMs, isPassing, deltaPercent, sourcedFromFile);
+        var result = new BenchmarkResult(name, elapsedMs, baselineMs, isPassing, deltaPercent, sourcedFromFile);
+        return sampleTimingsMs is null
+            ? result
+            : result with { TimingDistribution = BenchmarkTimingSummary.Create(sampleTimingsMs) };
     }
 
     /// <summary>

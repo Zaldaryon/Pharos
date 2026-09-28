@@ -43,6 +43,10 @@ public static class HeadlessClientBootstrap
 
             GamePaths.DataPath = dataPath;
             GamePaths.EnsurePathExists(dataPath);
+            if (options.StartNativeClientLifecycle)
+            {
+                GamePaths.EnsurePathsExist();
+            }
 
             string assetsPath = options.AssetsPath ?? Path.Combine(gamePath, "assets");
             if (Directory.Exists(assetsPath))
@@ -70,6 +74,9 @@ public static class HeadlessClientBootstrap
 
             // 4. Create offscreen GLFW window with attached FBO
             HeadlessWindow window = new(options);
+            int mainThreadId = Environment.CurrentManagedThreadId;
+            ScreenManager.MainThreadId = mainThreadId;
+            RuntimeEnv.MainThreadId = mainThreadId;
 
             // 5. Initialize platform
             ClientLogger logger = new();
@@ -87,7 +94,9 @@ public static class HeadlessClientBootstrap
                 {
                     try
                     {
-                        am.InitAndLoadBaseAssets(logger, "textures");
+                        am.InitAndLoadBaseAssets(
+                            logger,
+                            options.StartNativeClientLifecycle ? null : "textures");
                     }
                     catch
                     {
@@ -149,7 +158,7 @@ public static class HeadlessClientBootstrap
             ScreenManager.Platform = platform;
             ScreenManager.ParsedArgs ??= new ClientProgramArgs();
             ScreenManager screenManager = new(platform);
-            GuiScreenRunningGame runningGameScreen = new(screenManager, null);
+            GuiScreenRunningGame runningGameScreen = new HeadlessRunningGameScreen(screenManager);
             typeof(ScreenManager).GetField("CurrentScreen", BindingFlags.NonPublic | BindingFlags.Instance)?.SetValue(screenManager, runningGameScreen);
 
             FieldInfo? field = typeof(GuiScreenRunningGame).GetField("runningGame", BindingFlags.NonPublic | BindingFlags.Instance);
@@ -164,7 +173,21 @@ public static class HeadlessClientBootstrap
             client.clientSystems ??= new ClientSystem[] { client.modHandler };
             client.TerrainChunkTesselator ??= new ChunkTesselator(client);
 
-            return new HeadlessClient(client, platform, screenManager, runningGameScreen, window, options, tempDataPath);
+            if (options.StartNativeClientLifecycle)
+            {
+                // Connected-world tests need native input, physics, systems, rendering, and
+                // worker threads; GL resources and client startup state are prepared first.
+                window.NativeWindow.MakeCurrent();
+                ClientEngineStartup.StartNativeClient(client, platform);
+            }
+            else
+            {
+                // Fixture boot keeps the reduced client lifecycle and pumps its packet parser
+                // synchronously from deterministic frames.
+                client.networkProc ??= new SystemNetworkProcess(client);
+            }
+
+            return new HeadlessClient(client, platform, screenManager, runningGameScreen, window, options, tempDataPath, client.networkProc, options.StartNativeClientLifecycle);
         }
     }
 

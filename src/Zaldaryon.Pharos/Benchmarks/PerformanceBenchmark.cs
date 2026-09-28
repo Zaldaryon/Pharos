@@ -70,6 +70,19 @@ public abstract class PerformanceBenchmark
     /// <returns>A BenchmarkResult with timing and pass/fail status.</returns>
     public BenchmarkResult RunBenchmark(IReadOnlyDictionary<string, float>? fileBaselines)
     {
+        int warmupIterations = WarmupIterations;
+        int measurementIterations = MeasurementIterations;
+
+        if (warmupIterations < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(WarmupIterations), warmupIterations, "Warmup iterations cannot be negative.");
+        }
+
+        if (measurementIterations <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(MeasurementIterations), measurementIterations, "Measurement iterations must be positive.");
+        }
+
         // Determine baseline source
         float baselineMs;
         bool sourcedFromFile;
@@ -86,26 +99,21 @@ public abstract class PerformanceBenchmark
         }
 
         // Warmup iterations (discarded)
-        for (int i = 0; i < WarmupIterations; i++)
+        for (int i = 0; i < warmupIterations; i++)
         {
-            ExecuteWorkload();
+            RunIteration(timedStopwatch: null);
         }
 
         // Measurement iterations
         var stopwatch = new Stopwatch();
-        long[] timings = new long[MeasurementIterations];
+        long[] timings = new long[measurementIterations];
+        double[] sampleTimingsMs = new double[measurementIterations];
 
-        for (int i = 0; i < MeasurementIterations; i++)
+        for (int i = 0; i < measurementIterations; i++)
         {
-            Setup();
-            
-            stopwatch.Restart();
-            ExecuteWorkload();
-            stopwatch.Stop();
-            
+            RunIteration(stopwatch);
             timings[i] = stopwatch.ElapsedTicks;
-            
-            Cleanup();
+            sampleTimingsMs[i] = stopwatch.ElapsedTicks * 1000.0 / Stopwatch.Frequency;
         }
 
         // Calculate average (excluding outliers for stability)
@@ -115,7 +123,7 @@ public abstract class PerformanceBenchmark
         long sumTicks;
         int count;
         
-        if (MeasurementIterations >= 5)
+        if (measurementIterations >= 5)
         {
             // Exclude lowest and highest
             sumTicks = 0;
@@ -134,7 +142,30 @@ public abstract class PerformanceBenchmark
         double avgTicks = sumTicks / (double)count;
         float avgMs = (float)(avgTicks / Stopwatch.Frequency * 1000.0);
 
-        return BenchmarkResult.Create(Name, avgMs, baselineMs, RegressionThreshold, sourcedFromFile);
+        return BenchmarkResult.Create(Name, avgMs, baselineMs, RegressionThreshold, sourcedFromFile, sampleTimingsMs);
+
+        void RunIteration(Stopwatch? timedStopwatch)
+        {
+            try
+            {
+                Setup();
+
+                if (timedStopwatch is null)
+                {
+                    ExecuteWorkload();
+                    return;
+                }
+
+                timedStopwatch.Restart();
+                ExecuteWorkload();
+                timedStopwatch.Stop();
+            }
+            finally
+            {
+                timedStopwatch?.Stop();
+                Cleanup();
+            }
+        }
     }
 
     /// <summary>

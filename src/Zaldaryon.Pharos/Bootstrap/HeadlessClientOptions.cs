@@ -14,6 +14,8 @@ public sealed class HeadlessClientOptions
     public bool UseNullAudioDevice { get; init; } = true;
     public bool ConfigureMesaEnvironment { get; init; } = true;
     public bool ForceSoftwareRendering { get; init; }
+    /// <summary>Starts the native client systems and worker threads for connected-world integration tests.</summary>
+    public bool StartNativeClientLifecycle { get; init; }
     public string MesaGlVersionOverride { get; init; } = "4.5";
     public string MesaGlslVersionOverride { get; init; } = "450";
     public string? LinuxDisplay { get; init; }

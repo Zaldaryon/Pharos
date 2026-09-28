@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Concurrent;
 using System.IO;
+using System.Net;
+using System.Net.Sockets;
 using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
@@ -45,9 +47,13 @@ public sealed class EmbeddedServerHost : IDisposable, IAsyncDisposable
 {
     private bool _disposed;
     private readonly bool _ownsDataPath;
+    private readonly object _tickGate = new();
+    private readonly FrameProfilerUtil _frameProfiler;
     private readonly MethodInfo? _waitOnBuildServerAssetsPacket;
     private int _tickCount;
     private Exception? _serverException;
+    private TcpNetServer? _nativeTestTcpServer;
+    private UdpNetServer? _nativeTestUdpServer;
     private readonly ConcurrentQueue<(Action action, TaskCompletionSource tcs)> _gameThreadQueue = new();
     private readonly ConcurrentQueue<(Func<object?> func, TaskCompletionSource<object?> tcs)> _gameThreadFuncQueue = new();
 
@@ -80,6 +86,53 @@ public sealed class EmbeddedServerHost : IDisposable, IAsyncDisposable
     /// </summary>
     public int TickCount => _tickCount;
 
+    /// <summary>
+    /// Starts real loopback TCP/UDP listeners in engine socket slot 1 for protocol integration tests.
+    /// The in-process Dummy transports in slot 0 remain installed and unchanged.
+    /// </summary>
+    /// <returns>The shared TCP/UDP listening port.</returns>
+    public int StartNativeTestListeners()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (_nativeTestTcpServer is not null || _nativeTestUdpServer is not null ||
+            Server.MainSockets[1] is not null || Server.UdpSockets[1] is not null)
+        {
+            throw new InvalidOperationException("Native test listeners are already started or socket slot 1 is occupied.");
+        }
+
+        int port;
+        using (TcpListener probe = new(IPAddress.Loopback, 0))
+        {
+            probe.Start();
+            port = ((IPEndPoint)probe.LocalEndpoint).Port;
+        }
+
+        TcpNetServer tcp = new();
+        UdpNetServer udp = new(Server.Clients);
+        tcp.SetIpAndPort(IPAddress.Loopback.ToString(), port);
+        udp.SetIpAndPort(IPAddress.Loopback.ToString(), port);
+        Server.Config.VerifyPlayerAuth = false;
+        Server.MainSockets[1] = tcp;
+        Server.UdpSockets[1] = udp;
+
+        try
+        {
+            tcp.Start();
+            udp.Start();
+            _nativeTestTcpServer = tcp;
+            _nativeTestUdpServer = udp;
+            return port;
+        }
+        catch
+        {
+            Server.MainSockets[1] = null;
+            Server.UdpSockets[1] = null;
+            tcp.Dispose();
+            udp.Dispose();
+            throw;
+        }
+    }
+
     private EmbeddedServerHost(
         ServerMain server,
         DummyNetwork tcpNetwork,
@@ -96,6 +149,8 @@ public sealed class EmbeddedServerHost : IDisposable, IAsyncDisposable
         DataPath = dataPath;
         _ownsDataPath = ownsDataPath;
         Sandbox = sandbox;
+        _frameProfiler = ServerMain.FrameProfiler
+            ?? throw new InvalidOperationException("The embedded server did not initialize its frame profiler.");
 
         _waitOnBuildServerAssetsPacket = typeof(ServerMain).GetMethod(
             "WaitOnBuildServerAssetsPacket",
@@ -321,29 +376,41 @@ public sealed class EmbeddedServerHost : IDisposable, IAsyncDisposable
     {
         if (_disposed) return;
 
-        // Check for prior crash
-        if (_serverException is not null)
+        lock (_tickGate)
         {
-            throw ServerCrashedException.FromServerException(_serverException);
-        }
+            FrameProfilerUtil? previousProfiler = ServerMain.FrameProfiler;
+            ServerMain.FrameProfiler = _frameProfiler;
+            try
+            {
+                // Check for prior crash
+                if (_serverException is not null)
+                {
+                    throw ServerCrashedException.FromServerException(_serverException);
+                }
 
-        // Drain pending game thread actions before the tick
-        DrainGameThreadQueue();
+                // Drain pending game thread actions before the tick
+                DrainGameThreadQueue();
 
-        try
-        {
-            Server.Process();
-            _tickCount++;
-        }
-        catch (Exception ex)
-        {
-            _serverException = ex;
-            FaultPendingWaiters(ex);
-            throw ServerCrashedException.FromServerException(ex);
-        }
+                try
+                {
+                    Server.Process();
+                    _tickCount++;
+                }
+                catch (Exception ex)
+                {
+                    _serverException = ex;
+                    FaultPendingWaiters(ex);
+                    throw ServerCrashedException.FromServerException(ex);
+                }
 
-        // Drain any actions queued during the tick
-        DrainGameThreadQueue();
+                // Drain any actions queued during the tick
+                DrainGameThreadQueue();
+            }
+            finally
+            {
+                ServerMain.FrameProfiler = previousProfiler;
+            }
+        }
     }
 
     /// <summary>
@@ -639,6 +706,20 @@ public sealed class EmbeddedServerHost : IDisposable, IAsyncDisposable
 
     private void DrainAndDisposeCore()
     {
+        if (_nativeTestTcpServer is not null)
+        {
+            Server.MainSockets[1] = null;
+            _nativeTestTcpServer.Dispose();
+            _nativeTestTcpServer = null;
+        }
+
+        if (_nativeTestUdpServer is not null)
+        {
+            Server.UdpSockets[1] = null;
+            _nativeTestUdpServer.Dispose();
+            _nativeTestUdpServer = null;
+        }
+
         // Wait for background BuildServerAssetsPacket tasks to settle
         try
         {

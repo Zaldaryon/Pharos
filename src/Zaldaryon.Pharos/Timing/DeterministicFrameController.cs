@@ -53,6 +53,8 @@ public sealed class DeterministicFrameController
     private readonly ScreenManager _screenManager;
     private readonly GuiScreenRunningGame _runningGameScreen;
     private readonly HeadlessWindow _window;
+    private readonly SystemNetworkProcess _networkProcess;
+    private readonly bool _nativeClientLifecycle;
     private readonly object _stepLock = new();
 
     private long _totalFrames;
@@ -65,13 +67,17 @@ public sealed class DeterministicFrameController
         ClientPlatformWindows platform,
         ScreenManager screenManager,
         GuiScreenRunningGame runningGameScreen,
-        HeadlessWindow window)
+        HeadlessWindow window,
+        SystemNetworkProcess networkProcess,
+        bool nativeClientLifecycle)
     {
         _client = client ?? throw new ArgumentNullException(nameof(client));
         _platform = platform ?? throw new ArgumentNullException(nameof(platform));
         _screenManager = screenManager ?? throw new ArgumentNullException(nameof(screenManager));
         _runningGameScreen = runningGameScreen ?? throw new ArgumentNullException(nameof(runningGameScreen));
         _window = window ?? throw new ArgumentNullException(nameof(window));
+        _networkProcess = networkProcess ?? throw new ArgumentNullException(nameof(networkProcess));
+        _nativeClientLifecycle = nativeClientLifecycle;
     }
 
     /// <summary>
@@ -130,30 +136,17 @@ public sealed class DeterministicFrameController
                 _totalElapsedSeconds += dt;
                 _lastDt = dt;
 
-                // 3. Process main thread tasks queued in ScreenManager (snapshot to avoid deadlocks)
-                Action[] pendingTasks;
-                lock (ScreenManager.MainThreadTasks)
+                // Run the native engine packet parser on the deterministic caller thread. Do not
+                // catch here: malformed packets and native handler failures must fail the test.
+                if (!_nativeClientLifecycle)
                 {
-                    if (ScreenManager.MainThreadTasks.Count > 0)
-                    {
-                        pendingTasks = ScreenManager.MainThreadTasks.ToArray();
-                        ScreenManager.MainThreadTasks.Clear();
-                    }
-                    else
-                    {
-                        pendingTasks = Array.Empty<Action>();
-                    }
+                    _networkProcess.OnSeperateThreadGameTick(dt);
                 }
 
-                foreach (Action task in pendingTasks)
-                {
-                    task.Invoke();
-                }
-
-                // 4. Ensure offscreen FBO is bound for rendering
+                // 3. Ensure offscreen FBO is bound for rendering
                 _window.Framebuffer.Bind();
 
-                // 4.5. Step background chunk tessellation and mesh upload deterministically if active
+                // 3.5. Step background chunk tessellation and mesh upload deterministically if active
                 if (ChunkTesselatorManager != null)
                 {
                     try
@@ -169,8 +162,13 @@ public sealed class DeterministicFrameController
                     }
                 }
 
-                // 5. Execute screen and game rendering pipeline
-                if (_client.Player?.Entity?.Pos != null)
+                // ExecuteMainThreadTasks preserves the engine's ordering: packet handlers
+                // stay queued until all startup/game-launch tasks have completed.
+                if (_nativeClientLifecycle && _client.Player?.Entity?.Pos == null)
+                {
+                    _client.ExecuteMainThreadTasks(dt);
+                }
+                else if (_nativeClientLifecycle)
                 {
                     _runningGameScreen.RenderToPrimary(dt);
                     _runningGameScreen.RenderAfterPostProcessing(dt);
@@ -181,18 +179,29 @@ public sealed class DeterministicFrameController
                 else
                 {
                     _client.ExecuteMainThreadTasks(dt);
-
+                    ExecuteScreenManagerMainThreadTasks();
                     if (_client.eventManager != null && !_client.IsPaused)
                     {
                         long deterministicElapsedMs = (long)(_totalElapsedSeconds * 1000.0);
                         _client.eventManager.TriggerGameTick(deterministicElapsedMs, _client);
                     }
 
-                    GuiScreen? currentScreen = s_currentScreenField?.GetValue(_screenManager) as GuiScreen;
-                    if (currentScreen != null && currentScreen != _runningGameScreen)
+                    if (_client.Player?.Entity?.Pos != null)
                     {
-                        currentScreen.RenderToPrimary(dt);
-                        currentScreen.RenderToDefaultFramebuffer(dt);
+                        _runningGameScreen.RenderToPrimary(dt);
+                        _runningGameScreen.RenderAfterPostProcessing(dt);
+                        _runningGameScreen.RenderAfterFinalComposition(dt);
+                        _runningGameScreen.RenderAfterBlit(dt);
+                        _runningGameScreen.RenderToDefaultFramebuffer(dt);
+                    }
+                    else
+                    {
+                        GuiScreen? currentScreen = s_currentScreenField?.GetValue(_screenManager) as GuiScreen;
+                        if (currentScreen != null && currentScreen != _runningGameScreen)
+                        {
+                            currentScreen.RenderToPrimary(dt);
+                            currentScreen.RenderToDefaultFramebuffer(dt);
+                        }
                     }
                 }
 
@@ -206,6 +215,21 @@ public sealed class DeterministicFrameController
             {
                 _isStepping = false;
             }
+        }
+    }
+
+    private static void ExecuteScreenManagerMainThreadTasks()
+    {
+        Action[] pendingTasks;
+        lock (ScreenManager.MainThreadTasks)
+        {
+            pendingTasks = ScreenManager.MainThreadTasks.ToArray();
+            ScreenManager.MainThreadTasks.Clear();
+        }
+
+        foreach (Action task in pendingTasks)
+        {
+            task();
         }
     }
 

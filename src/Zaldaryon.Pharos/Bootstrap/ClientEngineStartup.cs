@@ -15,7 +15,9 @@ using Vintagestory.API.MathTools;
 using Vintagestory.API.Util;
 using Zaldaryon.Pharos.Core;
 using Vintagestory.Client;
+using Vintagestory.ClientNative;
 using Vintagestory.Client.NoObf;
+using Vintagestory;
 using Vintagestory.Common;
 namespace Zaldaryon.Pharos.Bootstrap;
 
@@ -129,6 +131,23 @@ public static class ClientEngineStartup
         EnsureRenderSystems(client.Client);
         client.Client.Reset3DProjection();
         return null;
+    }
+
+    /// <summary>Starts the native client lifecycle after preparing its GL and launcher state.</summary>
+    public static void StartNativeClient(ClientMain client, ClientPlatformWindows platform)
+    {
+        ArgumentNullException.ThrowIfNull(client);
+        ArgumentNullException.ThrowIfNull(platform);
+
+        EnsureMainThreadIdentity();
+        EnsureFrameBuffers(platform);
+        if (ScreenManager.hotkeyManager.HotKeys.Count == 0)
+        {
+            ScreenManager.hotkeyManager.RegisterDefaultHotKeys();
+        }
+        platform.crashreporter ??= new CrashReporter(EnumAppSide.Client);
+        CrashReporter.SetLogger((Logger)platform.Logger);
+        client.Start();
     }
 
     private static void EnsureMainThreadIdentity()
@@ -490,18 +509,23 @@ public static class ClientEngineStartup
 
     private static void EnsureFrameBuffers(HeadlessClient client)
     {
+        EnsureFrameBuffers(client.Platform);
+    }
+
+    private static void EnsureFrameBuffers(ClientPlatformWindows platform)
+    {
         // ChunkRenderer.RenderOpaque reads Platform.FrameBuffers[5].DepthTextureId, and
         // GuiScreenRunningGame.RenderAfterPostProcessing unloads EnumFrameBuffer.Transparent.
-        if (client.Platform.FrameBuffers is { Count: > 0 }) return;
+        if (platform.FrameBuffers is { Count: > 0 }) return;
 
         // ClientPlatformWindows.RebuildFrameBuffers disposes the previous list before
         // installing the new one, and the headless bootstrap never creates the first one, so
         // the field is still null and the dispose pass throws.
         FieldInfo? field = typeof(ClientPlatformWindows).GetField(
             "frameBuffers", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
-        field?.SetValue(client.Platform, new List<FrameBufferRef>());
+        field?.SetValue(platform, new List<FrameBufferRef>());
 
-        client.Platform.RebuildFrameBuffers();
+        platform.RebuildFrameBuffers();
     }
 
     private static Vec3d DefaultPlayerPosition(HeadlessClient client)
