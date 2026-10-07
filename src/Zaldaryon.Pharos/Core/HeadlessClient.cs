@@ -543,6 +543,76 @@ public sealed class HeadlessClient : IDisposable
         return new ClientServerLoopbackSession(this, server);
     }
 
+    /// <summary>
+    /// Connects to an embedded server over its real network sockets, as a player on the same
+    /// machine would. The server must listen on the network; see
+    /// <see cref="ServerWorldOptions.ListenPort"/>. The session ticks the server in lockstep, as
+    /// an in-memory session does, but the packets travel over TCP and UDP.
+    /// </summary>
+    /// <param name="server">The embedded server.</param>
+    /// <param name="auth">Who the client joins as; see <see cref="ClientAuth"/>.</param>
+    /// <exception cref="InvalidOperationException">
+    /// The client is not in engine mode, or the server does not listen on the network.
+    /// </exception>
+    public ClientServerLoopbackSession ConnectTcp(EmbeddedServerHost server, ClientAuth auth)
+    {
+        ArgumentNullException.ThrowIfNull(server);
+        int port = server.Port ?? throw new InvalidOperationException(
+            "The server does not listen on the network. Boot it with ServerWorldOptions.ListenPort set.");
+
+        ConnectOverNetwork(server.Options.ListenAddress, port, auth);
+        return new ClientServerLoopbackSession(this, server);
+    }
+
+    /// <summary>
+    /// Connects to a server this process does not run, such as a dedicated server, over the
+    /// network.
+    /// </summary>
+    /// <param name="host">The server's host name or address.</param>
+    /// <param name="port">The server's port.</param>
+    /// <param name="auth">Who the client joins as. A server with player verification on accepts
+    /// only <see cref="ClientAuth.Online"/> clients.</param>
+    /// <exception cref="InvalidOperationException">The client is not in engine mode.</exception>
+    public RemoteServerSession ConnectRemote(string host, int port, ClientAuth auth)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(host);
+        ConnectOverNetwork(host, port, auth);
+        return new RemoteServerSession(this, host, port);
+    }
+
+    private void ConnectOverNetwork(string host, int port, ClientAuth auth)
+    {
+        ArgumentNullException.ThrowIfNull(auth);
+        if (!IsEngineMode)
+        {
+            throw new InvalidOperationException("Only an engine-mode client can join a server over the network.");
+        }
+
+        _sessionCredentialsSet |= auth.IsOnline;
+
+        RunOnClientThread(() =>
+        {
+            ClientSettings.PlayerName = auth.PlayerName;
+            ClientSettings.PlayerUID = auth.PlayerUid;
+            ClientSettings.Sessionkey = auth.SessionKey ?? "";
+            ClientSettings.SessionSignature = auth.SessionSignature ?? "";
+            ClientSettings.MpToken = null;
+
+            // Offline, the client answers the server's login token itself. Online, it asks the
+            // auth server for a multiplayer token, which the server validates.
+            ScreenManager.ClientIsOffline = !auth.IsOnline;
+
+            Client.IsSingleplayer = false;
+            Client.Connectdata = new ServerConnectData { Host = host, Port = port };
+            Client.MainNetClient = new OrderedTcpNetClient();
+            Client.UdpNetClient = new UdpNetClient();
+            Client.Connect();
+        });
+    }
+
+    // Whether an online session's key reached the process-wide settings, to clear it on dispose.
+    private bool _sessionCredentialsSet;
+
     private ClientServerLoopbackSession ConnectEngineLoopback(EmbeddedServerHost server, string playerName)
     {
         ClientSettings.PlayerName = playerName;
@@ -1013,6 +1083,14 @@ public sealed class HeadlessClient : IDisposable
         catch
         {
             // Ignore queue clearing errors
+        }
+
+        if (_sessionCredentialsSet)
+        {
+            // Settings are process-wide and saved to disk: the session key must not outlive the client.
+            ClientSettings.Sessionkey = "";
+            ClientSettings.SessionSignature = "";
+            ClientSettings.MpToken = null;
         }
 
         if (!string.IsNullOrEmpty(_tempDataPath) && Directory.Exists(_tempDataPath))

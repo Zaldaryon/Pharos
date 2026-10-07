@@ -38,4 +38,21 @@ public sealed record ServerWorldOptions
     /// JSON string containing world configuration overrides. Defaults to an empty JSON object.
     /// </summary>
     public string WorldConfigurationJson { get; init; } = "{}";
+
+    /// <summary>
+    /// A TCP and UDP port the server also listens on, for clients that connect over a real
+    /// network, or null to accept only in-memory connections. 0 picks a free port; read it from
+    /// <see cref="EmbeddedServerHost.Port"/>.
+    /// </summary>
+    public int? ListenPort { get; init; }
+
+    /// <summary>The address <see cref="ListenPort"/> binds to. Loopback by default.</summary>
+    public string ListenAddress { get; init; } = "127.0.0.1";
+
+    /// <summary>
+    /// Whether the server has the Vintage Story auth server validate each player who connects over
+    /// the network, as a public server does. Off by default, so offline clients can join.
+    /// In-memory connections are never verified.
+    /// </summary>
+    public bool VerifyPlayerAuth { get; init; }
 }

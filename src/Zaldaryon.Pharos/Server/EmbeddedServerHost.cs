@@ -56,6 +56,12 @@ public sealed class EmbeddedServerHost : IDisposable, IAsyncDisposable
     /// <summary>The underlying Vintage Story server instance.</summary>
     public ServerMain Server { get; }
 
+    /// <summary>
+    /// The TCP and UDP port the server listens on for network clients, or null when it accepts
+    /// only in-memory connections. See <see cref="ServerWorldOptions.ListenPort"/>.
+    /// </summary>
+    public int? Port { get; private init; }
+
     /// <summary>What the server has logged since it booted. See <see cref="LogCapture"/>.</summary>
     public LogCapture Logs { get; private init; } = new(EnumAppSide.Server);
 
@@ -174,6 +180,45 @@ public sealed class EmbeddedServerHost : IDisposable, IAsyncDisposable
     public static EmbeddedServerHost Boot(ServerWorldOptions? options = null, string? customDataPath = null) =>
         BootOnGameThread(gameThread => BootCore(options, customDataPath, gameThread));
 
+    /// <summary>
+    /// Applies the network options once the server has loaded its config: player verification,
+    /// and the real TCP and UDP sockets next to the in-memory ones, as the game's own
+    /// <c>/allowlan</c> command opens them. Returns the port, or null.
+    /// </summary>
+    private static int? ConfigureNetwork(ServerMain server, ServerWorldOptions options)
+    {
+        server.Config.VerifyPlayerAuth = options.VerifyPlayerAuth;
+        if (options.ListenPort is not { } requested) return null;
+
+        int port = requested == 0 ? FreePort(options.ListenAddress) : requested;
+
+        server.MainSockets[1] = new TcpNetServer();
+        server.MainSockets[1].SetIpAndPort(options.ListenAddress, port);
+        server.MainSockets[1].Start();
+
+        server.UdpSockets[1] = new UdpNetServer(server.Clients);
+        server.UdpSockets[1].SetIpAndPort(options.ListenAddress, port);
+        server.UdpSockets[1].Start();
+
+        ServerMain.Logger.Notification("Pharos: listening for network clients on {0}:{1}", options.ListenAddress, port);
+        return port;
+    }
+
+    // The game binds TCP and UDP to the same port, so one free for TCP is taken for both.
+    private static int FreePort(string address)
+    {
+        System.Net.Sockets.TcpListener probe = new(System.Net.IPAddress.Parse(address), 0);
+        probe.Start();
+        try
+        {
+            return ((System.Net.IPEndPoint)probe.LocalEndpoint).Port;
+        }
+        finally
+        {
+            probe.Stop();
+        }
+    }
+
     private static EmbeddedServerHost BootOnGameThread(System.Func<EngineThread, EmbeddedServerHost> boot)
     {
         // The server is built on the thread it will tick on, so the per-thread state it creates
@@ -251,6 +296,8 @@ public sealed class EmbeddedServerHost : IDisposable, IAsyncDisposable
         server.PreLaunch();
         server.Launch();
 
+        int? port = ConfigureNetwork(server, options);
+
         // Wait for background asset build tasks to settle
         try
         {
@@ -262,7 +309,7 @@ public sealed class EmbeddedServerHost : IDisposable, IAsyncDisposable
             // Best effort wait
         }
 
-        return new EmbeddedServerHost(server, tcpNetwork, udpNetwork, options, dataPath, ownsDataPath, sandbox: null, gameThread) { Logs = logs };
+        return new EmbeddedServerHost(server, tcpNetwork, udpNetwork, options, dataPath, ownsDataPath, sandbox: null, gameThread) { Logs = logs, Port = port };
     }
 
     /// <summary>
@@ -338,6 +385,8 @@ public sealed class EmbeddedServerHost : IDisposable, IAsyncDisposable
         server.PreLaunch();
         server.Launch();
 
+        int? port = ConfigureNetwork(server, options);
+
         // Wait for background asset build tasks to settle
         try
         {
@@ -349,7 +398,7 @@ public sealed class EmbeddedServerHost : IDisposable, IAsyncDisposable
             // Best effort wait
         }
 
-        return new EmbeddedServerHost(server, tcpNetwork, udpNetwork, options, dataPath, ownsDataPath: false, sandbox, gameThread) { Logs = logs };
+        return new EmbeddedServerHost(server, tcpNetwork, udpNetwork, options, dataPath, ownsDataPath: false, sandbox, gameThread) { Logs = logs, Port = port };
     }
 
     /// <summary>
