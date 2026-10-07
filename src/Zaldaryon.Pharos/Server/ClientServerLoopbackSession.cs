@@ -55,6 +55,15 @@ public sealed class ClientServerLoopbackSession : IDisposable
     /// <summary>Gets whether the client has connected to the server.</summary>
     public bool IsConnected { get; private set; }
 
+    /// <summary>
+    /// Whether the client has joined. For an engine-mode client this is
+    /// <see cref="HeadlessClient.IsJoined"/>. A fixture-mode client never processes network
+    /// packets, so this stays false for it unless a player is synthesized.
+    /// </summary>
+    private bool HasJoined => Client.IsEngineMode
+        ? Client.IsJoined
+        : Client.Client.player != null && Client.Client.World != null;
+
     /// <summary>Gets whether this session uses the native EmbeddedServerHost.</summary>
     public bool IsNativeSession => NativeServer != null;
 
@@ -156,7 +165,7 @@ public sealed class ClientServerLoopbackSession : IDisposable
         _frameCount++;
 
         // Update connection state
-        if (Client.Client.player != null && Client.Client.World != null)
+        if (HasJoined)
         {
             IsConnected = true;
         }
@@ -269,7 +278,7 @@ public sealed class ClientServerLoopbackSession : IDisposable
         _frameCount++;
 
         // Update connection state
-        if (Client.Client.player != null && Client.Client.World != null)
+        if (HasJoined)
         {
             IsConnected = true;
         }
@@ -304,7 +313,7 @@ public sealed class ClientServerLoopbackSession : IDisposable
         {
             Step(dt);
 
-            if (Client.Client.player != null && Client.Client.World != null)
+            if (HasJoined)
             {
                 IsConnected = true;
                 return true;
@@ -327,7 +336,7 @@ public sealed class ClientServerLoopbackSession : IDisposable
             ct.ThrowIfCancellationRequested();
             await StepAsync(dt, ct: ct).ConfigureAwait(false);
 
-            if (Client.Client.player != null && Client.Client.World != null)
+            if (HasJoined)
             {
                 IsConnected = true;
                 return true;
