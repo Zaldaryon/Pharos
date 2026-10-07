@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Reflection;
+using Zaldaryon.Pharos.Core;
 using Zaldaryon.Pharos.Server;
 
 namespace Zaldaryon.Pharos.XUnit;
@@ -9,6 +10,18 @@ namespace Zaldaryon.Pharos.XUnit;
 /// </summary>
 internal static class ScenarioAttributes
 {
+    /// <summary>
+    /// The client settings from every <see cref="ClientSettingAttribute"/> on the class and its
+    /// base classes, or null when there are none.
+    /// </summary>
+    public static ClientSettingsProfile? ClientSettings(Type testClass)
+    {
+        ClientSettingAttribute[] settings = [.. testClass.GetCustomAttributes<ClientSettingAttribute>(inherit: true)];
+        return settings.Length == 0
+            ? null
+            : ClientSettingsProfile.Of(testClass.Name, [.. settings.Select(s => (s.Key, s.Value))]);
+    }
+
     public static ServerWorldAttribute? ServerWorld(Type testClass) =>
         testClass.GetCustomAttribute<ServerWorldAttribute>(inherit: true);
 

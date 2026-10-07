@@ -164,6 +164,14 @@ public sealed class HeadlessClient : IDisposable
     public SoundRecorder Sounds { get; } = new();
 
     /// <summary>
+    /// The client's settings, read and changed live as the settings menu does. See
+    /// <see cref="ClientSettingsDriver"/>.
+    /// </summary>
+    public ClientSettingsDriver Settings => _settings ??= new ClientSettingsDriver(this);
+
+    private ClientSettingsDriver? _settings;
+
+    /// <summary>
     /// The live GUI of an engine-mode client: open dialogs, their elements with text and bounds,
     /// and real clicks and typing aimed at an element. Null for a fixture-mode client.
     /// </summary>
