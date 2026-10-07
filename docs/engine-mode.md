@@ -91,11 +91,15 @@ client.Controls.Release(PlayerAction.Jump);
 ```csharp
 bool broken = await session.Blocks.BreakAsync(pos);
 bool placed = await session.Blocks.PlaceAsync(against: ground, BlockFacing.UP, "game:rock-granite");
-await session.Blocks.UseAsync(chestPos);                 // opens the chest dialog
+bool clicked = await session.Blocks.UseAsync(chestPos);  // opens the chest dialog
 await session.Blocks.AimAtAsync(pos, BlockFacing.NORTH); // just aim
 ```
 
-`PlaceAsync` first puts a stack of the block in the active hotbar slot through the server. On an engine-mode client, `Player.Camera` reads and writes the engine's own view angles (pitch 0 looks ahead and positive looks up, as for a fixture-mode client), and `Camera.Position` is the eye position the engine casts its selection ray from.
+`PlaceAsync` first puts a stack of the block in the active hotbar slot through the server.
+
+A use or a placement is one click, whatever the frame rate. The client repeats an action while its control stays held past a quarter of a second of real time, so `UseAsync` and `PlaceAsync` hold the control only until the client has acted on it, and release it before the next frame. A chest used twice would open and close again. `BreakAsync` holds attack only until the block is gone on the client, so it does not go on to break the block behind it.
+
+On an engine-mode client, `Player.Camera` reads and writes the engine's own view angles (pitch 0 looks ahead and positive looks up, as for a fixture-mode client), and `Camera.Position` is the eye position the engine casts its selection ray from.
 
 ## GUI and inventory
 

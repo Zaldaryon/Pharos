@@ -429,17 +429,17 @@ public class ServerSandboxTests : IDisposable
     public void WorldSnapshot_CreateWithData_PreservesChunkData()
     {
         ServerWorldOptions options = new();
-        Dictionary<string, byte[]> chunkData = new()
+        Dictionary<long, byte[]> chunkData = new()
         {
-            ["chunk1"] = new byte[] { 1, 2, 3 },
-            ["chunk2"] = new byte[] { 4, 5, 6 }
+            [1] = new byte[] { 1, 2, 3 },
+            [2] = new byte[] { 4, 5, 6 }
         };
 
         WorldSnapshot snapshot = WorldSnapshot.CreateWithData(options, chunkData);
 
         Assert.Equal(2, snapshot.ChunkData.Count);
-        Assert.Equal(new byte[] { 1, 2, 3 }, snapshot.ChunkData["chunk1"]);
-        Assert.Equal(new byte[] { 4, 5, 6 }, snapshot.ChunkData["chunk2"]);
+        Assert.Equal(new byte[] { 1, 2, 3 }, snapshot.ChunkData[1]);
+        Assert.Equal(new byte[] { 4, 5, 6 }, snapshot.ChunkData[2]);
     }
 
     [Fact]

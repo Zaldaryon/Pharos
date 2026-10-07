@@ -4,7 +4,6 @@ using Vintagestory.API.MathTools;
 using Vintagestory.API.Server;
 using Xunit;
 using Zaldaryon.Pharos.Bootstrap;
-using Zaldaryon.Pharos.Network;
 using Zaldaryon.Pharos.Player;
 using Zaldaryon.Pharos.XUnit;
 
@@ -19,9 +18,6 @@ public class LiveBlockInteractionTests : ClientServerScenarioBase
         Width = 640,
         Height = 360,
     };
-
-    /// <summary>The id of the packet a client sends when it starts using a block or item.</summary>
-    private const int HandInteractionPacketId = 25;
 
     private ICoreServerAPI ServerApi => (ICoreServerAPI)Server!.Api;
 
@@ -76,35 +72,24 @@ public class LiveBlockInteractionTests : ClientServerScenarioBase
     [ClientServerScenario]
     public async Task UseAsync_OpensAChest()
     {
-        await Session!.StepFramesAsync(60);
-        BlockPos chestPos = GroundInFront(2).UpCopy();
-        ServerHost!.RunOnGameThread(() =>
-        {
-            Block chest = ServerApi.World.GetBlock(new AssetLocation("game:chest-east"));
-            ServerApi.World.BlockAccessor.SetBlock(chest.BlockId, chestPos);
-        });
-        // The server sends the block and its block entity in separate packets; wait for both.
-        bool arrived = await StepUntilAsync(
-            () => Client!.RunOnClientThread(() => Client.Client.World.BlockAccessor.GetBlockEntity(chestPos) != null),
-            maxFrames: 300);
-        Assert.True(arrived, "The chest's block entity never reached the client");
+        BlockPos chestPos = await PlaceChestInFrontAsync();
 
-        // The client starts a use only on a frame where it sees the button down past its build
-        // repeat delay, which a short press can miss on a slow machine. Every use the server gets
-        // toggles the chest, so press again only while the client has sent no interaction.
-        Client!.PacketRecorder.Clear();
-        Client.PacketRecorder.Start();
-        bool used = false;
-        for (int attempt = 0; attempt < 3 && !used; attempt++)
-        {
-            await Session.Blocks.UseAsync(chestPos);
-            used = await StepUntilAsync(SentHandInteraction, maxFrames: 60);
-        }
-        Client.PacketRecorder.Stop();
-        Assert.True(used, "Pressing use on the chest never sent an interaction to the server");
+        // A click: the client acts on it once. Each use the server gets toggles the chest.
+        Assert.True(await Session.Blocks.UseAsync(chestPos), "The client never acted on the use click");
 
         bool serverOpened = await StepUntilAsync(ServerOpenedChest, maxFrames: 600);
-        Assert.True(serverOpened, "Using the chest never opened its inventory on the server");
+        if (!serverOpened)
+        {
+            // The server explains a use it refuses, out of range for one, in its log.
+            string logged = string.Join(Environment.NewLine, ServerHost!.Logs.Entries.Where(e => e.Message.Contains(PlayerName)).TakeLast(10));
+            string serverSide = ServerHost.RunOnGameThread(() =>
+                $"block {ServerApi.World.BlockAccessor.GetBlock(chestPos).Code}, block entity {ServerApi.World.BlockAccessor.GetBlockEntity(chestPos)?.GetType().Name ?? "none"}, " +
+                $"player at {Server!.GetClientByPlayername(PlayerName).Entityplayer.Pos.XYZ}");
+            string clientSide = Client!.RunOnClientThread(() => $"player at {Client.Client.EntityPlayer.Pos.XYZ}");
+            Assert.Fail(
+                $"Using the chest at {chestPos} never opened its inventory on the server. Server: {serverSide}. Client: {clientSide}. " +
+                $"The server logged about the player:{Environment.NewLine}{logged}");
+        }
 
         // The dialog opens when the server's reply arrives: a round trip through both sides'
         // network threads, which a busy machine can stretch over many frames.
@@ -119,8 +104,50 @@ public class LiveBlockInteractionTests : ClientServerScenarioBase
         }
     }
 
-    private bool SentHandInteraction() =>
-        Client!.PacketRecorder.GetRecordedPackets().Any(p => p.Direction == PacketDirection.Outbound && p.PacketId == HandInteractionPacketId);
+    [ClientServerScenario]
+    public async Task UseAsync_UsesTheBlockOnce()
+    {
+        BlockPos chestPos = await PlaceChestInFrontAsync();
+        int uses = 0;
+        BlockUsedDelegate onUse = (_, selection) =>
+        {
+            if (selection.Position.Equals(chestPos)) Interlocked.Increment(ref uses);
+        };
+        ServerHost!.RunOnGameThread(() => ServerApi.Event.DidUseBlock += onUse);
+        try
+        {
+            Assert.True(await Session!.Blocks.UseAsync(chestPos), "The client never acted on the use click");
+            await StepUntilAsync(() => Volatile.Read(ref uses) > 0, maxFrames: 600);
+            await Session.StepFramesAsync(60);
+
+            // However slow the machine, a click is one use: the client repeats a held use after a
+            // quarter of a second of real time.
+            Assert.Equal(1, Volatile.Read(ref uses));
+        }
+        finally
+        {
+            ServerHost.RunOnGameThread(() => ServerApi.Event.DidUseBlock -= onUse);
+        }
+    }
+
+    /// <summary>Puts a chest two blocks in front of the player and waits until the client has it.</summary>
+    private async Task<BlockPos> PlaceChestInFrontAsync()
+    {
+        await Session!.StepFramesAsync(60);
+        BlockPos chestPos = GroundInFront(2).UpCopy();
+        ServerHost!.RunOnGameThread(() =>
+        {
+            Block chest = ServerApi.World.GetBlock(new AssetLocation("game:chest-east"));
+            ServerApi.World.BlockAccessor.SetBlock(chest.BlockId, chestPos);
+        });
+
+        // The server sends the block and its block entity in separate packets; wait for both.
+        bool arrived = await StepUntilAsync(
+            () => Client!.RunOnClientThread(() => Client.Client.World.BlockAccessor.GetBlockEntity(chestPos) != null),
+            maxFrames: 300);
+        Assert.True(arrived, "The chest's block entity never reached the client");
+        return chestPos;
+    }
 
     private bool ServerOpenedChest() =>
         ServerHost!.RunOnGameThread(() =>

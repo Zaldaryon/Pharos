@@ -94,13 +94,38 @@ Control how world state is managed between test methods with `[ServerWorld(Isola
 
 | Mode | Behavior |
 |------|----------|
-| `Rollback` (default) | Every test gets a freshly booted world. There is no faster in-place restore yet, so this currently isolates by restarting. |
+| `Rollback` (default) | The server keeps running for the next test of the same class, and the world is put back in place as it was after boot. See [Rollback](#rollback). |
 | `Restart` | Every test gets a freshly booted world. |
 | `Recycle` | The server keeps running for the next test of the same class. Tests share state, which suits read-only tests. |
 
 ```csharp
 [ServerWorld(seed: 42, Isolation = WorldIsolation.Recycle)]
 public class ReadOnlyTests : ServerScenarioBase { }
+```
+
+### Rollback
+
+Right after boot, the scenario takes a `WorldSnapshot`. When a test ends, its test players leave and the snapshot is restored on the game thread, in place, without a restart.
+
+What the snapshot holds:
+
+- **Chunks:** every loaded chunk, in the game's own save format (blocks, fluids, light, decor, block entities, the entities stored with the chunk, and mod data), plus the height maps of their map chunks. Chunks that load later are recorded as they were when they loaded.
+- **Players:** the world data of every known player.
+
+What a restore does:
+
+- **Unchanged chunks:** left alone.
+- **Changed chunks:** swapped for their saved copy the way the game reloads a chunk from disk. Their entities are despawned, the saved ones are loaded with their original ids, and their block entities are initialized.
+- **Players:** any player who joined after the snapshot is forgotten, so a later player of the same name starts fresh.
+
+Not restored: the calendar and weather, world-level mod data, and tick listeners or event handlers a test registered. A chunk that unloads during a test is saved with its changes. A restore that fails leaves the next test a freshly booted server.
+
+The same works outside the scenario base:
+
+```csharp
+WorldSnapshot snapshot = host.TakeSnapshot();
+// ... change the world ...
+int restoredChunks = host.RestoreSnapshot(snapshot);
 ```
 
 ## Test Players

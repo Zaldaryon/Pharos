@@ -28,6 +28,14 @@ namespace Zaldaryon.Pharos.XUnit;
 /// </list>
 /// </para>
 /// <para>
+/// Under <see cref="WorldIsolation.Rollback"/>, the default, the server, the client and its
+/// connection stay up between the tests of a class. After each test the world is put back in
+/// place as it was when the client joined (see <see cref="WorldSnapshot"/>), the client is sent the
+/// restored chunks, its controls are released, its dialogs closed and its recorders cleared. A
+/// test that disconnects the client, or a rollback that fails, leaves the next test a freshly
+/// booted pair. <see cref="WorldIsolation.Restart"/> boots a new pair for every test.
+/// </para>
+/// <para>
 /// Uses separate platform lock acquisition sequences to prevent deadlocks when both
 /// client and server compete for shared resources.
 /// </para>
@@ -42,6 +50,9 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime
     private bool _disposed;
     private IDisposable? _gate;
     private string? _clientModsDirectory;
+    private WorldSnapshot? _baseline;
+    private IDisposable? _baselineTracking;
+    private ClientServerPoolKey? _poolKey;
     private readonly List<ServerTestPlayer> _testPlayers = [];
 
     /// <summary>
@@ -150,11 +161,27 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime
     public virtual async Task InitializeAsync()
     {
         _gate = await ScenarioHostPool.EnterAsync(HostWaitTimeout).ConfigureAwait(false);
-        ScenarioHostPool.Clear();
 
         try
         {
+            bool rollback = WorldIsolation == WorldIsolation.Rollback && WaitForPlayerJoinOnInit;
+            _poolKey = rollback ? PoolKey() : null;
+
+            if (_poolKey != null && ScenarioHostPool.Take<PooledClientServer>(GetType(), _poolKey) is { } pooled)
+            {
+                Adopt(pooled);
+                ApplyClassSettings();
+                return;
+            }
+
+            ScenarioHostPool.Clear();
             await StartAsync().ConfigureAwait(false);
+
+            if (_poolKey != null)
+            {
+                _baseline = _serverHost!.TakeSnapshot();
+                _baselineTracking = _serverHost.RunOnGameThread(() => _baseline.TrackChunksLoadedLater(_serverHost));
+            }
         }
         catch
         {
@@ -219,10 +246,28 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime
             }
         }
 
+        ApplyClassSettings();
+    }
+
+    private void ApplyClassSettings()
+    {
         if (ScenarioAttributes.ClientSettings(GetType()) is { } settings)
         {
-            _classSettings = _client.Settings.Apply(settings);
+            _classSettings = _client!.Settings.Apply(settings);
         }
+    }
+
+    private ClientServerPoolKey PoolKey()
+    {
+        HeadlessClientOptions client = ClientOptions;
+        return new ClientServerPoolKey(
+            WorldOptions,
+            string.Join("|", ScenarioAttributes.ServerMods(GetType())),
+            string.Join("|", [.. ScenarioAttributes.ClientMods(GetType()), .. client.ModPaths]),
+            PlayerName,
+            client.BootMode,
+            client.Width,
+            client.Height);
     }
 
     /// <summary>
@@ -259,6 +304,18 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime
         }
 
         _testPlayers.Clear();
+
+        if (_poolKey != null && await TryRollbackAsync().ConfigureAwait(false))
+        {
+            ScenarioHostPool.Return(GetType(), _poolKey, Detach());
+            _gate?.Dispose();
+            _gate = null;
+            LoggedErrorGate.ThrowIfAny(loggedErrors);
+            return;
+        }
+
+        _baselineTracking?.Dispose();
+        _baselineTracking = null;
 
         // Disconnect and dispose session
         try
@@ -312,6 +369,153 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime
         _gate = null;
 
         LoggedErrorGate.ThrowIfAny(loggedErrors);
+    }
+
+    /// <summary>
+    /// Puts the world back as it was when the client joined and readies the client for the next
+    /// test. False when the pair cannot be reused.
+    /// </summary>
+    private async Task<bool> TryRollbackAsync()
+    {
+        EmbeddedServerHost? server = _serverHost;
+        HeadlessClient? client = _client;
+        ClientServerLoopbackSession? session = _session;
+        if (_baseline == null || server == null || client == null || session == null) return false;
+        if (!server.IsRunning || client.IsDisposed || !session.IsConnected || session.IsLinkSevered || client.DisconnectSimulator.IsDisconnected) return false;
+
+        try
+        {
+            if (!client.IsJoined || server.RunOnGameThread(() => server.Server.GetClientByPlayername(PlayerName) == null)) return false;
+
+            client.Controls.ReleaseAll();
+            client.RunOnClientThread(() =>
+            {
+                foreach (Vintagestory.API.Client.GuiDialog dialog in client.Client.api.Gui.OpenedGuis.ToList())
+                {
+                    if (dialog.DialogType == Vintagestory.API.Client.EnumDialogType.Dialog) dialog.TryClose();
+                }
+            });
+            client.NetworkDegradation.Reset();
+            client.PacketRecorder.Stop();
+
+            server.RestoreSnapshot(_baseline);
+
+            // The client has the world again once the server has sent every restored chunk.
+            bool sent = await session.StepUntilAsync(
+                () => server.RunOnGameThread(() => server.Server.Clients.Values.All(c => c.forceSendChunks.Count == 0 && c.forceSendMapChunks.Count == 0)),
+                maxFrames: 600).ConfigureAwait(false);
+            await session.StepFramesAsync(10).ConfigureAwait(false);
+
+            // The server put the player back where it stood. Until the client has moved there too,
+            // the two disagree on where the player is, and the server refuses interactions it
+            // judges out of range.
+            bool home = await PlayerIsHomeAsync(server, client, session).ConfigureAwait(false);
+
+            client.PacketRecorder.Clear();
+            client.Sounds.Clear();
+            client.Logs.Clear();
+            server.Logs.Clear();
+
+            return sent && home && session.IsConnected && client.IsJoined;
+        }
+        catch (Exception ex)
+        {
+            ServerMain.Logger?.Warning("Pharos could not roll the world back, the next test boots a fresh server: {0}", ex);
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Steps until the client and the server both have the joined player within half a block of
+    /// where the baseline put it.
+    /// </summary>
+    private async Task<bool> PlayerIsHomeAsync(EmbeddedServerHost server, HeadlessClient client, ClientServerLoopbackSession session)
+    {
+        string? uid = server.RunOnGameThread(() => server.Server.GetClientByPlayername(PlayerName)?.Player?.PlayerUID);
+        if (uid == null || _baseline!.PositionOf(uid) is not { } home) return true;
+
+        return await session.StepUntilAsync(
+            () => client.RunOnClientThread(() => client.Client.EntityPlayer.Pos.XYZ.SquareDistanceTo(home) < 0.25)
+                && server.RunOnGameThread(() => server.Server.GetClientByPlayername(PlayerName)?.Entityplayer?.Pos.XYZ.SquareDistanceTo(home) < 0.25),
+            maxFrames: 600).ConfigureAwait(false);
+    }
+
+    private void Adopt(PooledClientServer pooled)
+    {
+        _sandbox = pooled.Sandbox;
+        _serverHost = pooled.ServerHost;
+        _client = pooled.Client;
+        _session = pooled.Session;
+        _clientModsDirectory = pooled.ClientModsDirectory;
+        _baseline = pooled.Baseline;
+        _baselineTracking = pooled.BaselineTracking;
+    }
+
+    private PooledClientServer Detach()
+    {
+        PooledClientServer pooled = new(_sandbox!, _serverHost!, _client!, _session!, _clientModsDirectory, _baseline!, _baselineTracking);
+        _sandbox = null;
+        _serverHost = null;
+        _client = null;
+        _session = null;
+        _baseline = null;
+        _baselineTracking = null;
+        return pooled;
+    }
+
+    private sealed record ClientServerPoolKey(
+        ServerWorldOptions World, string ServerMods, string ClientMods, string PlayerName,
+        ClientBootMode BootMode, int Width, int Height);
+
+    /// <summary>A joined client and its server, kept for the next test of the same class.</summary>
+    private sealed record PooledClientServer(
+        ServerSandbox Sandbox,
+        EmbeddedServerHost ServerHost,
+        HeadlessClient Client,
+        ClientServerLoopbackSession Session,
+        string? ClientModsDirectory,
+        WorldSnapshot Baseline,
+        IDisposable? BaselineTracking) : IDisposable
+    {
+        public void Dispose()
+        {
+            BaselineTracking?.Dispose();
+            try
+            {
+                Session.Dispose();
+            }
+            catch
+            {
+                // Ignore session dispose errors during teardown
+            }
+
+            try
+            {
+                Client.Dispose();
+            }
+            catch
+            {
+                // Ignore client dispose errors during teardown
+            }
+
+            try
+            {
+                ServerHost.Dispose();
+            }
+            catch
+            {
+                // Ignore server dispose errors during teardown
+            }
+
+            try
+            {
+                Sandbox.Dispose();
+            }
+            catch
+            {
+                // Ignore sandbox cleanup errors during teardown
+            }
+        }
     }
 
     /// <summary>
