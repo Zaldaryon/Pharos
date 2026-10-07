@@ -89,8 +89,9 @@ jobs:
 
       - name: Install Mesa and Xvfb
         run: |
-          timeout 600 sudo apt-get update
-          timeout 600 sudo apt-get install -y mesa-utils libgl1-mesa-dri xvfb libopenal1 libglfw3 libglfw3-dev libcairo2 libcairo2-dev
+          # A fresh runner may still hold the dpkg lock for its own updates; wait for it, but not forever.
+          timeout 600 sudo apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Retries=3 update
+          timeout 600 sudo apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Retries=3 install -y mesa-utils libgl1-mesa-dri xvfb libopenal1 libglfw3 libglfw3-dev libcairo2 libcairo2-dev
 
       - name: Cache Vintage Story
         id: cache-vs
@@ -166,8 +167,9 @@ jobs:
 
       - name: Install Mesa and Xvfb
         run: |
-          timeout 600 sudo apt-get update
-          timeout 600 sudo apt-get install -y mesa-utils libgl1-mesa-dri xvfb libopenal1 libglfw3 libglfw3-dev libcairo2 libcairo2-dev
+          # A fresh runner may still hold the dpkg lock for its own updates; wait for it, but not forever.
+          timeout 600 sudo apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Retries=3 update
+          timeout 600 sudo apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Retries=3 install -y mesa-utils libgl1-mesa-dri xvfb libopenal1 libglfw3 libglfw3-dev libcairo2 libcairo2-dev
 
       - name: Cache Vintage Story
         id: cache-vs
