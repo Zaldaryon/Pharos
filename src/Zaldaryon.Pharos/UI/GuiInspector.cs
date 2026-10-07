@@ -40,8 +40,20 @@ public sealed class GuiInspector
     /// Gets a list of currently open dialog names or class names.
     /// </summary>
     /// <returns>Read-only list of dialog identifiers.</returns>
+    /// <summary>
+    /// The live GUI of an engine-mode client. When set, every query reads the client's open
+    /// dialogs and button clicks are real mouse clicks; see <see cref="GuiDriver"/>.
+    /// </summary>
+    internal GuiDriver? Driver { get; set; }
+
     public IReadOnlyList<string> GetOpenDialogs()
     {
+        if (Driver != null)
+        {
+            // Dialogs, not HUD elements: GuiDialog.DialogType tells them apart.
+            return Driver.OpenDialogs().Where(d => !IsHudType(d.Type)).Select(d => d.Type).ToList();
+        }
+
         lock (_lock)
         {
             if (_screenManager == null)
@@ -79,6 +91,11 @@ public sealed class GuiInspector
     /// <returns>Read-only list of HUD element identifiers.</returns>
     public IReadOnlyList<string> GetHudElements()
     {
+        if (Driver != null)
+        {
+            return Driver.OpenDialogs().Where(d => IsHudType(d.Type)).Select(d => d.Type).ToList();
+        }
+
         lock (_lock)
         {
             if (_screenManager == null)
@@ -104,6 +121,13 @@ public sealed class GuiInspector
     {
         if (string.IsNullOrEmpty(dialogName) || string.IsNullOrEmpty(buttonKey))
             return false;
+
+        if (Driver != null)
+        {
+            if (Driver.Find(dialogName, buttonKey) == null) return false;
+            Driver.Click(dialogName, buttonKey);
+            return true;
+        }
 
         lock (_lock)
         {
@@ -148,6 +172,12 @@ public sealed class GuiInspector
     /// <returns>True if a modal dialog is open.</returns>
     public bool HasModalDialog()
     {
+        if (Driver != null)
+        {
+            // A dialog that is not a HUD takes the mouse away from the world.
+            return GetOpenDialogs().Count > 0;
+        }
+
         lock (_lock)
         {
             if (_screenManager == null)
@@ -158,6 +188,9 @@ public sealed class GuiInspector
             return CheckModalFromScreenManager();
         }
     }
+
+    // HUD dialogs follow the engine's naming: HudHotbar, HudStatbar, HudDialogChat and so on.
+    private static bool IsHudType(string type) => type.StartsWith("Hud", StringComparison.Ordinal);
 
     // -------------------------------------------------------------------------
     // Mock mode methods for testing
