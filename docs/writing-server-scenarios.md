@@ -142,6 +142,43 @@ Assert.Equal(2, Host.TestPlayers.Count);
 
 In a `ClientServerScenarioBase`, `CreateTestPlayerAsync` joins headless players next to the rendering client, which sees them as other players in the world.
 
+A player counts as joined once it is playing and the server has sent it the chunk it stands in. The server only sends a client changes (blocks, particles, sounds) for chunks that client already has.
+
+### What a player received
+
+`player.Received` records everything the server has sent that player, which is what a real client would have received and acted on. Every packet is counted by id, and these kinds are decoded:
+
+```csharp
+await alice.SayAsync("hello");
+Assert.Contains(bob.Received.ChatMessages, m => m.Contains("hello"));
+
+Entity hen = this.SpawnEntity("game:chicken-hen", nearAlice);
+await Host.TickUntilAsync(() => alice.Received.KnowsEntity(hen.EntityId));
+
+Assert.True(alice.Received.HasReceivedPlayerData(bob.PlayerUID));
+Assert.NotEmpty(alice.Received.Particles);
+Assert.Contains(alice.Received.Sounds, s => s.Name.Contains("planks"));
+Assert.Equal(marked, alice.Received.HighlightedBlocks(slotId: 7));
+Assert.Contains(alice.Received.BlockChanges, c => c.Position.Equals(pos));
+
+// A mod's own network channel, deserialized by message type
+var pings = Host.ModPackets<MyPing>(alice, "mymod");
+```
+
+| Member | Contents |
+|--------|----------|
+| `Chat`, `ChatMessages` | Chat lines, with group and chat type |
+| `EntityArrivals`, `EntityDepartures`, `KnowsEntity`, `HasReceivedEntity` | Entities the server started or stopped tracking for the player |
+| `PlayerData`, `HasReceivedPlayerData` | Player data about the player itself and about other players |
+| `Particles`, `Sounds` | Particle spawns and sounds to play |
+| `Highlights`, `HighlightedBlocks(slot)` | Block highlights per slot |
+| `BlockChanges` | Block changes, single or batched |
+| `ModPackets`, `ModPacketsOf<T>` | Mod channel packets |
+| `IngameErrors`, `IngameDiscoveries` | In-game error and discovery messages |
+| `CountsById`, `Total` | Every packet, counted by id |
+
+`player.Received.Clear()` starts a fresh record.
+
 ## Server Tick Control
 
 `EmbeddedServerHost` exposes deterministic tick stepping:

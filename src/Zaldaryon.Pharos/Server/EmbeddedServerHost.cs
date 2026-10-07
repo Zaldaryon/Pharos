@@ -106,6 +106,31 @@ public sealed class EmbeddedServerHost : IDisposable, IAsyncDisposable
         _players.JoinAsync(playerName, maxTicks, ct);
 
     /// <summary>
+    /// The packets of message type <typeparamref name="T"/> that mods on this server sent
+    /// <paramref name="player"/> on <paramref name="channel"/>, deserialized. The message id is
+    /// looked up from the channel's server-side registration.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">The channel or the message type is not registered.</exception>
+    public IReadOnlyList<T> ModPackets<T>(ServerTestPlayer player, string channel)
+    {
+        ArgumentNullException.ThrowIfNull(player);
+        int messageId = RunOnGameThread(() =>
+        {
+            object serverChannel = ((Vintagestory.API.Server.ICoreServerAPI)Server.Api).Network.GetChannel(channel)
+                ?? throw new InvalidOperationException($"No network channel '{channel}' is registered on the server.");
+            FieldInfo? typesField = typeof(NetworkChannelBase).GetField("messageTypes", BindingFlags.Instance | BindingFlags.NonPublic);
+            if (typesField?.GetValue(serverChannel) is not Dictionary<Type, int> types || !types.TryGetValue(typeof(T), out int id))
+            {
+                throw new InvalidOperationException($"Message type {typeof(T).Name} is not registered on channel '{channel}'.");
+            }
+
+            return id;
+        });
+
+        return player.Received.ModPacketsOf<T>(channel, messageId);
+    }
+
+    /// <summary>
     /// Marks the host as having a real client attached over its loopback socket. That client reads
     /// the UDP queue the headless players share, so the host stops emptying it.
     /// </summary>

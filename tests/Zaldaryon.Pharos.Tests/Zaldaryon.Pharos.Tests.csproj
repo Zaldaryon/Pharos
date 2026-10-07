@@ -35,6 +35,10 @@
       <HintPath>$(VintageStoryPath)/VintagestoryAPI.dll</HintPath>
       <Private>true</Private>
     </Reference>
+    <Reference Include="protobuf-net">
+      <HintPath>$(VintageStoryPath)/Lib/protobuf-net.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
     <Reference Include="VintagestoryLib">
       <HintPath>$(VintageStoryPath)/VintagestoryLib.dll</HintPath>
       <Private>true</Private>

@@ -1,5 +1,6 @@
 using System.Net;
 using Vintagestory.API.Common;
+using Vintagestory.API.Config;
 using Vintagestory.API.Server;
 using Vintagestory.Client.Network;
 using Vintagestory.Server;
@@ -97,6 +98,13 @@ internal sealed class HeadlessPlayers
             await WaitForAsync(
                 () => client.State == EnumClientState.Playing ? client : null,
                 maxTicks, ct, $"move '{playerName}' to the playing state").ConfigureAwait(false);
+
+            // The server only sends a client changes (blocks, particles, sounds) for chunks the
+            // client already has, so a player counts as joined once its own chunk is there.
+            await WaitForAsync(
+                () => client.Entityplayer is { } entity && client.DidSendChunk(server.WorldMap.ChunkIndex3D(
+                    (int)entity.Pos.X / GlobalConstants.ChunkSize, (int)entity.Pos.Y / GlobalConstants.ChunkSize, (int)entity.Pos.Z / GlobalConstants.ChunkSize)) ? client : null,
+                maxTicks, ct, $"send '{playerName}' the chunk it stands in").ConfigureAwait(false);
 
             player.Attach(client.Player, server, _host, connection);
             lock (_lock)

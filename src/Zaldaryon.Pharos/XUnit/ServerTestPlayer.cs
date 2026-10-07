@@ -38,7 +38,6 @@ public sealed class ServerTestPlayer : IServerTestPlayer, IDisposable
     private ServerMain? _server;
     private EmbeddedServerHost? _host;
     private HeadlessPlayerConnection? _connection;
-    private long _receivedPackets;
     private bool _disposed;
 
     /// <summary>
@@ -109,7 +108,13 @@ public sealed class ServerTestPlayer : IServerTestPlayer, IDisposable
     public bool IsConnected => _player is not null && _server is not null && (_connection is null || IsStillRegistered());
 
     /// <summary>How many packets the server has sent this player so far.</summary>
-    public long ReceivedPacketCount => Interlocked.Read(ref _receivedPackets);
+    public long ReceivedPacketCount => Received.Total;
+
+    /// <summary>
+    /// Everything the server has sent this player so far, decoded: chat, entities it tracks for
+    /// the player, particles, sounds, mod channel packets, player data, highlights and more.
+    /// </summary>
+    public ReceivedPackets Received { get; } = new();
 
     /// <summary>Privileges granted through this player.</summary>
     public IReadOnlySet<string> GrantedPrivileges => _grantedPrivileges;
@@ -291,8 +296,10 @@ public sealed class ServerTestPlayer : IServerTestPlayer, IDisposable
     {
         if (_connection is null) return;
 
-        List<byte[]> packets = _connection.DrainReceived();
-        Interlocked.Add(ref _receivedPackets, packets.Count);
+        foreach (byte[] packet in _connection.DrainReceived())
+        {
+            Received.Add(packet);
+        }
     }
 
     /// <summary>
