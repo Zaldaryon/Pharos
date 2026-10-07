@@ -6,10 +6,12 @@ using Zaldaryon.Pharos.Bootstrap;
 using Zaldaryon.Pharos.Core;
 using Zaldaryon.Pharos.Platform;
 using Zaldaryon.Pharos.Server;
+using Zaldaryon.Pharos.XUnit;
 
 namespace Zaldaryon.Pharos.Tests;
 
 [Collection("Sequential")]
+[Trait(PharosTraits.Category, PharosTraits.Live)]
 public class LoopbackServerTests
 {
     static LoopbackServerTests()

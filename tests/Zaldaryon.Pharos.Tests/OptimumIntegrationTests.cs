@@ -8,6 +8,7 @@ using Zaldaryon.Pharos.Core;
 using Zaldaryon.Pharos.Fixtures;
 using Zaldaryon.Pharos.Platform;
 using Zaldaryon.Pharos.Timing;
+using Zaldaryon.Pharos.XUnit;
 
 namespace Zaldaryon.Pharos.Tests;
 
@@ -27,6 +28,7 @@ public sealed class OptimumFactAttribute : FactAttribute
 }
 
 [Collection("Sequential")]
+[Trait(PharosTraits.Category, PharosTraits.Live)]
 public sealed class OptimumIntegrationTests
 {
     static OptimumIntegrationTests()

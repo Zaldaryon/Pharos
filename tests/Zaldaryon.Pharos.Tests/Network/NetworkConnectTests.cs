@@ -56,6 +56,7 @@ public class ClientAuthTests
 }
 
 [Collection("Sequential")]
+[Trait(PharosTraits.Category, PharosTraits.Live)]
 public class NetworkConnectTests : ServerScenarioBase
 {
     protected override ServerWorldOptions WorldOptions => new() { WorldName = "Pharos-NetworkConnect", ListenPort = 0 };
@@ -111,6 +112,7 @@ public class NetworkConnectTests : ServerScenarioBase
 }
 
 [Collection("Sequential")]
+[Trait(PharosTraits.Category, PharosTraits.Live)]
 public class OnlineAuthTests : ServerScenarioBase
 {
     protected override ServerWorldOptions WorldOptions => new() { WorldName = "Pharos-OnlineAuth", ListenPort = 0, VerifyPlayerAuth = true };

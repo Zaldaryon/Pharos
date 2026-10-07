@@ -77,13 +77,33 @@ This script configures Mesa software rendering with llvmpipe and runs tests insi
 
 ## CI Pipeline
 
-The CI workflow runs on every push and pull request:
+CI runs in two lanes.
 
-1. **Build**: Compiles the solution in Release configuration.
-2. **Test (Linux)**: Runs tests with Mesa software rendering inside Xvfb.
-3. **Test (Windows)**: Runs tests on Windows with native graphics.
+- **Quick lane:** every pull request runs it. It builds the solution and runs, on Linux, every test that does not boot a real client or server or measure throughput (`Category!=Live&Category!=Benchmark`). It takes a few minutes.
+- **Full lane:** it runs the whole suite on Linux with Mesa under Xvfb, on Windows, and against a dedicated server in Docker. It runs:
+  - on every push to `main`;
+  - every night;
+  - by hand, from the Actions tab;
+  - for a pull request labeled `full-ci`;
+  - before every release.
 
-Both test jobs require a cached Vintage Story installation. The cache is keyed by version.
+Pull requests that only change documentation skip the build. A new push to a pull request cancels the run in progress.
+
+Tests marked with a scenario attribute are `Category=Live` on their own. A test class that boots a client or a server without one says so with `[Trait(PharosTraits.Category, PharosTraits.Live)]`. Run the quick lane locally with:
+
+```bash
+dotnet test Pharos.sln -c Release --filter "Category!=Live&Category!=Benchmark"
+```
+
+The test jobs need a cached Vintage Story installation. The cache is keyed by version.
+
+## Releasing
+
+1. Merge a pull request that bumps `<Version>` in every package's `.csproj` and `Version` in `src/Zaldaryon.Pharos.Bridge/ModInfo.cs`.
+2. Add the release notes as `docs/releases/v<version>.md`. Without them, GitHub generates notes from the merged pull requests.
+3. Run the **Release** workflow from the Actions tab on `main`, with the version.
+
+The workflow checks that the packages carry the version and that the tag is new, then runs the full CI. Only when all of it passes does it publish the packages to NuGet and create the GitHub release, with its tag on the commit it tested.
 
 ## Questions
 

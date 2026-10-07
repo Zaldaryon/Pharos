@@ -1,3 +1,5 @@
+using Xunit.Sdk;
+
 namespace Zaldaryon.Pharos.XUnit;
 
 /// <summary>
@@ -14,8 +16,9 @@ namespace Zaldaryon.Pharos.XUnit;
 /// Use <see cref="ServerModsAttribute"/> to stage mods before server bootstrap.
 /// </para>
 /// </remarks>
+[TraitDiscoverer(LiveTraitDiscoverer.TypeName, LiveTraitDiscoverer.AssemblyName)]
 [AttributeUsage(AttributeTargets.Method, AllowMultiple = false, Inherited = true)]
-public sealed class ServerScenarioAttribute : Xunit.FactAttribute
+public sealed class ServerScenarioAttribute : Xunit.FactAttribute, ITraitAttribute
 {
     /// <summary>
     /// The default timeout in milliseconds for server scenario tests (120 seconds).

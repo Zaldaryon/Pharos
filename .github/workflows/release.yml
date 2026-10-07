@@ -1,8 +1,25 @@
 name: Release
 
+# Run by hand from the Actions tab with the version to release, such as 0.5.0. The packages must
+# already carry that version. The full CI runs first, on Linux, Windows and a dedicated server;
+# only when all of it passes are the packages published to NuGet and the GitHub release created,
+# with its tag on the commit that was tested. Nothing is published, and no tag is made, if any
+# part fails.
+
 on:
-  release:
-    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version to release, such as 0.5.0. Every package must already carry it.
+        required: true
+        type: string
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
 
 env:
   DOTNET_NOLOGO: true
@@ -10,12 +27,62 @@ env:
   VS_VERSION: "1.22.7"
 
 jobs:
-  publish:
-    name: Pack and Publish to NuGet
+  prepare:
+    name: Check the release
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      tag: ${{ steps.check.outputs.tag }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check the version, the branch and the tag
+        id: check
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::'$VERSION' is not a version such as 0.5.0."
+            exit 1
+          fi
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "::error::Releases are made from main, not $GITHUB_REF."
+            exit 1
+          fi
+          tag="v$VERSION"
+          if git rev-parse -q --verify "refs/tags/$tag" > /dev/null; then
+            echo "::error::The tag $tag already exists."
+            exit 1
+          fi
+          stale=$(grep -L "<Version>$VERSION</Version>" src/*/Zaldaryon.Pharos*.csproj || true)
+          if [ -n "$stale" ]; then
+            echo "::error::These packages do not carry version $VERSION: $stale"
+            exit 1
+          fi
+          if ! grep -q "Version = \"$VERSION\"" src/Zaldaryon.Pharos.Bridge/ModInfo.cs; then
+            echo "::error::The bridge mod's ModInfo does not carry version $VERSION."
+            exit 1
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "Releasing $tag from $GITHUB_SHA"
+
+  ci:
+    name: Full CI
+    needs: prepare
+    uses: ./.github/workflows/ci.yml
+    secrets: inherit
+
+  publish:
+    name: Publish to NuGet and GitHub
+    needs: [prepare, ci]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       id-token: write  # required for NuGet OIDC trusted publishing
-      contents: read
+      contents: write  # creates the tag and the GitHub release
 
     env:
       VS_CACHE_PATH: /home/runner/.vintagestory-cache
@@ -28,11 +95,6 @@ jobs:
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: "10.0.x"
-
-      - name: Install Mesa and Xvfb
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y mesa-utils libgl1-mesa-dri xvfb libopenal1 libglfw3 libglfw3-dev libcairo2 libcairo2-dev
 
       - name: Cache Vintage Story
         id: cache-vs
@@ -53,24 +115,6 @@ jobs:
         env:
           VINTAGE_STORY: ${{ env.VS_CACHE_PATH }}/${{ env.VS_VERSION }}
         run: dotnet build Pharos.sln -c Release
-
-      - name: Stage assets
-        run: |
-          ln -sf ${{ env.VS_CACHE_PATH }}/${{ env.VS_VERSION }}/assets tests/Zaldaryon.Pharos.Tests/bin/Release/net10.0/assets || true
-          ln -sf ${{ env.VS_CACHE_PATH }}/${{ env.VS_VERSION }}/assets ./assets || true
-
-      - name: Test
-        env:
-          VINTAGE_STORY: ${{ env.VS_CACHE_PATH }}/${{ env.VS_VERSION }}
-          LD_LIBRARY_PATH: ${{ env.VS_CACHE_PATH }}/${{ env.VS_VERSION }}/Lib:${{ env.VS_CACHE_PATH }}/${{ env.VS_VERSION }}:/usr/lib/x86_64-linux-gnu
-          LIBGL_ALWAYS_SOFTWARE: 1
-          GALLIUM_DRIVER: llvmpipe
-          MESA_LOADER_DRIVER_OVERRIDE: llvmpipe
-          LIBGL_ALWAYS_INDIRECT: 0
-          MESA_GL_VERSION_OVERRIDE: "4.5"
-          MESA_GLSL_VERSION_OVERRIDE: "450"
-          ALSOFT_DRIVERS: null
-        run: xvfb-run -a -s "-screen 0 1280x720x24" dotnet test Pharos.sln -c Release --no-build
 
       - name: Pack
         env:
@@ -95,3 +139,16 @@ jobs:
             --source https://api.nuget.org/v3/index.json \
             --api-key "$NUGET_API_KEY" \
             --skip-duplicate
+
+      - name: Create the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          notes="docs/releases/$TAG.md"
+          if [ -f "$notes" ]; then
+            gh release create "$TAG" --target "$GITHUB_SHA" --title "$TAG" --notes-file "$notes"
+          else
+            gh release create "$TAG" --target "$GITHUB_SHA" --title "$TAG" --generate-notes
+          fi
+          gh release upload "$TAG" ./nupkg/*.nupkg ./nupkg/*.snupkg

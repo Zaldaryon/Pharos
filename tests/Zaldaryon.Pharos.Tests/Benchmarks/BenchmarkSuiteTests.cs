@@ -1,6 +1,7 @@
 using Xunit;
 using Zaldaryon.Pharos.Benchmarks;
 using Zaldaryon.Pharos.Reporting;
+using Zaldaryon.Pharos.XUnit;
 
 namespace Zaldaryon.Pharos.Tests.Benchmarks;
 
@@ -8,6 +9,7 @@ namespace Zaldaryon.Pharos.Tests.Benchmarks;
 /// Tests for BenchmarkSuite, BenchmarkResult, and Optimum benchmarks.
 /// All tests are pure logic tests that don't require native libraries or GPU.
 /// </summary>
+[Trait(PharosTraits.Category, PharosTraits.Benchmark)]
 public class BenchmarkSuiteTests
 {
     #region BenchmarkResult Tests
