@@ -44,4 +44,12 @@ public sealed class HeadlessClientOptions
     /// folder and the data path's <c>Mods</c> folder.
     /// </summary>
     public IReadOnlyList<string> ModPaths { get; init; } = [];
+
+    /// <summary>
+    /// Whether an engine-mode client loads the Pharos bridge mod, which publishes frame, chunk and
+    /// dialog events to <c>BridgeChannel.Active</c>. It is staged only when
+    /// <c>Zaldaryon.Pharos.Bridge.dll</c> sits next to the Pharos assembly, which it does when the
+    /// test project references the bridge package; otherwise this has no effect.
+    /// </summary>
+    public bool LoadBridge { get; init; } = true;
 }

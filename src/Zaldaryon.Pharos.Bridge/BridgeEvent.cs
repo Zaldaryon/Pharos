@@ -23,6 +23,9 @@ public sealed record BridgeEvent
     /// <summary>GUI screen name (for GuiStateChanged events).</summary>
     public string? ScreenName { get; init; }
 
+    /// <summary>Whether the dialog or screen opened (true) or closed (false), for GuiStateChanged events.</summary>
+    public bool IsOpen { get; init; }
+
     /// <summary>Creates a FrameStart event.</summary>
     public static BridgeEvent FrameStart(double dt) => new()
     {
@@ -47,9 +50,10 @@ public sealed record BridgeEvent
     };
 
     /// <summary>Creates a GuiStateChanged event.</summary>
-    public static BridgeEvent GuiStateChanged(string screenName) => new()
+    public static BridgeEvent GuiStateChanged(string screenName, bool isOpen = true) => new()
     {
         Kind = BridgeEventKind.GuiStateChanged,
-        ScreenName = screenName
+        ScreenName = screenName,
+        IsOpen = isOpen
     };
 }

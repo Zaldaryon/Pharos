@@ -13,6 +13,7 @@ using Vintagestory.Server;
 using Vintagestory.Server.Network;
 using Zaldaryon.Pharos.Platform;
 using Zaldaryon.Pharos.XUnit;
+using Zaldaryon.Pharos.Reporting;
 
 namespace Zaldaryon.Pharos.Server;
 
@@ -54,6 +55,9 @@ public sealed class EmbeddedServerHost : IDisposable, IAsyncDisposable
 
     /// <summary>The underlying Vintage Story server instance.</summary>
     public ServerMain Server { get; }
+
+    /// <summary>What the server has logged since it booted. See <see cref="LogCapture"/>.</summary>
+    public LogCapture Logs { get; private init; } = new(EnumAppSide.Server);
 
     /// <summary>The dummy TCP transport layer used for in-process connections.</summary>
     public DummyNetwork TcpNetwork { get; }
@@ -204,6 +208,8 @@ public sealed class EmbeddedServerHost : IDisposable, IAsyncDisposable
             DataPath = dataPath
         };
         ServerMain.Logger = (Logger)new ServerLogger(progArgs);
+        LogCapture logs = new(EnumAppSide.Server);
+        logs.Attach(ServerMain.Logger);
         Lang.PreLoad((ILogger)(object)ServerMain.Logger, GamePaths.AssetsPath, "en");
 
         DummyNetwork tcpNetwork = new();
@@ -256,7 +262,7 @@ public sealed class EmbeddedServerHost : IDisposable, IAsyncDisposable
             // Best effort wait
         }
 
-        return new EmbeddedServerHost(server, tcpNetwork, udpNetwork, options, dataPath, ownsDataPath, sandbox: null, gameThread);
+        return new EmbeddedServerHost(server, tcpNetwork, udpNetwork, options, dataPath, ownsDataPath, sandbox: null, gameThread) { Logs = logs };
     }
 
     /// <summary>
@@ -289,6 +295,8 @@ public sealed class EmbeddedServerHost : IDisposable, IAsyncDisposable
             DataPath = dataPath
         };
         ServerMain.Logger = (Logger)new ServerLogger(progArgs);
+        LogCapture logs = new(EnumAppSide.Server);
+        logs.Attach(ServerMain.Logger);
         Lang.PreLoad((ILogger)(object)ServerMain.Logger, GamePaths.AssetsPath, "en");
 
         DummyNetwork tcpNetwork = new();
@@ -341,7 +349,7 @@ public sealed class EmbeddedServerHost : IDisposable, IAsyncDisposable
             // Best effort wait
         }
 
-        return new EmbeddedServerHost(server, tcpNetwork, udpNetwork, options, dataPath, ownsDataPath: false, sandbox, gameThread);
+        return new EmbeddedServerHost(server, tcpNetwork, udpNetwork, options, dataPath, ownsDataPath: false, sandbox, gameThread) { Logs = logs };
     }
 
     /// <summary>

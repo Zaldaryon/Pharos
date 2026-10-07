@@ -20,6 +20,7 @@ public interface IBridgeChannel
     void PublishChunkTessellated(int chunkX, int chunkY, int chunkZ);
 
     /// <summary>Publishes a GUI state changed event.</summary>
-    /// <param name="screenName">Name of the new GUI screen.</param>
-    void PublishGuiStateChanged(string screenName);
+    /// <param name="screenName">Name of the dialog or screen, such as <c>GuiDialogInventory</c>.</param>
+    /// <param name="isOpen">Whether it opened (true) or closed (false).</param>
+    void PublishGuiStateChanged(string screenName, bool isOpen = true);
 }

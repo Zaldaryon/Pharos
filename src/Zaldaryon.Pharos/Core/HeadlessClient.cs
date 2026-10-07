@@ -20,6 +20,7 @@ using Zaldaryon.Pharos.Graphics;
 using Zaldaryon.Pharos.Memory;
 using Zaldaryon.Pharos.Platform;
 using Zaldaryon.Pharos.Player;
+using Zaldaryon.Pharos.Reporting;
 using Zaldaryon.Pharos.Server;
 using Zaldaryon.Pharos.Input;
 using Zaldaryon.Pharos.Timing;
@@ -42,6 +43,9 @@ public sealed class HeadlessClient : IDisposable
     public ScreenManager ScreenManager { get; }
     public GuiScreenRunningGame RunningGameScreen { get; }
     public HeadlessWindow Window { get; }
+
+    /// <summary>What the client has logged since it booted. See <see cref="LogCapture"/>.</summary>
+    public LogCapture Logs { get; internal init; } = new(EnumAppSide.Client);
     public HeadlessFramebuffer Framebuffer => Window.Framebuffer;
     public GlRendererInfo? RendererInfo => Window.RendererInfo;
     public HeadlessClientOptions Options { get; }

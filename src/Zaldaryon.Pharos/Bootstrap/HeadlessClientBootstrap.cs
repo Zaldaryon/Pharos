@@ -9,6 +9,7 @@ using Vintagestory.Common;
 using Zaldaryon.Pharos.Audio;
 using Zaldaryon.Pharos.Core;
 using Zaldaryon.Pharos.Platform;
+using Zaldaryon.Pharos.Reporting;
 
 namespace Zaldaryon.Pharos.Bootstrap;
 
@@ -42,7 +43,8 @@ public static class HeadlessClientBootstrap
             }
 
             GamePaths.DataPath = dataPath;
-            GamePaths.EnsurePathExists(dataPath);
+            // Logs, Saves, Cache and the rest: the engine opens files under all of them.
+            GamePaths.EnsurePathsExist();
 
             string assetsPath = options.AssetsPath ?? Path.Combine(gamePath, "assets");
             if (Directory.Exists(assetsPath))
@@ -91,6 +93,8 @@ public static class HeadlessClientBootstrap
 
             // 5. Initialize platform
             ClientLogger logger = new();
+            LogCapture logs = new(EnumAppSide.Client);
+            logs.Attach(logger);
             ClientPlatformWindows platform = new(logger);
             platform.window = window.NativeWindow;
             platform.XPlatInterface.Window = (GameWindow)(object)window.NativeWindow;
@@ -182,7 +186,7 @@ public static class HeadlessClientBootstrap
             client.clientSystems ??= new ClientSystem[] { client.modHandler };
             client.TerrainChunkTesselator ??= new ChunkTesselator(client);
 
-            return new HeadlessClient(client, platform, screenManager, runningGameScreen, window, options, tempDataPath);
+            return new HeadlessClient(client, platform, screenManager, runningGameScreen, window, options, tempDataPath) { Logs = logs };
         }
     }
 

@@ -5,6 +5,7 @@ using Zaldaryon.Pharos.Core;
 using Zaldaryon.Pharos.Player;
 using Zaldaryon.Pharos.Server;
 
+using Zaldaryon.Pharos.Reporting;
 namespace Zaldaryon.Pharos.XUnit;
 
 /// <summary>
@@ -120,6 +121,19 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime
     protected virtual TimeSpan HostWaitTimeout => TimeSpan.FromMinutes(10);
 
     /// <summary>
+    /// Whether the test fails when the client or the server logged an error during it that
+    /// <see cref="AllowedLoggedErrors"/> does not allow. Off by default. The errors are taken when
+    /// the test body ends, so what the game logs while it shuts down does not count.
+    /// </summary>
+    protected virtual bool FailOnLoggedErrors => false;
+
+    /// <summary>
+    /// Fragments of logged errors that <see cref="FailOnLoggedErrors"/> lets pass, compared
+    /// without regard to case.
+    /// </summary>
+    protected virtual IEnumerable<string> AllowedLoggedErrors => [];
+
+    /// <summary>
     /// Initializes the client-server scenario: boots server, connects client, waits for player join.
     /// </summary>
     /// <remarks>
@@ -185,6 +199,7 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime
             BootMode = clientOptions.BootMode,
             CompleteCharacterSelection = clientOptions.CompleteCharacterSelection,
             CharacterClass = clientOptions.CharacterClass,
+            LoadBridge = clientOptions.LoadBridge,
             ModPaths = [.. clientOptions.ModPaths, _clientModsDirectory],
         });
 
@@ -211,6 +226,8 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime
     {
         if (_disposed) return;
         _disposed = true;
+
+        IReadOnlyList<LogEntry> loggedErrors = LoggedErrorGate.Collect(FailOnLoggedErrors, AllowedLoggedErrors, _client?.Logs, _serverHost?.Logs);
 
         foreach (ServerTestPlayer player in _testPlayers)
         {
@@ -276,6 +293,8 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime
         ScenarioHostPool.HostDisposed();
         _gate?.Dispose();
         _gate = null;
+
+        LoggedErrorGate.ThrowIfAny(loggedErrors);
     }
 
     /// <summary>

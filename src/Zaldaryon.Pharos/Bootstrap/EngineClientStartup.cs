@@ -11,6 +11,7 @@ using Vintagestory.ClientNative;
 using Vintagestory.Common;
 using Zaldaryon.Pharos.Core;
 using Zaldaryon.Pharos.Platform;
+using Zaldaryon.Pharos.Reporting;
 
 namespace Zaldaryon.Pharos.Bootstrap;
 
@@ -48,6 +49,8 @@ namespace Zaldaryon.Pharos.Bootstrap;
 /// </remarks>
 internal static class EngineClientStartup
 {
+    private const string BridgeAssemblyFile = "Zaldaryon.Pharos.Bridge.dll";
+
     private const BindingFlags AnyInstance = BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public;
 
     private static readonly FieldInfo s_currentScreenField =
@@ -95,6 +98,8 @@ internal static class EngineClientStartup
         HeadlessWindow window = new(options);
 
         ClientLogger logger = new();
+        LogCapture logs = new(EnumAppSide.Client);
+        logs.Attach(logger);
         ClientPlatformWindows platform = new(logger);
 
         // ClientMain.Start registers a crash handler on the platform, which dereferences this.
@@ -135,7 +140,7 @@ internal static class EngineClientStartup
 
         // ClientSettings is a process-wide singleton, created with whatever data path was current
         // the first time it was touched, so the mod folders are set explicitly for every boot.
-        ClientSettings.ModPaths = ["Mods", GamePaths.DataPathMods, .. options.ModPaths];
+        ClientSettings.ModPaths = ["Mods", GamePaths.DataPathMods, .. options.ModPaths, .. BridgeModPaths(options)];
 
         screenManager.ClientIsOffline = true;
         s_loadModsMethod.Invoke(screenManager, null);
@@ -146,7 +151,7 @@ internal static class EngineClientStartup
         ClientMain client = (ClientMain)s_runningGameField.GetValue(runningGameScreen)!;
         client.Start();
 
-        return new HeadlessClient(client, platform, screenManager, runningGameScreen, window, options, tempDataPath, ClientBootMode.Engine, clientThread);
+        return new HeadlessClient(client, platform, screenManager, runningGameScreen, window, options, tempDataPath, ClientBootMode.Engine, clientThread) { Logs = logs };
     }
 
     /// <summary>
@@ -182,6 +187,32 @@ internal static class EngineClientStartup
 
         typeof(ShaderRegistry).GetMethod("registerDefaultShaderProgramsPre", BindingFlags.Static | BindingFlags.NonPublic)
             ?.Invoke(null, null);
+    }
+
+    /// <summary>
+    /// The folder the bridge mod is staged in, when <see cref="HeadlessClientOptions.LoadBridge"/>
+    /// is on and the bridge assembly is next to the Pharos assembly.
+    /// </summary>
+    /// <remarks>
+    /// The game loads every assembly in a mod folder as a mod, so the bridge is copied into a
+    /// folder of its own under the data path. The game loads it into the process's default
+    /// context, where a test that references the bridge already has it, so both see the same
+    /// <c>BridgeChannel</c>.
+    /// </remarks>
+    private static IEnumerable<string> BridgeModPaths(HeadlessClientOptions options)
+    {
+        if (!options.LoadBridge) yield break;
+
+        string? pharosFolder = Path.GetDirectoryName(typeof(EngineClientStartup).Assembly.Location);
+        if (string.IsNullOrEmpty(pharosFolder)) yield break;
+
+        string bridge = Path.Combine(pharosFolder, BridgeAssemblyFile);
+        if (!File.Exists(bridge)) yield break;
+
+        string staged = Path.Combine(GamePaths.DataPath, "PharosBridge");
+        Directory.CreateDirectory(staged);
+        File.Copy(bridge, Path.Combine(staged, BridgeAssemblyFile), overwrite: true);
+        yield return staged;
     }
 
     private static void StartScreenManager(ScreenManager screenManager, ClientPlatformWindows platform)
