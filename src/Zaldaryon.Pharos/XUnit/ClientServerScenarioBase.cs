@@ -38,6 +38,8 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime
     private HeadlessClient? _client;
     private ClientServerLoopbackSession? _session;
     private bool _disposed;
+    private IDisposable? _gate;
+    private string? _clientModsDirectory;
 
     /// <summary>
     /// Gets the headless client instance.
@@ -87,10 +89,11 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime
     protected virtual ServerWorldOptions WorldOptions => new();
 
     /// <summary>
-    /// Gets the client configuration options for this scenario.
+    /// Gets the client configuration options for this scenario. An engine-mode client by default,
+    /// which is the only kind that can join the server.
     /// Override to customize headless client settings.
     /// </summary>
-    protected virtual HeadlessClientOptions ClientOptions => new();
+    protected virtual HeadlessClientOptions ClientOptions => new() { BootMode = ClientBootMode.Engine };
 
     /// <summary>
     /// Gets the timeout for waiting for the player to join.
@@ -111,6 +114,11 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime
     protected virtual string PlayerName => "PharosTest";
 
     /// <summary>
+    /// Gets how long a test waits for another scenario to release the host before it fails.
+    /// </summary>
+    protected virtual TimeSpan HostWaitTimeout => TimeSpan.FromMinutes(10);
+
+    /// <summary>
     /// Initializes the client-server scenario: boots server, connects client, waits for player join.
     /// </summary>
     /// <remarks>
@@ -125,14 +133,59 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime
     /// </remarks>
     public virtual async Task InitializeAsync()
     {
+        _gate = await ScenarioHostPool.EnterAsync(HostWaitTimeout).ConfigureAwait(false);
+        ScenarioHostPool.Clear();
+
+        try
+        {
+            await StartAsync().ConfigureAwait(false);
+        }
+        catch
+        {
+            // xUnit does not always reach DisposeAsync after a failed InitializeAsync, and the
+            // gate must be released either way or every later scenario waits for it.
+            await DisposeAsync().ConfigureAwait(false);
+            throw;
+        }
+    }
+
+    private async Task StartAsync()
+    {
+
         // Create sandbox for isolated server storage
         _sandbox = new ServerSandbox();
+
+        // The server's mods go to both sides: a real client needs every universal mod the server
+        // runs, and an in-memory client has no mod download step to fetch them.
+        IReadOnlyList<string> serverMods = ScenarioAttributes.ServerMods(GetType());
+        ScenarioAttributes.StageMods(serverMods, _sandbox.ModsPath);
+        _clientModsDirectory = Path.Combine(_sandbox.RootPath, "ClientMods");
+        ScenarioAttributes.StageMods([.. serverMods, .. ScenarioAttributes.ClientMods(GetType())], _clientModsDirectory);
 
         // Boot embedded server in sandbox
         _serverHost = EmbeddedServerHost.Boot(_sandbox, WorldOptions);
 
         // Initialize headless client (separate platform init)
-        _client = HeadlessClientBootstrap.Boot(ClientOptions);
+        HeadlessClientOptions clientOptions = ClientOptions;
+        _client = HeadlessClientBootstrap.Boot(new HeadlessClientOptions
+        {
+            Width = clientOptions.Width,
+            Height = clientOptions.Height,
+            GameInstallPath = clientOptions.GameInstallPath,
+            DataPath = clientOptions.DataPath,
+            AssetsPath = clientOptions.AssetsPath,
+            DisableAudio = clientOptions.DisableAudio,
+            UseNullAudioDevice = clientOptions.UseNullAudioDevice,
+            ConfigureMesaEnvironment = clientOptions.ConfigureMesaEnvironment,
+            ForceSoftwareRendering = clientOptions.ForceSoftwareRendering,
+            MesaGlVersionOverride = clientOptions.MesaGlVersionOverride,
+            MesaGlslVersionOverride = clientOptions.MesaGlslVersionOverride,
+            LinuxDisplay = clientOptions.LinuxDisplay,
+            BootMode = clientOptions.BootMode,
+            CompleteCharacterSelection = clientOptions.CompleteCharacterSelection,
+            CharacterClass = clientOptions.CharacterClass,
+            ModPaths = [.. clientOptions.ModPaths, _clientModsDirectory],
+        });
 
         // Create loopback session connecting client to server
         _session = _client.ConnectLoopback(_serverHost, PlayerName);
@@ -204,6 +257,9 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime
             // Ignore sandbox cleanup errors during teardown
         }
         _sandbox = null;
+
+        _gate?.Dispose();
+        _gate = null;
     }
 
     /// <summary>

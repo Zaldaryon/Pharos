@@ -80,6 +80,9 @@ public sealed class EmbeddedServerHost : IDisposable, IAsyncDisposable
     /// </summary>
     public int TickCount => _tickCount;
 
+    // The server's game thread: boot, ticks, snapshots and teardown all run on it.
+    private readonly EngineThread _gameThread;
+
     private EmbeddedServerHost(
         ServerMain server,
         DummyNetwork tcpNetwork,
@@ -87,8 +90,10 @@ public sealed class EmbeddedServerHost : IDisposable, IAsyncDisposable
         ServerWorldOptions options,
         string dataPath,
         bool ownsDataPath,
-        ServerSandbox? sandbox = null)
+        ServerSandbox? sandbox,
+        EngineThread gameThread)
     {
+        _gameThread = gameThread;
         Server = server;
         TcpNetwork = tcpNetwork;
         UdpNetwork = udpNetwork;
@@ -108,7 +113,26 @@ public sealed class EmbeddedServerHost : IDisposable, IAsyncDisposable
     /// <param name="options">World configuration options. When null, uses default superflat creative settings.</param>
     /// <param name="customDataPath">Optional data directory. When null, creates a temporary scratch directory.</param>
     /// <returns>A running embedded server host.</returns>
-    public static EmbeddedServerHost Boot(ServerWorldOptions? options = null, string? customDataPath = null)
+    public static EmbeddedServerHost Boot(ServerWorldOptions? options = null, string? customDataPath = null) =>
+        BootOnGameThread(gameThread => BootCore(options, customDataPath, gameThread));
+
+    private static EmbeddedServerHost BootOnGameThread(System.Func<EngineThread, EmbeddedServerHost> boot)
+    {
+        // The server is built on the thread it will tick on, so the per-thread state it creates
+        // while booting is there for every later tick.
+        EngineThread gameThread = new("Pharos server game thread");
+        try
+        {
+            return gameThread.Invoke(() => boot(gameThread));
+        }
+        catch
+        {
+            gameThread.Dispose();
+            throw;
+        }
+    }
+
+    private static EmbeddedServerHost BootCore(ServerWorldOptions? options, string? customDataPath, EngineThread gameThread)
     {
         HeadlessPlatformResolver.Initialize();
         HeadlessPlatformResolver.EnsureAssetsPath();
@@ -178,7 +202,7 @@ public sealed class EmbeddedServerHost : IDisposable, IAsyncDisposable
             // Best effort wait
         }
 
-        return new EmbeddedServerHost(server, tcpNetwork, udpNetwork, options, dataPath, ownsDataPath, sandbox: null);
+        return new EmbeddedServerHost(server, tcpNetwork, udpNetwork, options, dataPath, ownsDataPath, sandbox: null, gameThread);
     }
 
     /// <summary>
@@ -191,7 +215,11 @@ public sealed class EmbeddedServerHost : IDisposable, IAsyncDisposable
     public static EmbeddedServerHost Boot(ServerSandbox sandbox, ServerWorldOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(sandbox);
+        return BootOnGameThread(gameThread => BootCore(sandbox, options, gameThread));
+    }
 
+    private static EmbeddedServerHost BootCore(ServerSandbox sandbox, ServerWorldOptions? options, EngineThread gameThread)
+    {
         HeadlessPlatformResolver.Initialize();
         HeadlessPlatformResolver.EnsureAssetsPath();
 
@@ -259,7 +287,7 @@ public sealed class EmbeddedServerHost : IDisposable, IAsyncDisposable
             // Best effort wait
         }
 
-        return new EmbeddedServerHost(server, tcpNetwork, udpNetwork, options, dataPath, ownsDataPath: false, sandbox);
+        return new EmbeddedServerHost(server, tcpNetwork, udpNetwork, options, dataPath, ownsDataPath: false, sandbox, gameThread);
     }
 
     /// <summary>
@@ -278,7 +306,7 @@ public sealed class EmbeddedServerHost : IDisposable, IAsyncDisposable
             throw new InvalidOperationException("Cannot take snapshot from a stopped server.");
         }
 
-        return WorldSnapshot.CreateFrom(this);
+        return _gameThread.Invoke(() => WorldSnapshot.CreateFrom(this));
     }
 
     /// <summary>
@@ -300,7 +328,7 @@ public sealed class EmbeddedServerHost : IDisposable, IAsyncDisposable
             throw new InvalidOperationException("Cannot restore snapshot to a stopped server.");
         }
 
-        snapshot.Restore(this);
+        _gameThread.Invoke(() => snapshot.Restore(this));
     }
 
     /// <summary>
@@ -320,6 +348,12 @@ public sealed class EmbeddedServerHost : IDisposable, IAsyncDisposable
     public void Tick()
     {
         if (_disposed) return;
+
+        if (!_gameThread.IsCurrent)
+        {
+            _gameThread.Invoke(Tick);
+            return;
+        }
 
         // Check for prior crash
         if (_serverException is not null)
@@ -454,6 +488,29 @@ public sealed class EmbeddedServerHost : IDisposable, IAsyncDisposable
     }
 
     /// <summary>
+    /// Runs <paramref name="action"/> on the server's game thread now and waits for it. Use it for
+    /// anything that touches live server state from test code: the engine keeps per-thread state
+    /// on its game thread and expects to be called there.
+    /// </summary>
+    /// <exception cref="ArgumentNullException"><paramref name="action"/> is null.</exception>
+    public void RunOnGameThread(Action action)
+    {
+        ArgumentNullException.ThrowIfNull(action);
+        _gameThread.Invoke(action);
+    }
+
+    /// <summary>
+    /// Runs <paramref name="func"/> on the server's game thread now and returns its result. See
+    /// <see cref="RunOnGameThread(Action)"/>.
+    /// </summary>
+    /// <exception cref="ArgumentNullException"><paramref name="func"/> is null.</exception>
+    public T RunOnGameThread<T>(System.Func<T> func)
+    {
+        ArgumentNullException.ThrowIfNull(func);
+        return _gameThread.Invoke(func);
+    }
+
+    /// <summary>
     /// Queues an action to execute on the game thread during the next tick.
     /// </summary>
     /// <param name="action">The action to execute.</param>
@@ -554,7 +611,7 @@ public sealed class EmbeddedServerHost : IDisposable, IAsyncDisposable
         if (_disposed) return;
         _disposed = true;
 
-        DrainAndDisposeCore();
+        DisposeOnGameThread();
     }
 
     /// <summary>
@@ -565,7 +622,19 @@ public sealed class EmbeddedServerHost : IDisposable, IAsyncDisposable
         if (_disposed) return;
         _disposed = true;
 
-        await Task.Run(DrainAndDisposeCore).ConfigureAwait(false);
+        await Task.Run(DisposeOnGameThread).ConfigureAwait(false);
+    }
+
+    private void DisposeOnGameThread()
+    {
+        try
+        {
+            _gameThread.Invoke(DrainAndDisposeCore);
+        }
+        finally
+        {
+            _gameThread.Dispose();
+        }
     }
 
     /// <summary>

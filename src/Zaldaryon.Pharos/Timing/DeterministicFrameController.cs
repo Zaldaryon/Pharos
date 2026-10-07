@@ -12,6 +12,7 @@ using Vintagestory.Client;
 using Vintagestory.Client.NoObf;
 using Zaldaryon.Pharos.Bootstrap;
 using Zaldaryon.Pharos.Core;
+using Zaldaryon.Pharos.Platform;
 
 namespace Zaldaryon.Pharos.Timing;
 
@@ -119,6 +120,12 @@ public sealed class DeterministicFrameController
     public string? CharacterClass { get; init; }
 
     /// <summary>
+    /// The dedicated main thread of an engine-mode client. Frames are stepped on it whatever
+    /// thread calls <see cref="Step"/>.
+    /// </summary>
+    internal EngineThread? ClientThread { get; init; }
+
+    /// <summary>
     /// Advances the client by a single deterministic frame.
     /// </summary>
     public void Step(float dt = 1f / 60f)
@@ -126,6 +133,12 @@ public sealed class DeterministicFrameController
         if (dt <= 0f || float.IsNaN(dt) || float.IsInfinity(dt))
         {
             throw new ArgumentOutOfRangeException(nameof(dt), "Delta time must be positive and finite.");
+        }
+
+        if (ClientThread is { IsCurrent: false } clientThread)
+        {
+            clientThread.Invoke(() => Step(dt));
+            return;
         }
 
         lock (_stepLock)

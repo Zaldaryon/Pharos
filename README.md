@@ -99,7 +99,7 @@ Inherit from `ServerScenarioBase` and use `[ServerScenario]`:
 using Zaldaryon.Pharos.XUnit;
 using Xunit;
 
-[ServerWorld(seed: "12345", playStyle: "creativebuilding", worldType: "superflat")]
+[ServerWorld(seed: 12345, playStyle: "creativebuilding", worldType: "superflat")]
 public class InventoryTests : ServerScenarioBase
 {
     [ServerScenario]

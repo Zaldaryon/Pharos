@@ -51,7 +51,7 @@ public static class ServerWorldHelpers
             throw new InvalidOperationException($"Block code '{blockCode}' could not be resolved.");
         }
 
-        api.World.BlockAccessor.SetBlock(block.Id, pos);
+        OnGameThread(scenario, () => api.World.BlockAccessor.SetBlock(block.Id, pos));
     }
 
     /// <summary>
@@ -73,7 +73,7 @@ public static class ServerWorldHelpers
             throw new InvalidOperationException("Server API is not available. Ensure the server is running.");
         }
 
-        api.World.BlockAccessor.SetBlock(blockId, pos);
+        OnGameThread(scenario, () => api.World.BlockAccessor.SetBlock(blockId, pos));
     }
 
     /// <summary>
@@ -150,7 +150,7 @@ public static class ServerWorldHelpers
         Entity entity = api.World.ClassRegistry.CreateEntity(entityType);
         entity.Pos.SetPos(pos);
 
-        api.World.SpawnEntity(entity);
+        OnGameThread(scenario, () => api.World.SpawnEntity(entity));
         return entity;
     }
 
@@ -407,6 +407,13 @@ public static class ServerWorldHelpers
     }
 
     // Helper to get API from scenario via reflection (since it's protected)
+    private static void OnGameThread(ServerScenarioBase scenario, Action action)
+    {
+        EmbeddedServerHost? host = GetHost(scenario);
+        if (host is null) action();
+        else host.RunOnGameThread(action);
+    }
+
     private static ICoreServerAPI? GetApi(ServerScenarioBase scenario)
     {
         // Use reflection to access the protected Api property
