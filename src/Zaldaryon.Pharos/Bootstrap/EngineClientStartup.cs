@@ -101,6 +101,7 @@ internal static class EngineClientStartup
         platform.crashreporter = new CrashReporter(EnumAppSide.Client);
         CrashReporter.SetLogger(logger);
 
+        EngineFocusPatcher.Register(platform);
         platform.window = window.NativeWindow;
         platform.XPlatInterface.Window = (GameWindow)(object)window.NativeWindow;
         platform.WindowSize.Width = options.Width;

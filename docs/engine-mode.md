@@ -59,6 +59,23 @@ Set `CompleteCharacterSelection = false` to drive the dialog from the test inste
 - Timing is real, not deterministic: the engine's worker threads run on their own schedule. Use fixture mode when a test needs bit-exact frame stepping.
 - One engine-mode client at a time per process. The engine keeps static state (`ScreenManager.Platform`, `ClientSystemStartup.instance`, the shader registry). Clients booted one after another in the same process work. For multiplayer, join headless players (`EmbeddedServerHost.JoinPlayerAsync`) next to the one rendering client. The rendering client sees them as other players.
 
+## Input
+
+`HeadlessClient.Input` drives an engine-mode client the way a keyboard and mouse would. Each injected event becomes the same engine event the platform builds from a real window event, and goes to the same handlers. The `ScreenManager` and the running game process it, so it updates the keyboard state, runs hotkeys, reaches open dialogs and moves the player:
+
+```csharp
+client.Input.PressKey(GlKeys.C);                    // hotkey: opens the character dialog
+client.Input.InjectKey(VirtualKey.W, pressed: true); // hold W: the player walks, the server sees it
+client.Input.InjectMouseDelta(40, 0);                // mouse look: turns the camera right
+client.Input.InjectScroll(-1);                       // next hotbar slot
+client.Input.PressKey(GlKeys.T);                     // open chat
+client.Input.TypeText("hello");                      // text input into the focused field
+client.Input.PressKey(GlKeys.Enter);
+client.Input.Click(320, 180);                        // move the cursor and click
+```
+
+As on a real keyboard, a printable key reports both the key going down and the character it types. Hotkeys use the key and text fields use the character. The window of an engine-mode client counts as focused, because the game ignores the mouse in an unfocused window. Use `GlKeys` for any key; `VirtualKey` covers the common ones.
+
 ## Threads
 
 The engine-mode client runs on a dedicated main thread, and an embedded server on a dedicated game thread, as in the game. Pharos marshals boot, frames, captures and teardown there, whichever thread the test runs on. Code that touches GL or queues engine main-thread work should use `HeadlessClient.RunOnClientThread(...)`, and code that touches live server state should use `EmbeddedServerHost.RunOnGameThread(...)`.

@@ -1,4 +1,6 @@
 using System.Collections.Generic;
+using Vintagestory.API.Client;
+using Vintagestory.API.Common;
 
 namespace Zaldaryon.Pharos.Input;
 
@@ -16,7 +18,15 @@ public sealed class VirtualInputController
     private int _mouseY;
     private int _scrollDelta;
     private readonly HashSet<VirtualKey> _pressedKeys = new();
+    private readonly HashSet<GlKeys> _pressedGlKeys = new();
     private readonly HashSet<VirtualMouseButton> _pressedButtons = new();
+
+    /// <summary>
+    /// Where injected input goes besides this controller's own state. An engine-mode client sets
+    /// it so every injected event reaches the game the way real input does; without one, the
+    /// controller only records state.
+    /// </summary>
+    internal IVirtualInputSink? Sink { get; set; }
 
     /// <summary>
     /// Injects a mouse move event to the specified position.
@@ -25,11 +35,33 @@ public sealed class VirtualInputController
     /// <param name="y">Target Y coordinate.</param>
     public void InjectMouseMove(int x, int y)
     {
+        int deltaX, deltaY;
         lock (_lock)
         {
+            deltaX = x - _mouseX;
+            deltaY = y - _mouseY;
             _mouseX = x;
             _mouseY = y;
         }
+
+        Sink?.MouseMove(x, y, deltaX, deltaY);
+    }
+
+    /// <summary>
+    /// Moves the mouse by a relative amount, the way a grabbed mouse turns the camera in game.
+    /// </summary>
+    /// <param name="deltaX">Horizontal movement in pixels; positive turns right.</param>
+    /// <param name="deltaY">Vertical movement in pixels; positive looks down.</param>
+    public void InjectMouseDelta(int deltaX, int deltaY)
+    {
+        int x, y;
+        lock (_lock)
+        {
+            x = _mouseX;
+            y = _mouseY;
+        }
+
+        Sink?.MouseMove(x, y, deltaX, deltaY);
     }
 
     /// <summary>
@@ -50,6 +82,20 @@ public sealed class VirtualInputController
                 _pressedButtons.Remove(button);
             }
         }
+
+        (int x, int y) = GetMousePosition();
+        Sink?.MouseButton(ToEngineButton(button), pressed, x, y);
+    }
+
+    /// <summary>
+    /// Moves the mouse to (<paramref name="x"/>, <paramref name="y"/>) and presses and releases
+    /// <paramref name="button"/> there.
+    /// </summary>
+    public void Click(int x, int y, VirtualMouseButton button = VirtualMouseButton.Left)
+    {
+        InjectMouseMove(x, y);
+        InjectMouseButton(button, pressed: true);
+        InjectMouseButton(button, pressed: false);
     }
 
     /// <summary>
@@ -70,7 +116,130 @@ public sealed class VirtualInputController
                 _pressedKeys.Remove(key);
             }
         }
+
+        SendKey(ToGlKey(key), pressed);
     }
+
+    /// <summary>
+    /// Injects a press or release of any key, by its engine key code.
+    /// </summary>
+    /// <param name="key">The key.</param>
+    /// <param name="pressed">True to press, false to release.</param>
+    public void InjectKey(GlKeys key, bool pressed)
+    {
+        lock (_lock)
+        {
+            if (pressed) _pressedGlKeys.Add(key);
+            else _pressedGlKeys.Remove(key);
+        }
+
+        SendKey(key, pressed);
+    }
+
+    /// <summary>
+    /// Presses and releases <paramref name="key"/>.
+    /// </summary>
+    public void PressKey(GlKeys key)
+    {
+        InjectKey(key, pressed: true);
+        InjectKey(key, pressed: false);
+    }
+
+    /// <summary>
+    /// Types <paramref name="text"/> character by character, as text input into whatever has the
+    /// keyboard focus, a chat line or a text field.
+    /// </summary>
+    public void TypeText(string text)
+    {
+        ArgumentNullException.ThrowIfNull(text);
+        foreach (char c in text)
+        {
+            Sink?.KeyPress(c);
+        }
+    }
+
+    /// <summary>
+    /// Checks if the specified key is currently pressed.
+    /// </summary>
+    public bool IsKeyDown(GlKeys key)
+    {
+        lock (_lock)
+        {
+            return _pressedGlKeys.Contains(key);
+        }
+    }
+
+    private void SendKey(GlKeys key, bool pressed)
+    {
+        IVirtualInputSink? sink = Sink;
+        if (sink == null) return;
+
+        bool shift, ctrl, alt;
+        lock (_lock)
+        {
+            shift = _pressedKeys.Contains(VirtualKey.Shift) || _pressedGlKeys.Contains(GlKeys.LShift) || _pressedGlKeys.Contains(GlKeys.RShift);
+            ctrl = _pressedKeys.Contains(VirtualKey.Control) || _pressedGlKeys.Contains(GlKeys.LControl) || _pressedGlKeys.Contains(GlKeys.RControl);
+            alt = _pressedKeys.Contains(VirtualKey.Alt) || _pressedGlKeys.Contains(GlKeys.LAlt) || _pressedGlKeys.Contains(GlKeys.RAlt);
+        }
+
+        if (pressed)
+        {
+            sink.KeyDown(key, shift, ctrl, alt);
+
+            // A real keyboard reports a printable key twice: as the key going down, and as the
+            // character it types. Hotkeys use the first, text fields the second, and the game
+            // relies on both arriving: the chat hotkey swallows the character of its own key.
+            if (!ctrl && !alt && ToCharacter(key, shift) is char character)
+            {
+                sink.KeyPress(character);
+            }
+        }
+        else
+        {
+            sink.KeyUp(key, shift, ctrl, alt);
+        }
+    }
+
+    private static char? ToCharacter(GlKeys key, bool shift)
+    {
+        if (key >= GlKeys.A && key <= GlKeys.Z)
+        {
+            char letter = (char)('a' + (key - GlKeys.A));
+            return shift ? char.ToUpperInvariant(letter) : letter;
+        }
+
+        if (key >= GlKeys.Number0 && key <= GlKeys.Number9 && !shift)
+        {
+            return (char)('0' + (key - GlKeys.Number0));
+        }
+
+        return key == GlKeys.Space ? ' ' : null;
+    }
+
+    private static GlKeys ToGlKey(VirtualKey key) => key switch
+    {
+        VirtualKey.W => GlKeys.W,
+        VirtualKey.A => GlKeys.A,
+        VirtualKey.S => GlKeys.S,
+        VirtualKey.D => GlKeys.D,
+        VirtualKey.Space => GlKeys.Space,
+        VirtualKey.Shift => GlKeys.LShift,
+        VirtualKey.Control => GlKeys.LControl,
+        VirtualKey.Alt => GlKeys.LAlt,
+        VirtualKey.E => GlKeys.E,
+        VirtualKey.F => GlKeys.F,
+        VirtualKey.Tab => GlKeys.Tab,
+        VirtualKey.Escape => GlKeys.Escape,
+        VirtualKey.Enter => GlKeys.Enter,
+        _ => GlKeys.Unknown,
+    };
+
+    private static EnumMouseButton ToEngineButton(VirtualMouseButton button) => button switch
+    {
+        VirtualMouseButton.Right => EnumMouseButton.Right,
+        VirtualMouseButton.Middle => EnumMouseButton.Middle,
+        _ => EnumMouseButton.Left,
+    };
 
     /// <summary>
     /// Injects a scroll wheel event.
@@ -82,6 +251,8 @@ public sealed class VirtualInputController
         {
             _scrollDelta += delta;
         }
+
+        Sink?.MouseWheel(delta);
     }
 
     /// <summary>

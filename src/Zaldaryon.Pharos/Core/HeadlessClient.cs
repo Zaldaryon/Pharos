@@ -224,6 +224,11 @@ public sealed class HeadlessClient : IDisposable
         TestPlayer = new ClientTestPlayer(client);
         Culling = new CullingInspector(client);
         Inventory = new InventoryAutomation(TestPlayer.Inventory);
+
+        if (bootMode == ClientBootMode.Engine)
+        {
+            Input.Sink = new EngineInputSink(this);
+        }
     }
 
     /// <summary>
