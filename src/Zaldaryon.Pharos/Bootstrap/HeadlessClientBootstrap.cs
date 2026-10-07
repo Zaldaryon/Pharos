@@ -70,6 +70,19 @@ public static class HeadlessClientBootstrap
 
             if (options.BootMode == ClientBootMode.Engine)
             {
+                if (options.DisableAudio || options.UseNullAudioDevice)
+                {
+                    // The engine skips every sound while the sound level is 0. Nothing reaches a
+                    // speaker through the null device anyway, so an engine-mode client keeps the
+                    // levels up and its sounds are played, and recorded, as in the game.
+                    ClientSettings.MasterSoundLevel = 100;
+                    ClientSettings.SoundLevel = 100;
+                    ClientSettings.EntitySoundLevel = 100;
+                    ClientSettings.AmbientSoundLevel = 100;
+                    ClientSettings.WeatherSoundLevel = 100;
+                    ClientSettings.MusicLevel = 100;
+                }
+
                 return EngineClientStartup.Boot(options, tempDataPath);
             }
 

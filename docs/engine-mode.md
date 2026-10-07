@@ -122,6 +122,21 @@ client.Inventory.DragSlot(0, 3);
 await session.StepUntilAsync(() => /* server sees the stack in slot 3 */ true);
 ```
 
+## Sound
+
+There is no audio device. The null device hands the game a silent sound object for each sound it asks for, and `HeadlessClient.Sounds` records every one of them. The game still decides which sounds to play, where, how loud and how often: footsteps, block and item interactions, entities, ambience, music, and sounds the server tells it to play.
+
+```csharp
+client.Sounds.Clear();
+await session.HoldAsync(PlayerAction.Forward, 120);
+Assert.True(client.Sounds.WasPlayed("walk"));
+
+RecordedSound planks = client.Sounds.Played("block/planks")[0];
+Assert.NotNull(planks.Position);
+```
+
+`Started` holds the sounds the game started, and `Created` every sound it created. Each record carries the asset location, position, volume, range, sound type and loop flag. The engine skips every sound while the sound level is 0, so an engine-mode client keeps normal sound levels. Nothing reaches a speaker either way.
+
 ## Threads
 
 The engine-mode client runs on a dedicated main thread, and an embedded server on a dedicated game thread, as in the game. Pharos marshals boot, frames, captures and teardown there, whichever thread the test runs on. Code that touches GL or queues engine main-thread work should use `HeadlessClient.RunOnClientThread(...)`, and code that touches live server state should use `EmbeddedServerHost.RunOnGameThread(...)`.

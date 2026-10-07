@@ -18,6 +18,7 @@ public sealed class NullLoadedSound : ILoadedSound
     public NullLoadedSound(SoundParams? soundParams = null)
     {
         _soundParams = soundParams ?? new SoundParams();
+        if (soundParams != null) SoundRecorder.OnCreated(soundParams);
     }
 
     public float SoundLengthSeconds => 0f;
@@ -50,6 +51,7 @@ public sealed class NullLoadedSound : ILoadedSound
     {
         _isPlaying = true;
         _isPaused = false;
+        SoundRecorder.OnStarted(_soundParams);
     }
 
     public void Stop()
