@@ -1,6 +1,8 @@
+using System.Runtime.CompilerServices;
 using Vintagestory.API.Common;
 using Vintagestory.API.MathTools;
 using Vintagestory.API.Server;
+using Vintagestory.Client.NoObf;
 using Zaldaryon.Pharos.Player;
 using Zaldaryon.Pharos.Server;
 
@@ -17,6 +19,12 @@ namespace Zaldaryon.Pharos.World;
 /// interaction packets it sends, so block behaviors, collectible behaviors, mods' interaction
 /// handlers, reach checks and permission checks all run as in the game. Each method steps the
 /// session in lockstep until the outcome is visible on both sides or the frame budget runs out.
+/// </para>
+/// <para>
+/// A use or a placement is a click: the control is held only until the client acts on it, then
+/// released. The client repeats an action while its control stays down past a quarter of a
+/// second of real time, so a hold measured in frames would act twice on a slow machine, and a
+/// chest used twice opens and closes again.
 /// </para>
 /// <para>
 /// Breaking in survival takes as long as the tool and block say. Placing needs the block in the
@@ -70,17 +78,24 @@ public sealed class LiveBlockInteraction
     {
         await RequireAimAsync(pos, null, ct).ConfigureAwait(false);
 
+        // Held until the block is gone on the client, and no longer: an attack still held after
+        // that starts on the block behind it.
         Client.Controls.Press(PlayerAction.Attack);
         try
         {
-            return await _session.StepUntilAsync(
-                () => ClientBlockId(pos) == 0 && ServerBlockId(pos) == 0,
-                maxFrames, ct: ct).ConfigureAwait(false);
+            if (!await _session.StepUntilAsync(() => ClientBlockId(pos) == 0, maxFrames, ct: ct).ConfigureAwait(false))
+            {
+                return false;
+            }
         }
         finally
         {
             Client.Controls.Release(PlayerAction.Attack);
         }
+
+        return await _session.StepUntilAsync(
+            () => ClientBlockId(pos) == 0 && ServerBlockId(pos) == 0,
+            maxFrames, ct: ct).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -104,9 +119,10 @@ public sealed class LiveBlockInteraction
 
         await RequireAimAsync(against, face, ct).ConfigureAwait(false);
 
-        Client.Controls.Press(PlayerAction.Use);
-        await _session.StepFramesAsync(2, ct: ct).ConfigureAwait(false);
-        Client.Controls.Release(PlayerAction.Use);
+        if (!await ClickAsync(PlayerAction.Use, 120, ct).ConfigureAwait(false))
+        {
+            return false;
+        }
 
         return await _session.StepUntilAsync(
             () => ClientBlockId(target) == blockId && ServerBlockId(target) == blockId,
@@ -114,18 +130,63 @@ public sealed class LiveBlockInteraction
     }
 
     /// <summary>
-    /// Aims at <paramref name="pos"/> and clicks the use control on it, as a player right-clicks a
-    /// door, a chest or any other interactable block. The outcome is for the caller to check.
+    /// Aims at <paramref name="pos"/> and clicks the use control on it once, as a player
+    /// right-clicks a door, a chest or any other interactable block. The outcome is for the caller
+    /// to check.
     /// </summary>
+    /// <param name="pos">The block to use.</param>
+    /// <param name="maxFrames">How many frames the client may take to act on the click.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>Whether the client acted on the click within <paramref name="maxFrames"/>.</returns>
     /// <exception cref="InvalidOperationException">The block could not be aimed at.</exception>
-    public async Task UseAsync(BlockPos pos, int holdFrames = 2, CancellationToken ct = default)
+    public async Task<bool> UseAsync(BlockPos pos, int maxFrames = 120, CancellationToken ct = default)
     {
         await RequireAimAsync(pos, null, ct).ConfigureAwait(false);
 
-        Client.Controls.Press(PlayerAction.Use);
-        await _session.StepFramesAsync(holdFrames, ct: ct).ConfigureAwait(false);
-        Client.Controls.Release(PlayerAction.Use);
+        bool clicked = await ClickAsync(PlayerAction.Use, maxFrames, ct).ConfigureAwait(false);
         await _session.StepFramesAsync(2, ct: ct).ConfigureAwait(false);
+        return clicked;
+    }
+
+    /// <summary>
+    /// Holds <paramref name="action"/> until the client acts on it once, then releases it before
+    /// the next frame, so the client cannot repeat it.
+    /// </summary>
+    /// <returns>Whether the client acted within <paramref name="maxFrames"/>.</returns>
+    private async Task<bool> ClickAsync(PlayerAction action, int maxFrames, CancellationToken ct)
+    {
+        long before = Client.RunOnClientThread(LastMouseAction);
+
+        Client.Controls.Press(action);
+        try
+        {
+            return await _session.StepUntilAsync(
+                () => Client.RunOnClientThread(LastMouseAction) is var last && last != before && last != 0,
+                maxFrames, ct: ct).ConfigureAwait(false);
+        }
+        finally
+        {
+            Client.Controls.Release(action);
+        }
+    }
+
+    /// <summary>
+    /// When the client last acted on a mouse button held in the world: it stamps the time each
+    /// time it attacks, uses or places for a held button, including each repeat, and sets it to 0
+    /// while no button is down.
+    /// </summary>
+    private long LastMouseAction()
+    {
+        SystemMouseInWorldInteractions mouse = Client.Client.clientSystems.OfType<SystemMouseInWorldInteractions>().FirstOrDefault()
+            ?? throw new InvalidOperationException("The client has no in-world mouse handling.");
+        return MouseInternals.LastAction(mouse);
+    }
+
+    /// <summary>The client's in-world mouse handling keeps its last action time internal.</summary>
+    private static class MouseInternals
+    {
+        [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "lastbuildMilliseconds")]
+        public static extern ref long LastAction(SystemMouseInWorldInteractions mouse);
     }
 
     private async Task RequireAimAsync(BlockPos pos, BlockFacing? face, CancellationToken ct)
