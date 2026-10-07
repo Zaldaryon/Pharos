@@ -226,6 +226,28 @@ public async Task WorldRenders(ClientSettingsProfile profile)
 
 `[ClientSetting("viewDistance", 96)]` on a scenario class applies a setting to each of its tests once the client is up, and restores it when the test ends. Settings are process-wide in the game, so always restore what a test changes.
 
+## Real network connections and auth
+
+An embedded server can also listen on a real TCP and UDP port, as the game's `/allowlan` command opens it:
+
+```csharp
+var server = EmbeddedServerHost.Boot(new ServerWorldOptions { ListenPort = 0 });   // 0 picks a free port
+var session = client.ConnectTcp(server, ClientAuth.Offline("Alice"));             // ticks the server in lockstep
+```
+
+`ConnectRemote(host, port, auth)` joins a server this process does not run, such as a dedicated server in a container. The `RemoteServerSession` it returns steps only the client, since the server keeps its own clock.
+
+`ClientAuth` decides who the client is:
+
+| Auth | Needs | Joins |
+|------|-------|-------|
+| `ClientAuth.Offline(name)` | Nothing; the client answers the login token itself | Servers with `VerifyPlayerAuth` off (the embedded default) |
+| `ClientAuth.Online(name, uid, sessionKey, signature)` | A Vintage Story account session and access to `auth3.vintagestory.at` | Any server, including ones with `VerifyPlayerAuth` on |
+
+`ClientAuth.FromEnvironment(prefix)` reads an account session from `{prefix}_PLAYERNAME`, `_PLAYERUID`, `_SESSIONKEY` and `_SESSIONSIGNATURE`, as the launcher stores them after a login. The session key is a credential: keep it in a CI secret, never in the repository. Pharos clears it from the process-wide client settings when the client is disposed. The online tests in this repository run only when those variables are set.
+
+In-memory connections are never verified, whatever `VerifyPlayerAuth` says: the server treats them as local.
+
 ## Threads
 
 The engine-mode client runs on a dedicated main thread, and an embedded server on a dedicated game thread, as in the game. Pharos marshals boot, frames, captures and teardown there, whichever thread the test runs on. Code that touches GL or queues engine main-thread work should use `HeadlessClient.RunOnClientThread(...)`, and code that touches live server state should use `EmbeddedServerHost.RunOnGameThread(...)`.
