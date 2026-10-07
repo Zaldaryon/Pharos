@@ -101,11 +101,24 @@ public class EngineClientJoinTests
         });
         using ClientServerLoopbackSession session = client.ConnectLoopback(server, "WaitingPilot");
 
-        // The player spawns, but without a character the client never reports ready.
-        Assert.False(session.WaitForPlayerJoined(TimeSpan.FromSeconds(45)));
-        Assert.NotNull(client.Client.EntityPlayer);
-        Assert.True(client.Client.BlocksReceivedAndLoaded);
-        Assert.Contains(client.Client.api.Gui.OpenedGuis, g => g.GetType().Name == "GuiDialogCreateCharacter");
+        // The player spawns and the dialog opens. Waits are in frames until that point, not a
+        // fixed time, so a slow software renderer only makes the test slower.
+        bool waiting = false;
+        DateTime start = DateTime.UtcNow;
+        while (!waiting && DateTime.UtcNow - start < JoinTimeout)
+        {
+            session.Step();
+            waiting = client.RunOnClientThread(() =>
+                client.Client.EntityPlayer != null
+                && client.Client.BlocksReceivedAndLoaded
+                && client.Client.api.Gui.OpenedGuis.Any(g => g.GetType().Name == "GuiDialogCreateCharacter"));
+        }
+
+        Assert.True(waiting, "The player never spawned with the character dialog open");
+
+        // Without a character the client never reports ready.
+        session.StepFrames(300);
+        Assert.False(client.IsJoined);
     }
 
     [Fact]

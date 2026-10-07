@@ -108,6 +108,12 @@ public sealed class ClientTestPlayer : IClientTestPlayer
 
     public IPlayerCameraController Camera => _camera;
 
+    /// <summary>
+    /// Switches the camera to the engine's own view angles. See
+    /// <see cref="PlayerCameraController.UsesEngineCamera"/>.
+    /// </summary>
+    internal void UseEngineCamera() => _camera.UsesEngineCamera = true;
+
     public IPlayerInventoryAccessor Inventory => _inventory;
 
     public IPlayerGuiController Gui => _gui;

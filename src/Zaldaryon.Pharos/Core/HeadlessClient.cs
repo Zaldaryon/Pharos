@@ -147,6 +147,14 @@ public sealed class HeadlessClient : IDisposable
     /// </summary>
     public IndirectDrawInspector IndirectDraw { get; } = new();
     /// <summary>
+    /// Holds and releases player actions (walk, jump, sneak, sprint, attack, use) through the keys
+    /// and buttons they are bound to. Only an engine-mode client acts on them.
+    /// </summary>
+    public PlayerControls Controls => _controls ??= new PlayerControls(this);
+
+    private PlayerControls? _controls;
+
+    /// <summary>
     /// Virtual input controller for deterministic mouse and keyboard simulation.
     /// Supports synthetic input injection, state queries, and thread-safe snapshots.
     /// </summary>
@@ -228,6 +236,7 @@ public sealed class HeadlessClient : IDisposable
         if (bootMode == ClientBootMode.Engine)
         {
             Input.Sink = new EngineInputSink(this);
+            ((ClientTestPlayer)TestPlayer).UseEngineCamera();
         }
     }
 

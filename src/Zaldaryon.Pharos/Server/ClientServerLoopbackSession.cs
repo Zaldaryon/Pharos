@@ -9,6 +9,8 @@ using Zaldaryon.Pharos.Network;
 using Zaldaryon.Pharos.Player;
 using Zaldaryon.Pharos.Timing;
 
+using Zaldaryon.Pharos.World;
+
 namespace Zaldaryon.Pharos.Server;
 
 /// <summary>
@@ -51,6 +53,30 @@ public sealed class ClientServerLoopbackSession : IDisposable
 
     /// <summary>Gets the client's test player interface.</summary>
     public IClientTestPlayer Player => Client.TestPlayer;
+
+    /// <summary>
+    /// Breaks, places and uses blocks through the engine-mode client, the way a player does.
+    /// </summary>
+    public LiveBlockInteraction Blocks => _blocks ??= new LiveBlockInteraction(this);
+
+    private LiveBlockInteraction? _blocks;
+
+    /// <summary>
+    /// Holds <paramref name="action"/> for <paramref name="frames"/> lockstep frames, then releases
+    /// it: walk, jump, sneak or sprint as a player holding the key would.
+    /// </summary>
+    public async Task HoldAsync(PlayerAction action, int frames, CancellationToken ct = default)
+    {
+        Client.Controls.Press(action);
+        try
+        {
+            await StepFramesAsync(frames, ct: ct).ConfigureAwait(false);
+        }
+        finally
+        {
+            Client.Controls.Release(action);
+        }
+    }
 
     /// <summary>Gets whether the client has connected to the server.</summary>
     public bool IsConnected { get; private set; }
