@@ -1,3 +1,5 @@
+using Zaldaryon.Pharos.Platform;
+
 namespace Zaldaryon.Pharos.XUnit;
 
 /// <summary>
@@ -26,6 +28,8 @@ internal static class ScenarioHostPool
     private static readonly SemaphoreSlim s_gate = new(1, 1);
     private static readonly object s_lock = new();
     private static PooledHost? s_pooled;
+
+    private static int s_reclaim;
 
     static ScenarioHostPool()
     {
@@ -90,10 +94,17 @@ internal static class ScenarioHostPool
         }
     }
 
+    /// <summary>
+    /// Notes that the running scenario disposed a client or server, so the memory it held is
+    /// reclaimed when the scenario leaves the host.
+    /// </summary>
+    internal static void HostDisposed() => Volatile.Write(ref s_reclaim, 1);
+
     private static void DisposePooled()
     {
         PooledHost? pooled = s_pooled;
         s_pooled = null;
+        if (pooled != null) HostDisposed();
 
         try
         {
@@ -115,6 +126,11 @@ internal static class ScenarioHostPool
         {
             if (Interlocked.Exchange(ref _released, 1) == 0)
             {
+                if (Interlocked.Exchange(ref s_reclaim, 0) == 1)
+                {
+                    NativeHeap.Reclaim();
+                }
+
                 s_gate.Release();
             }
         }

@@ -86,6 +86,47 @@ public sealed class ClientServerLoopbackSession : IDisposable
     /// <see cref="HeadlessClient.IsJoined"/>. A fixture-mode client never processes network
     /// packets, so this stays false for it unless a player is synthesized.
     /// </summary>
+    private void AdvanceLink(float dt)
+    {
+        if (_link == null || _linkTcp == null || _linkUdp == null) return;
+        _link.Advance(dt * 1000.0, _linkTcp.Deliver, _linkUdp.Deliver);
+    }
+
+    private void DisconnectForReal(DisconnectReason reason, string message)
+    {
+        string? playerName = Client.Client.player?.PlayerName;
+
+        switch (reason)
+        {
+            case DisconnectReason.Kicked:
+            case DisconnectReason.ServerShutdown:
+                // The server disconnects the player itself: the client receives the server's
+                // disconnect packet with the message, as for a kick or a shutdown.
+                KickOnServer(playerName, message);
+                break;
+
+            default:
+                // The connection breaks: nothing passes any more, the client's own socket error
+                // handler runs, and the server drops the player as it would after a timeout.
+                _link?.Sever(message);
+                KickOnServer(playerName, null);
+                break;
+        }
+    }
+
+    private void KickOnServer(string? playerName, string? message)
+    {
+        if (NativeServer == null || playerName == null || !NativeServer.IsRunning) return;
+
+        NativeServer.RunOnGameThread(() =>
+        {
+            if (NativeServer.Server.GetClientByPlayername(playerName) is { } client)
+            {
+                NativeServer.Server.DisconnectPlayer(client, message, message);
+            }
+        });
+    }
+
     private void MarkJoined()
     {
         if (IsConnected) return;
@@ -145,6 +186,24 @@ public sealed class ClientServerLoopbackSession : IDisposable
     /// <summary>
     /// Creates a loopback session with a native embedded server host.
     /// </summary>
+    internal ClientServerLoopbackSession(HeadlessClient client, EmbeddedServerHost server, LoopbackLink link, LinkedTcpNetClient tcp, LinkedUdpNetClient udp)
+        : this(client, server)
+    {
+        _link = link;
+        _linkTcp = tcp;
+        _linkUdp = udp;
+        client.DisconnectSimulator.Sink = DisconnectForReal;
+    }
+
+    private readonly LoopbackLink? _link;
+    private readonly LinkedTcpNetClient? _linkTcp;
+    private readonly LinkedUdpNetClient? _linkUdp;
+
+    /// <summary>
+    /// Whether the wire between client and server has been cut by a simulated connection loss.
+    /// </summary>
+    public bool IsLinkSevered => _link?.IsSevered ?? false;
+
     internal ClientServerLoopbackSession(HeadlessClient client, EmbeddedServerHost server)
     {
         Client = client ?? throw new ArgumentNullException(nameof(client));
@@ -186,17 +245,8 @@ public sealed class ClientServerLoopbackSession : IDisposable
             throw new ArgumentOutOfRangeException(nameof(serverTicksPerFrame), serverTicksPerFrame, "Server ticks per frame must be at least 1.");
         }
 
-        // Check for network degradation
-        NetworkDegradationSimulator? degradation = Client.NetworkDegradation;
-        bool hasDegradation = degradation?.IsActive == true;
-
-        // Phase 1 & 2: Client outbound -> Server receive (handled internally by loopback)
-        // The DummyNetwork automatically routes packets; we can apply degradation here
-        if (hasDegradation)
-        {
-            // Network degradation is applied by the simulator when packets pass through
-            // The HeadlessClient's NetworkDegradation property is checked during packet routing
-        }
+        // Phase 1 & 2: deliver what the client sent and the link held back (latency, jitter)
+        AdvanceLink(dt);
 
         // Phase 3: Advance server simulation ticks
         for (int tick = 0; tick < serverTicksPerFrame; tick++)
@@ -312,6 +362,8 @@ public sealed class ClientServerLoopbackSession : IDisposable
         {
             throw new ArgumentOutOfRangeException(nameof(serverTicksPerFrame), serverTicksPerFrame, "Server ticks per frame must be at least 1.");
         }
+
+        AdvanceLink(dt);
 
         // Server ticks
         for (int tick = 0; tick < serverTicksPerFrame; tick++)
@@ -566,7 +618,7 @@ public sealed class ClientServerLoopbackSession : IDisposable
 
         try
         {
-            Client.Client.SendLeave(0);
+            Client.RunOnClientThread(() => Client.Client.SendLeave(0));
         }
         catch
         {
@@ -598,7 +650,9 @@ public sealed class ClientServerLoopbackSession : IDisposable
 
         try
         {
-            Client.Client.DestroyGameSession(gotDisconnected: false, EnumExitMode.SoftExit);
+            // Session teardown deletes GL objects and joins the game's threads, so it runs on the
+            // client's own thread like the rest of the engine.
+            Client.RunOnClientThread(() => Client.Client.DestroyGameSession(gotDisconnected: false, EnumExitMode.SoftExit));
         }
         catch
         {

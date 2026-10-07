@@ -128,6 +128,7 @@ public abstract class ClientScenarioBase : IAsyncLifetime
                 else
                 {
                     _pooled.Dispose();
+                    ScenarioHostPool.HostDisposed();
                 }
             }
         }

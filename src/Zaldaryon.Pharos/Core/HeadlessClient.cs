@@ -553,17 +553,20 @@ public sealed class HeadlessClient : IDisposable
 
         ForgetLocalAssetPush(server);
 
-        DummyTcpNetClient dummyTcp = new();
-        dummyTcp.SetNetwork(server.TcpNetwork);
-        Client.MainNetClient = dummyTcp;
+        // The client's sockets pass every packet through a link that records and degrades it.
+        LoopbackLink link = new(PacketRecorder, NetworkDegradation);
 
-        DummyUdpNetClient dummyUdp = new();
-        dummyUdp.SetNetwork(server.UdpNetwork);
-        Client.UdpNetClient = dummyUdp;
+        LinkedTcpNetClient tcp = new(link);
+        tcp.SetNetwork(server.TcpNetwork);
+        Client.MainNetClient = tcp;
+
+        LinkedUdpNetClient udp = new(link);
+        udp.SetNetwork(server.UdpNetwork);
+        Client.UdpNetClient = udp;
 
         RunOnClientThread(Client.Connect);
 
-        return new ClientServerLoopbackSession(this, server);
+        return new ClientServerLoopbackSession(this, server, link, tcp, udp);
     }
 
     private static readonly FieldInfo? s_serverAssetsSentLocallyField =
@@ -890,12 +893,14 @@ public sealed class HeadlessClient : IDisposable
             finally
             {
                 _clientThread.Dispose();
+                NativeHeap.Trim();
             }
 
             return;
         }
 
         DisposeCore();
+        NativeHeap.Trim();
     }
 
     private void DisposeCore()
@@ -948,7 +953,17 @@ public sealed class HeadlessClient : IDisposable
 
         try
         {
-            Client.Dispose();
+            StopClientThreads();
+        }
+        catch
+        {
+            // Ignore thread shutdown errors
+        }
+
+        try
+        {
+            // A session that left its world has already disposed the game.
+            if (!Client.disposed) Client.Dispose();
         }
         catch
         {
@@ -997,6 +1012,32 @@ public sealed class HeadlessClient : IDisposable
             catch
             {
                 // Best effort temporary cleanup
+            }
+        }
+    }
+
+    /// <summary>
+    /// Stops the game's background threads (tessellation, relighting, network processing and the
+    /// rest) and waits for them to exit.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="ClientMain.Dispose"/> does not stop them: the game relies on its session teardown
+    /// to do it. Left running, each one keeps its client, with its world and assets, in memory for
+    /// the rest of the test run.
+    /// </remarks>
+    private void StopClientThreads()
+    {
+        Client.threadsShouldExit = true;
+
+        FieldInfo? ctsField = typeof(ClientMain).GetField("_clientThreadsCts", BindingFlags.Instance | BindingFlags.NonPublic);
+        (ctsField?.GetValue(Client) as CancellationTokenSource)?.Cancel();
+
+        FieldInfo? threadsField = typeof(ClientMain).GetField("clientThreads", BindingFlags.Instance | BindingFlags.NonPublic);
+        if (threadsField?.GetValue(Client) is List<Thread> threads)
+        {
+            foreach (Thread thread in threads)
+            {
+                thread.Join(TimeSpan.FromSeconds(5));
             }
         }
     }

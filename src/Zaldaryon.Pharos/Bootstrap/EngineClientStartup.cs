@@ -1,6 +1,7 @@
 using System.Reflection;
 using OpenTK.Windowing.Desktop;
 using Vintagestory;
+using Vintagestory.API.Client;
 using Vintagestory.API.Common;
 using Vintagestory.API.Config;
 using Vintagestory.Client;
@@ -114,6 +115,13 @@ internal static class EngineClientStartup
 
         ScreenManager screenManager = new(platform);
         ScreenManager.ParsedArgs = new ClientProgramArgs();
+        GuiStyle.DecorativeFontName = ClientSettings.DecorativeFontName;
+        GuiStyle.StandardFontName = ClientSettings.DefaultFontName;
+
+        // The launcher preloads translations here; hotkey registration and the screens look up
+        // their labels before the mods load the full set. A server booted earlier in the process
+        // would have loaded them too, so without this a client that boots first fails.
+        Lang.PreLoad(logger, GamePaths.AssetsPath, ClientSettings.Language);
         StartScreenManager(screenManager, platform);
 
         // Default frame buffers (primary, transparency, post processing) and the minimal GUI
