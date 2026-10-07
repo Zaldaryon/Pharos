@@ -38,4 +38,10 @@ public sealed class HeadlessClientOptions
     /// by its code in <c>config/characterclasses.json</c>.
     /// </summary>
     public string CharacterClass { get; init; } = "commoner";
+
+    /// <summary>
+    /// Extra folders an engine-mode client loads mods from, on top of the game's own <c>Mods</c>
+    /// folder and the data path's <c>Mods</c> folder.
+    /// </summary>
+    public IReadOnlyList<string> ModPaths { get; init; } = [];
 }

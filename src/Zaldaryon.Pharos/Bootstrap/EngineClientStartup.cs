@@ -9,6 +9,7 @@ using Vintagestory.Client.NoObf;
 using Vintagestory.ClientNative;
 using Vintagestory.Common;
 using Zaldaryon.Pharos.Core;
+using Zaldaryon.Pharos.Platform;
 
 namespace Zaldaryon.Pharos.Bootstrap;
 
@@ -38,7 +39,8 @@ namespace Zaldaryon.Pharos.Bootstrap;
 /// </description></item>
 /// </list>
 /// <para>
-/// <c>ClientMain.Start</c> starts the engine's own worker threads (network processing,
+/// Everything runs on a dedicated <see cref="EngineThread"/>, which stays the client's main
+/// thread for its whole life. <c>ClientMain.Start</c> starts the engine's own worker threads (network processing,
 /// tessellation, relighting, chunk visibility, particles). They run exactly as in the game, which
 /// is the point of this mode, and stop when the client is disposed.
 /// </para>
@@ -68,6 +70,22 @@ internal static class EngineClientStartup
     /// <see cref="HeadlessClientBootstrap.Boot"/>.
     /// </summary>
     public static HeadlessClient Boot(HeadlessClientOptions options, string? tempDataPath)
+    {
+        // The whole engine lives on its own thread from the first GL call on: the window and its
+        // context are created there, and that thread becomes the engine's main thread.
+        EngineThread clientThread = new("Pharos client main thread");
+        try
+        {
+            return clientThread.Invoke(() => BootOnClientThread(options, tempDataPath, clientThread));
+        }
+        catch
+        {
+            clientThread.Dispose();
+            throw;
+        }
+    }
+
+    private static HeadlessClient BootOnClientThread(HeadlessClientOptions options, string? tempDataPath, EngineThread clientThread)
     {
         // Logs, Saves, Mods, Cache and the rest: the engine opens files under all of them.
         GamePaths.EnsurePathsExist();
@@ -106,6 +124,10 @@ internal static class EngineClientStartup
         ShaderRegistry.Load();
         ScreenManager.hotkeyManager.RegisterDefaultHotKeys();
 
+        // ClientSettings is a process-wide singleton, created with whatever data path was current
+        // the first time it was touched, so the mod folders are set explicitly for every boot.
+        ClientSettings.ModPaths = ["Mods", GamePaths.DataPathMods, .. options.ModPaths];
+
         screenManager.ClientIsOffline = true;
         s_loadModsMethod.Invoke(screenManager, null);
 
@@ -115,7 +137,7 @@ internal static class EngineClientStartup
         ClientMain client = (ClientMain)s_runningGameField.GetValue(runningGameScreen)!;
         client.Start();
 
-        return new HeadlessClient(client, platform, screenManager, runningGameScreen, window, options, tempDataPath, ClientBootMode.Engine);
+        return new HeadlessClient(client, platform, screenManager, runningGameScreen, window, options, tempDataPath, ClientBootMode.Engine, clientThread);
     }
 
     /// <summary>

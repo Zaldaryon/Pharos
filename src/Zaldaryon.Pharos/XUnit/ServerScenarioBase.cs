@@ -1,32 +1,45 @@
 using Vintagestory.API.Common;
 using Vintagestory.API.Server;
 using Vintagestory.Server;
+using Xunit;
 using Zaldaryon.Pharos.Server;
 
 namespace Zaldaryon.Pharos.XUnit;
 
 /// <summary>
-/// Abstract base class for server scenario tests.
-/// Test classes inheriting from this should use <see cref="Xunit.IClassFixture{TFixture}"/>
-/// to receive the shared or per-class server instance.
+/// Abstract base class for server scenario tests: boots an embedded server before each test and
+/// tears it down, or pools it, afterwards.
 /// </summary>
 /// <remarks>
 /// <para>
-/// Provides access to the embedded server, API, and command execution utilities.
+/// The world comes from <see cref="WorldOptions"/>, which defaults to the class-level
+/// <see cref="ServerWorldAttribute"/>. Mods listed by <see cref="ServerModsAttribute"/> on the
+/// class or the assembly are staged into the server's sandbox before it boots.
 /// </para>
 /// <para>
-/// Commands can be executed synchronously or asynchronously. Deferred commands
-/// (those that return <see cref="EnumCommandStatus.Deferred"/>) are automatically
-/// awaited using a callback-based resolution pattern.
+/// <see cref="WorldIsolation.Recycle"/> keeps the server running for the next test of the same
+/// class. <see cref="WorldIsolation.Restart"/> and <see cref="WorldIsolation.Rollback"/> give every
+/// test a freshly booted world. Rollback has no faster in-place restore yet, so it currently
+/// isolates by restarting.
+/// </para>
+/// <para>
+/// Scenarios run one at a time, whatever the test collection layout: the game keeps process-wide
+/// static state, so two servers or clients cannot boot side by side in one process.
+/// </para>
+/// <para>
+/// Deferred commands (those that return <see cref="EnumCommandStatus.Deferred"/>) are awaited
+/// through their completion callback.
 /// </para>
 /// </remarks>
-public abstract class ServerScenarioBase
+public abstract class ServerScenarioBase : IAsyncLifetime
 {
     private EmbeddedServerHost? _host;
+    private IDisposable? _gate;
+    private PooledServer? _pooled;
 
     /// <summary>
     /// Gets the embedded server host managing the test server instance.
-    /// Null until set by the fixture via <see cref="SetHost"/>.
+    /// Null until <see cref="InitializeAsync"/> completes.
     /// </summary>
     protected EmbeddedServerHost? Host => _host;
 
@@ -43,18 +56,126 @@ public abstract class ServerScenarioBase
     protected ICoreServerAPI? Api => Server?.Api as ICoreServerAPI;
 
     /// <summary>
-    /// Gets the world isolation mode used for tests in this class.
-    /// Override in derived classes to change isolation behavior.
+    /// Gets the world isolation mode used for tests in this class. Defaults to the
+    /// <see cref="ServerWorldAttribute.Isolation"/> of the class, or
+    /// <see cref="WorldIsolation.Rollback"/>.
     /// </summary>
-    protected virtual WorldIsolation WorldIsolation => WorldIsolation.Rollback;
+    protected virtual WorldIsolation WorldIsolation =>
+        ScenarioAttributes.ServerWorld(GetType())?.Isolation ?? WorldIsolation.Rollback;
 
     /// <summary>
-    /// Sets the embedded server host. Called by the fixture during initialization.
+    /// Gets the world to boot. Defaults to the class-level <see cref="ServerWorldAttribute"/>.
+    /// </summary>
+    protected virtual ServerWorldOptions WorldOptions => ScenarioAttributes.WorldOptions(GetType());
+
+    /// <summary>
+    /// Gets how long a test waits for another scenario to release the host before it fails.
+    /// </summary>
+    protected virtual TimeSpan HostWaitTimeout => TimeSpan.FromMinutes(10);
+
+    /// <summary>
+    /// Boots the server, or takes the pooled one when <see cref="WorldIsolation"/> allows it.
+    /// </summary>
+    public virtual async Task InitializeAsync()
+    {
+        _gate = await ScenarioHostPool.EnterAsync(HostWaitTimeout).ConfigureAwait(false);
+
+        try
+        {
+            ServerWorldOptions options = WorldOptions;
+            IReadOnlyList<string> mods = ScenarioAttributes.ServerMods(GetType());
+            ServerPoolKey key = new(options, string.Join("|", mods));
+
+            _pooled = WorldIsolation == WorldIsolation.Recycle
+                ? ScenarioHostPool.Take<PooledServer>(GetType(), key)
+                : null;
+
+            if (_pooled == null)
+            {
+                ScenarioHostPool.Clear();
+
+                ServerSandbox sandbox = new();
+                try
+                {
+                    ScenarioAttributes.StageMods(mods, sandbox.ModsPath);
+                    _pooled = new PooledServer(sandbox, EmbeddedServerHost.Boot(sandbox, options), key);
+                }
+                catch
+                {
+                    sandbox.Dispose();
+                    throw;
+                }
+            }
+
+            _host = _pooled.Host;
+        }
+        catch
+        {
+            _gate.Dispose();
+            _gate = null;
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Stops the server, or pools it for the next test of this class under
+    /// <see cref="WorldIsolation.Recycle"/>.
+    /// </summary>
+    public virtual Task DisposeAsync()
+    {
+        try
+        {
+            if (_pooled != null)
+            {
+                if (WorldIsolation == WorldIsolation.Recycle && _pooled.Host.IsRunning)
+                {
+                    ScenarioHostPool.Return(GetType(), _pooled.Key, _pooled);
+                }
+                else
+                {
+                    _pooled.Dispose();
+                }
+            }
+        }
+        finally
+        {
+            _pooled = null;
+            _host = null;
+            _gate?.Dispose();
+            _gate = null;
+        }
+
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Sets the embedded server host directly, bypassing <see cref="InitializeAsync"/>.
     /// </summary>
     /// <param name="host">The embedded server host to use for this scenario.</param>
     internal void SetHost(EmbeddedServerHost host)
     {
         _host = host;
+    }
+
+    private sealed record ServerPoolKey(ServerWorldOptions Options, string Mods);
+
+    private sealed class PooledServer(ServerSandbox sandbox, EmbeddedServerHost host, ServerPoolKey key) : IDisposable
+    {
+        public ServerSandbox Sandbox { get; } = sandbox;
+        public EmbeddedServerHost Host { get; } = host;
+        public ServerPoolKey Key { get; } = key;
+
+        public void Dispose()
+        {
+            try
+            {
+                Host.Dispose();
+            }
+            finally
+            {
+                Sandbox.Dispose();
+            }
+        }
     }
 
     /// <summary>
@@ -170,8 +291,9 @@ public abstract class ServerScenarioBase
             Caller = caller ?? new Caller { Type = EnumCallerType.Console }
         };
 
-        // Execute command with callback for async completion
-        Api!.ChatCommands.ExecuteUnparsed(cmdName, args, result =>
+        // Execute command with callback for async completion, on the server's game thread like a
+        // command typed into the server console
+        void Execute() => Api!.ChatCommands.ExecuteUnparsed(cmdName, args, result =>
         {
             CommandResult cmdResult = new(
                 result.Status,
@@ -180,6 +302,9 @@ public abstract class ServerScenarioBase
 
             tcs.TrySetResult(cmdResult);
         });
+
+        if (_host is null) Execute();
+        else _host.RunOnGameThread(Execute);
 
         return tcs.Task;
     }

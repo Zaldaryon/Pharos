@@ -18,16 +18,16 @@ Inherit from `ServerScenarioBase` and mark test methods with `[ServerScenario]`:
 using Zaldaryon.Pharos.XUnit;
 using Xunit;
 
-[ServerWorld(seed: "12345", playStyle: "creativebuilding", worldType: "superflat")]
+[ServerWorld(seed: 12345, playStyle: "creativebuilding", worldType: "superflat")]
 public class BlockPlacementTests : ServerScenarioBase
 {
     [ServerScenario]
     public void SetBlock_PlacesBlockAtPosition()
     {
         var pos = new BlockPos(10, 64, 10);
-        SetBlock(pos, "game:soil-low-none");
+        this.SetBlock(pos, "game:soil-low-none");
 
-        var block = GetBlock(pos);
+        var block = this.GetBlock(pos);
         Assert.Contains("soil", block.Code.Path);
     }
 }
@@ -80,21 +80,28 @@ Task<Entity> WaitForEntitySpawnAsync(string entityCode, double radius, Vec3d aro
 Task WaitForConditionAsync(Func<bool> condition, int maxTicks = 300);
 ```
 
+## Lifecycle
+
+`ServerScenarioBase` implements `IAsyncLifetime`. Before each test it boots an embedded server in a fresh sandbox from `WorldOptions`, which defaults to the class-level `[ServerWorld]`. It stages every `[ServerMods]` path from the class and the assembly into the sandbox's `Mods` folder first. After the test it stops the server, or keeps it for the next test (see below).
+
+The server runs on its own game thread, as the real server does: boot, ticks and teardown all happen there. Test code that touches live server state should go through `Host.RunOnGameThread(...)`. The world helpers (`this.SetBlock`, `this.SpawnEntity`) and `ExecuteCommand` already do.
+
+Scenarios run one at a time, whatever the test collection layout. The game keeps process-wide static state, so two servers or clients cannot boot side by side in one process.
+
 ## Isolation Modes
 
-Control how world state is managed between test methods:
+Control how world state is managed between test methods with `[ServerWorld(Isolation = ...)]` or by overriding `WorldIsolation`:
+
+| Mode | Behavior |
+|------|----------|
+| `Rollback` (default) | Every test gets a freshly booted world. There is no faster in-place restore yet, so this currently isolates by restarting. |
+| `Restart` | Every test gets a freshly booted world. |
+| `Recycle` | The server keeps running for the next test of the same class. Tests share state, which suits read-only tests. |
 
 ```csharp
-[ServerWorld(seed: "42")]
-public class MyTests : ServerScenarioBase
-{
-    // WorldIsolation.Rollback (default): fast in-memory snapshot restore between tests
-    // WorldIsolation.Restart: full server reboot for tests requiring clean state
-    // WorldIsolation.Recycle: no isolation, reuse running server (read-only tests)
-}
+[ServerWorld(seed: 42, Isolation = WorldIsolation.Recycle)]
+public class ReadOnlyTests : ServerScenarioBase { }
 ```
-
-With `Rollback` (default), Pharos takes an in-memory snapshot after server boot and restores it between test methods in about 50ms. The server keeps running; only chunks and savegame globals are reset.
 
 ## Test Players
 
@@ -140,7 +147,7 @@ public async Task EntityMovesToTarget()
 Use `[ServerMods]` to load mods before server boot:
 
 ```csharp
-[ServerWorld(seed: "42")]
+[ServerWorld(seed: 42)]
 [ServerMods("path/to/mymod.zip")]
 public class ModIntegrationTests : ServerScenarioBase
 {
@@ -158,7 +165,7 @@ public class ModIntegrationTests : ServerScenarioBase
 Tests that wedge or run too long fail automatically. The default watchdog is 120 seconds. Override per class:
 
 ```csharp
-[ServerWorld(seed: "1")]
+[ServerWorld(seed: 1)]
 [ServerScenario(TimeoutMs = 30_000)]
 public class QuickTests : ServerScenarioBase { }
 ```

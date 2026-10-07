@@ -1,0 +1,11 @@
+{
+  "type": "content",
+  "modid": "pharostestmod",
+  "name": "Pharos Test Mod",
+  "version": "1.0.0",
+  "side": "Universal",
+  "requiredOnClient": true,
+  "description": "Content-only mod the scenario lifecycle tests stage to prove mods reach the server and the client.",
+  "authors": ["Pharos"],
+  "dependencies": { "game": "" }
+}

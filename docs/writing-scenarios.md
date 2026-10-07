@@ -25,18 +25,30 @@ using Xunit;
 public class ChunkLoadingTests : ClientScenarioBase
 {
     [ClientScenario]
-    public void ClientLoadsChunksAroundPlayer()
+    public async Task InjectedChunkIsMeshed()
     {
-        // Client is already booted and connected
-        Assert.NotNull(Client);
-        Assert.NotNull(Player);
-        
-        // Advance 60 frames to let chunks load
-        FrameController!.Frames(60);
-        
-        // Verify chunks are loaded
-        Assert.True(Client!.WorldMap.LoadedChunks > 0);
+        // The client is booted before the test runs. By default it is a fixture-mode client:
+        // no server, chunks are injected and every frame is deterministic.
+        ChunkPos target = new(10, 2, 10);
+        ChunkFixture fixture = new ChunkFixtureBuilder()
+            .At(target)
+            .WithDefaultSunlight(31)
+            .Fill(0, 0, 0, 31, 1, 31, 1) // a layer of block id 1
+            .Build();
+
+        Client!.InjectChunk(fixture, triggerTesselation: true);
+
+        Assert.True(await Client.WaitForChunkMeshed(target, maxFrames: 10));
     }
+}
+```
+
+To test against a real world instead, boot the client in engine mode and connect it to a server (see [Engine Mode](engine-mode.md)), or use a `ClientServerScenarioBase`, which does both for you:
+
+```csharp
+public class MyTests : ClientScenarioBase
+{
+    protected override HeadlessClientOptions ClientOptions => new() { BootMode = ClientBootMode.Engine };
 }
 ```
 
@@ -131,33 +143,26 @@ public void ChunksLoadAtPosition(int x, int y, int z)
 
 ### [PharosMods]
 
-Declares mod paths to stage into the client's mod directory before bootstrap. Apply to the test class or assembly.
+Declares mod paths to stage into a mod folder the client loads from, before it boots. Apply to the test class or assembly. Only an engine-mode client runs the mod loader.
 
 ```csharp
 [PharosMods("mods/MyMod.zip", "mods/DependencyMod")]
 public class ModCompatibilityTests : ClientScenarioBase
 {
-    [ClientScenario]
-    public void ModLoadsWithoutErrors()
-    {
-        FrameController!.Frames(30);
-        
-        // Assert mod is loaded
-        Assert.Contains(Client!.LoadedMods, m => m.Info.ModID == "mymod");
-    }
+    protected override HeadlessClientOptions ClientOptions => new() { BootMode = ClientBootMode.Engine };
 }
 ```
 
 Mod paths can be:
-- Absolute paths to mod directories or zip files
-- Paths relative to the test assembly directory
+- Absolute paths to mod directories, zip files or dll files
+- Paths relative to the test's working directory (the test assembly's output folder under `dotnet test`)
 - Multiple paths via the params array
 
-Mods are staged before the client boots and cleaned up after the test class completes.
+The staged copy is deleted together with the client.
 
 ## Isolation Modes
 
-By default, tests in a class share a single client instance for performance. Override `IsolationMode` to change this behavior.
+By default, tests in a class share a single client instance for performance. Override `IsolationMode` to change this behavior. Scenarios run one at a time across the whole test run, because the game keeps process-wide static state.
 
 ### SharedClient (default)
 
@@ -172,7 +177,7 @@ public class FastTests : ClientScenarioBase
 
 ### RollbackState
 
-Tests share a client, but state is rolled back between tests. Camera position, player inventory, and similar state resets to a known baseline.
+Tests share a client, but the player position and the camera (position, yaw, pitch) are put back to where they were when the client was first booted, before every test.
 
 ```csharp
 public class IsolatedStateTests : ClientScenarioBase

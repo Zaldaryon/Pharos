@@ -49,6 +49,8 @@ public sealed class HeadlessClient : IDisposable
     public ChunkTesselatorManager? ChunkTesselatorManager { get; private set; }
     public bool IsDisposed => _disposed;
 
+    private readonly EngineThread? _clientThread;
+
     /// <summary>
     /// How much of the vanilla startup this client ran. See <see cref="ClientBootMode"/>.
     /// </summary>
@@ -77,10 +79,35 @@ public sealed class HeadlessClient : IDisposable
     /// </remarks>
     public FramebufferSnapshot CaptureFrame()
     {
-        Window.NativeWindow.MakeCurrent();
-        return IsEngineMode
-            ? HeadlessFramebuffer.CaptureDefault(Platform.WindowSize.Width, Platform.WindowSize.Height)
-            : Framebuffer.Capture();
+        if (_clientThread == null)
+        {
+            Window.NativeWindow.MakeCurrent();
+            return Framebuffer.Capture();
+        }
+
+        return _clientThread.Invoke(() => HeadlessFramebuffer.CaptureDefault(Platform.WindowSize.Width, Platform.WindowSize.Height));
+    }
+
+    /// <summary>
+    /// Runs <paramref name="action"/> on the client's main thread and waits for it. An engine-mode
+    /// client has a dedicated main thread, which owns its GL context; anything that touches GL or
+    /// queues engine main-thread work belongs there. A fixture-mode client runs it inline.
+    /// </summary>
+    public void RunOnClientThread(Action action)
+    {
+        ArgumentNullException.ThrowIfNull(action);
+        if (_clientThread == null) action();
+        else _clientThread.Invoke(action);
+    }
+
+    /// <summary>
+    /// Runs <paramref name="func"/> on the client's main thread and returns its result. See
+    /// <see cref="RunOnClientThread(Action)"/>.
+    /// </summary>
+    public T RunOnClientThread<T>(Func<T> func)
+    {
+        ArgumentNullException.ThrowIfNull(func);
+        return _clientThread == null ? func() : _clientThread.Invoke(func);
     }
 
     /// <summary>
@@ -175,9 +202,11 @@ public sealed class HeadlessClient : IDisposable
         HeadlessWindow window,
         HeadlessClientOptions options,
         string? tempDataPath,
-        ClientBootMode bootMode = ClientBootMode.Fixture)
+        ClientBootMode bootMode = ClientBootMode.Fixture,
+        EngineThread? clientThread = null)
     {
         BootMode = bootMode;
+        _clientThread = clientThread;
         Client = client;
         Platform = platform;
         ScreenManager = screenManager;
@@ -188,6 +217,7 @@ public sealed class HeadlessClient : IDisposable
         FrameController = new DeterministicFrameController(client, platform, screenManager, runningGameScreen, window)
         {
             BootMode = bootMode,
+            ClientThread = clientThread,
             CharacterClass = options.CompleteCharacterSelection ? options.CharacterClass : null,
         };
         Gui = new GuiInspector(screenManager);
@@ -498,7 +528,7 @@ public sealed class HeadlessClient : IDisposable
         dummyUdp.SetNetwork(server.UdpNetwork);
         Client.UdpNetClient = dummyUdp;
 
-        Client.Connect();
+        RunOnClientThread(Client.Connect);
 
         return new ClientServerLoopbackSession(this, server);
     }
@@ -815,6 +845,28 @@ public sealed class HeadlessClient : IDisposable
     {
         if (_disposed) return;
         _disposed = true;
+
+        if (_clientThread != null)
+        {
+            // Engine teardown deletes GL objects and joins engine threads; it runs where the
+            // context and the engine's main thread are.
+            try
+            {
+                _clientThread.Invoke(DisposeCore);
+            }
+            finally
+            {
+                _clientThread.Dispose();
+            }
+
+            return;
+        }
+
+        DisposeCore();
+    }
+
+    private void DisposeCore()
+    {
 
         try
         {
