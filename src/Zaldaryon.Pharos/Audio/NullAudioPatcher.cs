@@ -153,14 +153,27 @@ public static class NullAudioPatcher
 
     private static bool Prefix_CreateAudio(SoundParams sound, AudioData data, ref ILoadedSound __result)
     {
+        MarkUploaded(data);
         __result = new NullLoadedSound(sound);
         return false;
     }
 
     private static bool Prefix_CreateAudioWithGame(SoundParams sound, AudioData data, ClientMain game, ref ILoadedSound __result)
     {
+        MarkUploaded(data);
         __result = new NullLoadedSound(sound);
         return false;
+    }
+
+    // The real device moves audio data from decoded (2) to uploaded (3) when it creates a sound
+    // from it, and the engine only starts a sound whose data is uploaded; anything lower makes it
+    // wait for an upload that would never come.
+    private static void MarkUploaded(AudioData? data)
+    {
+        if (data != null && data.Loaded < 3)
+        {
+            data.Loaded = 3;
+        }
     }
 
     private static bool Prefix_UpdateAudioListener() => false;

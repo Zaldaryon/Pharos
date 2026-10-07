@@ -12,6 +12,7 @@ using Vintagestory.Client;
 using Vintagestory.Client.Network;
 using Vintagestory.Client.NoObf;
 using Vintagestory.Common;
+using Zaldaryon.Pharos.Audio;
 using Zaldaryon.Pharos.Bootstrap;
 using Zaldaryon.Pharos.Culling;
 using Zaldaryon.Pharos.Fixtures;
@@ -153,6 +154,12 @@ public sealed class HeadlessClient : IDisposable
     public PlayerControls Controls => _controls ??= new PlayerControls(this);
 
     /// <summary>
+    /// Every sound this client created and started: footsteps, interactions, entities, ambience,
+    /// music and sounds the server told it to play. See <see cref="SoundRecorder"/>.
+    /// </summary>
+    public SoundRecorder Sounds { get; } = new();
+
+    /// <summary>
     /// The live GUI of an engine-mode client: open dialogs, their elements with text and bounds,
     /// and real clicks and typing aimed at an element. Null for a fixture-mode client.
     /// </summary>
@@ -238,6 +245,7 @@ public sealed class HeadlessClient : IDisposable
         TestPlayer = new ClientTestPlayer(client);
         Culling = new CullingInspector(client);
         Inventory = new InventoryAutomation(TestPlayer.Inventory);
+        Sounds.Activate();
 
         if (bootMode == ClientBootMode.Engine)
         {
