@@ -4,6 +4,7 @@ using Vintagestory.Server;
 using Xunit;
 using Zaldaryon.Pharos.Server;
 
+using Zaldaryon.Pharos.Reporting;
 namespace Zaldaryon.Pharos.XUnit;
 
 /// <summary>
@@ -75,6 +76,19 @@ public abstract class ServerScenarioBase : IAsyncLifetime
     protected virtual TimeSpan HostWaitTimeout => TimeSpan.FromMinutes(10);
 
     /// <summary>
+    /// Whether the test fails when the server logged an error during it that
+    /// <see cref="AllowedLoggedErrors"/> does not allow. Off by default. The errors are taken when
+    /// the test body ends, so what the game logs while it shuts down does not count.
+    /// </summary>
+    protected virtual bool FailOnLoggedErrors => false;
+
+    /// <summary>
+    /// Fragments of logged errors that <see cref="FailOnLoggedErrors"/> lets pass, compared
+    /// without regard to case.
+    /// </summary>
+    protected virtual IEnumerable<string> AllowedLoggedErrors => [];
+
+    /// <summary>
     /// Boots the server, or takes the pooled one when <see cref="WorldIsolation"/> allows it.
     /// </summary>
     public virtual async Task InitializeAsync()
@@ -124,6 +138,8 @@ public abstract class ServerScenarioBase : IAsyncLifetime
     /// </summary>
     public virtual Task DisposeAsync()
     {
+        IReadOnlyList<LogEntry> loggedErrors = LoggedErrorGate.Collect(FailOnLoggedErrors, AllowedLoggedErrors, _host?.Logs);
+
         try
         {
             foreach (ServerTestPlayer player in _testPlayers)
@@ -137,6 +153,8 @@ public abstract class ServerScenarioBase : IAsyncLifetime
             {
                 if (WorldIsolation == WorldIsolation.Recycle && _pooled.Host.IsRunning)
                 {
+                    // The next test judges only what it logs itself.
+                    _pooled.Host.Logs.Clear();
                     ScenarioHostPool.Return(GetType(), _pooled.Key, _pooled);
                 }
                 else
@@ -154,6 +172,7 @@ public abstract class ServerScenarioBase : IAsyncLifetime
             _gate = null;
         }
 
+        LoggedErrorGate.ThrowIfAny(loggedErrors);
         return Task.CompletedTask;
     }
 

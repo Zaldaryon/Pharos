@@ -81,11 +81,11 @@ public sealed class BridgeChannel : IBridgeChannel
     }
 
     /// <inheritdoc />
-    public void PublishGuiStateChanged(string screenName)
+    public void PublishGuiStateChanged(string screenName, bool isOpen = true)
     {
         if (ReferenceEquals(Active, this))
         {
-            _queue.Enqueue(BridgeEvent.GuiStateChanged(screenName));
+            _queue.Enqueue(BridgeEvent.GuiStateChanged(screenName, isOpen));
         }
     }
 

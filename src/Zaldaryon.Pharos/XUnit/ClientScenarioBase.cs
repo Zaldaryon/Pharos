@@ -4,6 +4,7 @@ using Zaldaryon.Pharos.Core;
 using Zaldaryon.Pharos.Player;
 using Zaldaryon.Pharos.Timing;
 
+using Zaldaryon.Pharos.Reporting;
 namespace Zaldaryon.Pharos.XUnit;
 
 /// <summary>
@@ -66,6 +67,19 @@ public abstract class ClientScenarioBase : IAsyncLifetime
     protected virtual TimeSpan HostWaitTimeout => TimeSpan.FromMinutes(10);
 
     /// <summary>
+    /// Whether the test fails when the client logged an error during it that
+    /// <see cref="AllowedLoggedErrors"/> does not allow. Off by default. The errors are taken when
+    /// the test body ends, so what the game logs while it shuts down does not count.
+    /// </summary>
+    protected virtual bool FailOnLoggedErrors => false;
+
+    /// <summary>
+    /// Fragments of logged errors that <see cref="FailOnLoggedErrors"/> lets pass, compared
+    /// without regard to case.
+    /// </summary>
+    protected virtual IEnumerable<string> AllowedLoggedErrors => [];
+
+    /// <summary>
     /// Gets the isolation manager, creating it lazily with the current IsolationMode.
     /// </summary>
     /// <returns>The ClientIsolationManager for this scenario.</returns>
@@ -117,12 +131,16 @@ public abstract class ClientScenarioBase : IAsyncLifetime
     /// </summary>
     public virtual Task DisposeAsync()
     {
+        IReadOnlyList<LogEntry> loggedErrors = LoggedErrorGate.Collect(FailOnLoggedErrors, AllowedLoggedErrors, Client?.Logs);
+
         try
         {
             if (_pooled != null)
             {
                 if (IsolationMode != IsolationMode.FreshClient && !_pooled.Client.IsDisposed)
                 {
+                    // The next test judges only what it logs itself.
+                    _pooled.Client.Logs.Clear();
                     ScenarioHostPool.Return(GetType(), _pooled.Key, _pooled);
                 }
                 else
@@ -140,6 +158,7 @@ public abstract class ClientScenarioBase : IAsyncLifetime
             _gate = null;
         }
 
+        LoggedErrorGate.ThrowIfAny(loggedErrors);
         return Task.CompletedTask;
     }
 
@@ -219,6 +238,7 @@ public abstract class ClientScenarioBase : IAsyncLifetime
             BootMode = options.BootMode,
             CompleteCharacterSelection = options.CompleteCharacterSelection,
             CharacterClass = options.CharacterClass,
+            LoadBridge = options.LoadBridge,
             ModPaths = [.. options.ModPaths, modsDirectory],
         };
 

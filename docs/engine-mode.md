@@ -165,6 +165,43 @@ Time on the link is the simulated time of the session's frames, so the same seed
 
 Reconnecting is still bookkeeping only. A disconnected engine-mode client ends its game session, as in the game.
 
+## Bridge events
+
+When the test project references `Zaldaryon.Pharos.Bridge`, an engine-mode client loads the bridge as a client-only mod (turn it off with `HeadlessClientOptions.LoadBridge = false`). The mod publishes to `BridgeChannel.Active`:
+
+| Event | When |
+|-------|------|
+| `FrameStart`, `FrameEnd` | At the start and end of every rendered frame |
+| `ChunkTessellated` | When the client adds a tessellated chunk to its render pools, with the chunk coordinates |
+| `GuiStateChanged` | When a dialog opens (`IsOpen` true) or closes (false), named by type, such as `GuiDialogEscapeMenu` |
+
+```csharp
+BridgeChannel.Active!.DrainAll();
+client.Input.PressKey(GlKeys.Escape);
+await session.StepFramesAsync(3);
+Assert.Contains(BridgeChannel.Active.DrainAll(), e => e.ScreenName == "GuiDialogEscapeMenu" && e.IsOpen);
+```
+
+The game loads the mod into the same context as the test, so both see the same channel. Tests that read the channel should share the `Bridge` collection with other tests that activate channels.
+
+## Logged errors
+
+Mods report most failures by logging them and carrying on. `HeadlessClient.Logs` and `EmbeddedServerHost.Logs` collect everything the client and the server log from boot, apart from debug entries:
+
+```csharp
+Assert.Empty(client.Logs.Errors);
+Assert.Empty(serverHost.Logs.UnexpectedErrors(["known vanilla noise"]));
+```
+
+A scenario class can fail its tests on unexpected errors instead:
+
+```csharp
+protected override bool FailOnLoggedErrors => true;
+protected override IEnumerable<string> AllowedLoggedErrors => ["Failed to load optional texture"];
+```
+
+The errors are taken when the test body ends, before teardown, so what the game logs while it shuts down does not count. A pooled host starts each test with empty logs.
+
 ## Threads
 
 The engine-mode client runs on a dedicated main thread, and an embedded server on a dedicated game thread, as in the game. Pharos marshals boot, frames, captures and teardown there, whichever thread the test runs on. Code that touches GL or queues engine main-thread work should use `HeadlessClient.RunOnClientThread(...)`, and code that touches live server state should use `EmbeddedServerHost.RunOnGameThread(...)`.
