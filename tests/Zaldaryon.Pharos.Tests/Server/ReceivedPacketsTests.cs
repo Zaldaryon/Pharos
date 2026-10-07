@@ -32,7 +32,7 @@ public class ReceivedPacketsTests : ServerScenarioBase
         ServerTestPlayer bob = await CreateTestPlayerAsync("Bob");
 
         await alice.SayAsync("hello bob");
-        Host!.Ticks(5);
+        await Host!.TickUntilAsync(() => bob.Received.ChatMessages.Any(m => m.Contains("hello bob")), maxTicks: 300);
 
         Assert.Contains(bob.Received.ChatMessages, m => m.Contains("hello bob"));
     }
@@ -43,7 +43,7 @@ public class ReceivedPacketsTests : ServerScenarioBase
         ServerTestPlayer alice = await CreateTestPlayerAsync("Alice");
 
         Host!.RunOnGameThread(() => alice.Player!.SendMessage(0, "direct note", EnumChatType.Notification));
-        Host.Ticks(3);
+        await Host.TickUntilAsync(() => alice.Received.Chat.Any(c => c.Message.Contains("direct note")), maxTicks: 300);
 
         Assert.Contains(alice.Received.Chat, c => c.Message.Contains("direct note"));
     }
@@ -91,7 +91,13 @@ public class ReceivedPacketsTests : ServerScenarioBase
             Sapi.World.PlaySoundAt(new AssetLocation("game:sounds/block/planks"), at.X, at.Y, at.Z, null, false, 32f, 1f);
             Sapi.World.HighlightBlocks(alice.Player, 7, marked, [ColorUtil.WhiteArgb]);
         });
-        Host.Ticks(5);
+
+        // Bounded by ticks, not a fixed count: a slow runner can take a few more to send them.
+        await Host.TickUntilAsync(
+            () => alice.Received.Particles.Count > 0
+                && alice.Received.Sounds.Any(s => s.Name.Contains("planks"))
+                && alice.Received.HighlightedBlocks(7).Count == marked.Count,
+            maxTicks: 300);
 
         Assert.NotEmpty(alice.Received.Particles);
         Assert.Contains(alice.Received.Sounds, s => s.Name.Contains("planks") && s.Position.DistanceTo(at) < 1);
@@ -123,7 +129,7 @@ public class ReceivedPacketsTests : ServerScenarioBase
         ServerTestPlayer alice = await CreateTestPlayerAsync("Alice");
 
         Host.RunOnGameThread(() => channel.SendPacket(new PharosTestMessage { Text = "ping", Number = 42 }, alice.Player));
-        Host.Ticks(3);
+        await Host.TickUntilAsync(() => alice.Received.ModPackets.Any(p => p.Channel == "pharostest"), maxTicks: 300);
 
         PharosTestMessage message = Assert.Single(Host.ModPackets<PharosTestMessage>(alice, "pharostest"));
         Assert.Equal("ping", message.Text);

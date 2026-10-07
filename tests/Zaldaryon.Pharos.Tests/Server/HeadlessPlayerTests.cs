@@ -38,7 +38,7 @@ public class HeadlessPlayerTests : ServerScenarioBase
         Assert.Contains("Alice", nowPlaying);
 
         // The server streams the world to a playing client.
-        Host.Ticks(20);
+        await Host.TickUntilAsync(() => player.ReceivedPacketCount > 0, maxTicks: 300);
         Assert.True(player.ReceivedPacketCount > 0);
     }
 

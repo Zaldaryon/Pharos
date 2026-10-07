@@ -20,11 +20,32 @@ public sealed class PlayerCameraController : IPlayerCameraController
         _client = client ?? throw new ArgumentNullException(nameof(client));
     }
 
+    /// <summary>
+    /// Whether the client runs the engine's own camera, as an engine-mode client does.
+    /// </summary>
+    /// <remarks>
+    /// The engine stores the player's view as the entity's yaw and pitch, in its own convention:
+    /// a horizontal view is a pitch of π, straight up π/2 and straight down 3π/2, clamped just
+    /// inside that range, and the yaw is offset by π from the convention used here (a pitch of 0
+    /// looks ahead, positive looks up). It rebuilds the camera from those angles every frame, so
+    /// for an engine-mode client the angles are converted and written there, and positions are
+    /// measured from the eyes, where the engine casts its selection ray from.
+    /// </remarks>
+    internal bool UsesEngineCamera { get; set; }
+
     public double Yaw
     {
-        get => _client.MainCamera != null ? _client.MainCamera.Yaw : _client.mouseYaw;
+        get => UsesEngineCamera && _client.EntityPlayer?.Pos != null
+            ? GameMath.Mod(_client.EntityPlayer.Pos.Yaw - Math.PI, Math.PI * 2)
+            : _client.MainCamera != null ? _client.MainCamera.Yaw : _client.mouseYaw;
         set
         {
+            if (UsesEngineCamera)
+            {
+                SetOrientation(value, Pitch, Roll);
+                return;
+            }
+
             _client.mouseYaw = (float)value;
             if (_client.MainCamera != null)
             {
@@ -40,9 +61,17 @@ public sealed class PlayerCameraController : IPlayerCameraController
 
     public double Pitch
     {
-        get => _client.MainCamera != null ? _client.MainCamera.Pitch : _client.mousePitch;
+        get => UsesEngineCamera && _client.EntityPlayer?.Pos != null
+            ? Math.PI - _client.EntityPlayer.Pos.Pitch
+            : _client.MainCamera != null ? _client.MainCamera.Pitch : _client.mousePitch;
         set
         {
+            if (UsesEngineCamera)
+            {
+                SetOrientation(Yaw, value, Roll);
+                return;
+            }
+
             _client.mousePitch = (float)value;
             if (_client.MainCamera != null)
             {
@@ -73,6 +102,11 @@ public sealed class PlayerCameraController : IPlayerCameraController
     {
         get
         {
+            if (UsesEngineCamera && _client.EntityPlayer?.Pos != null)
+            {
+                return _client.EntityPlayer.Pos.XYZ.Add(_client.EntityPlayer.LocalEyePos);
+            }
+
             if (_client.MainCamera?.CamSourcePosition != null)
             {
                 return _client.MainCamera.CamSourcePosition.Clone();
@@ -117,6 +151,17 @@ public sealed class PlayerCameraController : IPlayerCameraController
 
     public void SetOrientation(double yaw, double pitch, double roll = 0.0)
     {
+        if (UsesEngineCamera && _client.EntityPlayer?.Pos != null)
+        {
+            float engineYaw = (float)GameMath.Mod(yaw + Math.PI, Math.PI * 2);
+            float enginePitch = GameMath.Clamp((float)(Math.PI - pitch), 1.5857964f, 4.697389f);
+            _client.mouseYaw = engineYaw;
+            _client.mousePitch = enginePitch;
+            _client.EntityPlayer.Pos.Yaw = engineYaw;
+            _client.EntityPlayer.Pos.Pitch = enginePitch;
+            return;
+        }
+
         _client.mouseYaw = (float)yaw;
         _client.mousePitch = (float)pitch;
 
