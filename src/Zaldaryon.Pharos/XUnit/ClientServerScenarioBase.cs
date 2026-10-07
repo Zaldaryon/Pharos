@@ -406,18 +406,38 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime
                 maxFrames: 600).ConfigureAwait(false);
             await session.StepFramesAsync(10).ConfigureAwait(false);
 
+            // The server put the player back where it stood. Until the client has moved there too,
+            // the two disagree on where the player is, and the server refuses interactions it
+            // judges out of range.
+            bool home = await PlayerIsHomeAsync(server, client, session).ConfigureAwait(false);
+
             client.PacketRecorder.Clear();
             client.Sounds.Clear();
             client.Logs.Clear();
             server.Logs.Clear();
 
-            return sent && session.IsConnected && client.IsJoined;
+            return sent && home && session.IsConnected && client.IsJoined;
         }
         catch (Exception ex)
         {
             ServerMain.Logger?.Warning("Pharos could not roll the world back, the next test boots a fresh server: {0}", ex);
             return false;
         }
+    }
+
+    /// <summary>
+    /// Steps until the client and the server both have the joined player within half a block of
+    /// where the baseline put it.
+    /// </summary>
+    private async Task<bool> PlayerIsHomeAsync(EmbeddedServerHost server, HeadlessClient client, ClientServerLoopbackSession session)
+    {
+        string? uid = server.RunOnGameThread(() => server.Server.GetClientByPlayername(PlayerName)?.Player?.PlayerUID);
+        if (uid == null || _baseline!.PositionOf(uid) is not { } home) return true;
+
+        return await session.StepUntilAsync(
+            () => client.RunOnClientThread(() => client.Client.EntityPlayer.Pos.XYZ.SquareDistanceTo(home) < 0.25)
+                && server.RunOnGameThread(() => server.Server.GetClientByPlayername(PlayerName)?.Entityplayer?.Pos.XYZ.SquareDistanceTo(home) < 0.25),
+            maxFrames: 600).ConfigureAwait(false);
     }
 
     private void Adopt(PooledClientServer pooled)

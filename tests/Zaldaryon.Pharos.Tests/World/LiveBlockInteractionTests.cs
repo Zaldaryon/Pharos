@@ -104,7 +104,12 @@ public class LiveBlockInteractionTests : ClientServerScenarioBase
         Assert.True(used, "Pressing use on the chest never sent an interaction to the server");
 
         bool serverOpened = await StepUntilAsync(ServerOpenedChest, maxFrames: 600);
-        Assert.True(serverOpened, "Using the chest never opened its inventory on the server");
+        if (!serverOpened)
+        {
+            // The server explains a use it refuses, out of range for one, in its log.
+            string logged = string.Join(Environment.NewLine, ServerHost!.Logs.Entries.Where(e => e.Message.Contains(PlayerName)).TakeLast(10));
+            Assert.Fail($"Using the chest never opened its inventory on the server. The server logged about the player:{Environment.NewLine}{logged}");
+        }
 
         // The dialog opens when the server's reply arrives: a round trip through both sides'
         // network threads, which a busy machine can stretch over many frames.

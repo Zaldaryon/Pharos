@@ -164,6 +164,13 @@ public sealed record WorldSnapshot : IWorldSnapshot
     public void Restore(EmbeddedServerHost host) => RestoreCore(host);
 
     /// <summary>
+    /// Where the connected player <paramref name="playerUid"/> stood when the snapshot was taken,
+    /// or null when that player was not connected.
+    /// </summary>
+    internal Vec3d? PositionOf(string playerUid) =>
+        OnlinePlayers.TryGetValue(playerUid, out OnlinePlayerState? state) ? new Vec3d(state.X, state.Y, state.Z) : null;
+
+    /// <summary>
     /// Records every chunk the server loads from now on as it was when it loaded, so a restore
     /// puts those back too. Call it on the game thread; dispose the result to stop.
     /// </summary>
