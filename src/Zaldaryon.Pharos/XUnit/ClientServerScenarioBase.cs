@@ -273,6 +273,7 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime
         }
         _sandbox = null;
 
+        ScenarioHostPool.HostDisposed();
         _gate?.Dispose();
         _gate = null;
     }

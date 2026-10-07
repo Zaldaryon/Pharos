@@ -106,7 +106,20 @@ public sealed class DisconnectSimulator
     /// <summary>
     /// Simulates a disconnect with the specified reason.
     /// </summary>
+    /// <summary>
+    /// Carries a simulated disconnect out on a live session. When set, every Simulate method also
+    /// disconnects the engine-mode client for real; without one, only the bookkeeping happens.
+    /// </summary>
+    internal Action<DisconnectReason, string>? Sink { get; set; }
+
     public DisconnectEvent SimulateDisconnect(DisconnectReason reason, string? message = null)
+    {
+        DisconnectEvent result = Record(reason, message);
+        Sink?.Invoke(reason, message ?? reason.ToString());
+        return result;
+    }
+
+    private DisconnectEvent Record(DisconnectReason reason, string? message)
     {
         lock (_lock)
         {

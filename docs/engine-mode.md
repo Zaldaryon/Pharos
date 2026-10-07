@@ -137,6 +137,34 @@ Assert.NotNull(planks.Position);
 
 `Started` holds the sounds the game started, and `Created` every sound it created. Each record carries the asset location, position, volume, range, sound type and loop flag. The engine skips every sound while the sound level is 0, so an engine-mode client keeps normal sound levels. Nothing reaches a speaker either way.
 
+## Network conditions and disconnects
+
+An engine-mode client talks to the embedded server over in-memory sockets that pass every packet through a link. The client's `PacketRecorder` and `NetworkDegradation` act on that real traffic:
+
+```csharp
+client.PacketRecorder.Start();
+await session.HoldAsync(PlayerAction.Forward, 30);
+client.PacketRecorder.Stop();
+client.PacketRecorder.SaveToJson("walk.json");   // both directions, with packet ids
+
+client.NetworkDegradation.Configure(new DegradedNetworkProfile(LatencyMs: 200, JitterMs: 50, PacketDropRate: 0.05f));
+```
+
+| Condition | TCP | UDP |
+|-----------|-----|-----|
+| Latency, jitter | Delayed, order kept | Delayed, may reorder |
+| Packet drop | Not dropped (TCP is reliable) | Dropped |
+| Corruption | Not applied | Dropped (fails its checksum) |
+
+Time on the link is the simulated time of the session's frames, so the same seed and profile deliver the same way every run.
+
+`client.DisconnectSimulator` disconnects the client for real:
+
+- `SimulateKick(message)` and `SimulateServerShutdown()`: the server disconnects the player, and the client receives the server's disconnect message.
+- `SimulateNetworkError(message)`, `SimulateTimeout()` and `SimulateServerCrash()`: the link is cut (`session.IsLinkSevered`), the client's own socket error handler runs ("The connection closed unexpectedly: ..."), and the server drops the player.
+
+Reconnecting is still bookkeeping only. A disconnected engine-mode client ends its game session, as in the game.
+
 ## Threads
 
 The engine-mode client runs on a dedicated main thread, and an embedded server on a dedicated game thread, as in the game. Pharos marshals boot, frames, captures and teardown there, whichever thread the test runs on. Code that touches GL or queues engine main-thread work should use `HeadlessClient.RunOnClientThread(...)`, and code that touches live server state should use `EmbeddedServerHost.RunOnGameThread(...)`.
