@@ -1,0 +1,13 @@
+# docker compose -f docker/dedicated-server/compose.yaml up -d
+# then: PHAROS_REMOTE_SERVER=127.0.0.1:42420 dotnet test --filter FullyQualifiedName~RemoteServerTests
+services:
+  vintagestory:
+    build:
+      context: .
+      args:
+        VS_VERSION: "1.22.7"
+    ports:
+      - "42420:42420/tcp"
+      - "42420:42420/udp"
+    environment:
+      VS_VERIFY_PLAYER_AUTH: "false"

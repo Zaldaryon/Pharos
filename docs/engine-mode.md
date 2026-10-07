@@ -248,6 +248,8 @@ var session = client.ConnectTcp(server, ClientAuth.Offline("Alice"));           
 
 In-memory connections are never verified, whatever `VerifyPlayerAuth` says: the server treats them as local.
 
+To run against a dedicated server in Docker, in CI or in a cloud environment, see [CI and Cloud Environments](ci-and-cloud.md).
+
 ## Threads
 
 The engine-mode client runs on a dedicated main thread, and an embedded server on a dedicated game thread, as in the game. Pharos marshals boot, frames, captures and teardown there, whichever thread the test runs on. Code that touches GL or queues engine main-thread work should use `HeadlessClient.RunOnClientThread(...)`, and code that touches live server state should use `EmbeddedServerHost.RunOnGameThread(...)`.

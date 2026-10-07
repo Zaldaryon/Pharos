@@ -219,6 +219,7 @@ See the [inspection API reference](docs/inspection-api.md) for method signatures
 - [Writing Client Scenarios](docs/writing-scenarios.md): `[ClientScenario]`, `[ClientTheory]`, `[PharosMods]`, and isolation modes
 - [Writing Server Scenarios](docs/writing-server-scenarios.md): `[ServerScenario]`, `ServerScenarioBase`, `IServerTestPlayer`, and world helpers
 - [Engine Mode](docs/engine-mode.md): Booting a client that joins a real server offline, with character creation and the vanilla render pipeline
+- [CI and Cloud Environments](docs/ci-and-cloud.md): Running the suite in CI and cloud environments, offline or online auth, and a dedicated server in Docker
 - [Client-Server Testing](docs/writing-client-server-scenarios.md): `[ClientServerScenario]`, lockstep stepping, and packet assertions
 - [Inspection API Reference](docs/inspection-api.md): Detailed API for all inspector classes
 - [Compatibility Matrix](docs/compatibility.md): Supported VS versions, OpenGL requirements, and platform notes
