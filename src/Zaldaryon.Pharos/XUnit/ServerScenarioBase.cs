@@ -36,6 +36,7 @@ public abstract class ServerScenarioBase : IAsyncLifetime
     private EmbeddedServerHost? _host;
     private IDisposable? _gate;
     private PooledServer? _pooled;
+    private readonly List<ServerTestPlayer> _testPlayers = [];
 
     /// <summary>
     /// Gets the embedded server host managing the test server instance.
@@ -125,6 +126,13 @@ public abstract class ServerScenarioBase : IAsyncLifetime
     {
         try
         {
+            foreach (ServerTestPlayer player in _testPlayers)
+            {
+                player.Dispose();
+            }
+
+            _testPlayers.Clear();
+
             if (_pooled != null)
             {
                 if (WorldIsolation == WorldIsolation.Recycle && _pooled.Host.IsRunning)
@@ -146,6 +154,21 @@ public abstract class ServerScenarioBase : IAsyncLifetime
         }
 
         return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Joins a headless player into the server and returns it once it is playing. See
+    /// <see cref="EmbeddedServerHost.JoinPlayerAsync"/>. The player leaves the server when the
+    /// test ends.
+    /// </summary>
+    /// <param name="playerName">The player name. Must not belong to a connected player.</param>
+    /// <exception cref="InvalidOperationException">The server is not running.</exception>
+    public async Task<ServerTestPlayer> CreateTestPlayerAsync(string playerName)
+    {
+        EmbeddedServerHost host = _host ?? throw new InvalidOperationException("Server is not running. Ensure the host is initialized before joining players.");
+        ServerTestPlayer player = await host.JoinPlayerAsync(playerName).ConfigureAwait(false);
+        _testPlayers.Add(player);
+        return player;
     }
 
     /// <summary>

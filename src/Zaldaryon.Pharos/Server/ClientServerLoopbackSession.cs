@@ -60,6 +60,36 @@ public sealed class ClientServerLoopbackSession : IDisposable
     /// <see cref="HeadlessClient.IsJoined"/>. A fixture-mode client never processes network
     /// packets, so this stays false for it unless a player is synthesized.
     /// </summary>
+    private void MarkJoined()
+    {
+        if (IsConnected) return;
+        IsConnected = true;
+
+        if (Client.IsEngineMode && NativeServer != null)
+        {
+            RouteClientUdp(NativeServer, Client.Client.player?.PlayerName);
+        }
+    }
+
+    private static void RouteClientUdp(EmbeddedServerHost server, string? playerName)
+    {
+        // The in-memory UDP server attributes every UDP packet it reads to one connection object
+        // and drops all but connection requests until that object has a player. Singleplayer sets
+        // it while sending the server identification; the engine-mode client takes the
+        // multiplayer path, so it is set here, which lets the server accept the client's UDP
+        // traffic (its own movement, among others).
+        if (playerName == null) return;
+
+        server.RunOnGameThread(() =>
+        {
+            if (server.Server.UdpSockets[0] is Vintagestory.Server.Network.DummyUdpNetServer udp
+                && server.Server.GetClientByPlayername(playerName) is { Player: not null } client)
+            {
+                udp.Client.Player = client.Player;
+            }
+        });
+    }
+
     private bool HasJoined => Client.IsEngineMode
         ? Client.IsJoined
         : Client.Client.player != null && Client.Client.World != null;
@@ -167,7 +197,7 @@ public sealed class ClientServerLoopbackSession : IDisposable
         // Update connection state
         if (HasJoined)
         {
-            IsConnected = true;
+            MarkJoined();
         }
     }
 
@@ -280,7 +310,7 @@ public sealed class ClientServerLoopbackSession : IDisposable
         // Update connection state
         if (HasJoined)
         {
-            IsConnected = true;
+            MarkJoined();
         }
     }
 
@@ -315,7 +345,7 @@ public sealed class ClientServerLoopbackSession : IDisposable
 
             if (HasJoined)
             {
-                IsConnected = true;
+                MarkJoined();
                 return true;
             }
 
@@ -338,7 +368,7 @@ public sealed class ClientServerLoopbackSession : IDisposable
 
             if (HasJoined)
             {
-                IsConnected = true;
+                MarkJoined();
                 return true;
             }
 

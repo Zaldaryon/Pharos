@@ -452,6 +452,8 @@ public sealed class HeadlessClient : IDisposable
     {
         ArgumentNullException.ThrowIfNull(server);
 
+        server.MarkLoopbackClientAttached();
+
         if (IsEngineMode)
         {
             return ConnectEngineLoopback(server, playerName);

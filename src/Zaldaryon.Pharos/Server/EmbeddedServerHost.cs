@@ -12,6 +12,7 @@ using Vintagestory.Common;
 using Vintagestory.Server;
 using Vintagestory.Server.Network;
 using Zaldaryon.Pharos.Platform;
+using Zaldaryon.Pharos.XUnit;
 
 namespace Zaldaryon.Pharos.Server;
 
@@ -83,6 +84,33 @@ public sealed class EmbeddedServerHost : IDisposable, IAsyncDisposable
     // The server's game thread: boot, ticks, snapshots and teardown all run on it.
     private readonly EngineThread _gameThread;
 
+    private readonly HeadlessPlayers _players;
+
+    /// <summary>
+    /// The headless players joined with <see cref="JoinPlayerAsync"/> that are still connected.
+    /// </summary>
+    public IReadOnlyList<ServerTestPlayer> TestPlayers => _players.Joined;
+
+    /// <summary>
+    /// Joins a headless player: a real multiplayer client as far as the server can tell, with no
+    /// rendering client behind it. It goes through the full join sequence, packet by packet, and
+    /// is a playing player with a spawned entity and inventories when the task completes. The
+    /// server is ticked while waiting.
+    /// </summary>
+    /// <param name="playerName">The player name. Must not belong to a connected player.</param>
+    /// <param name="maxTicks">How many server ticks each join step may take.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <exception cref="InvalidOperationException">A player with that name is already connected.</exception>
+    /// <exception cref="TimeoutException">A join step did not complete in time.</exception>
+    public Task<ServerTestPlayer> JoinPlayerAsync(string playerName, int maxTicks = 2000, CancellationToken ct = default) =>
+        _players.JoinAsync(playerName, maxTicks, ct);
+
+    /// <summary>
+    /// Marks the host as having a real client attached over its loopback socket. That client reads
+    /// the UDP queue the headless players share, so the host stops emptying it.
+    /// </summary>
+    internal void MarkLoopbackClientAttached() => _players.LoopbackClientAttached = true;
+
     private EmbeddedServerHost(
         ServerMain server,
         DummyNetwork tcpNetwork,
@@ -94,6 +122,7 @@ public sealed class EmbeddedServerHost : IDisposable, IAsyncDisposable
         EngineThread gameThread)
     {
         _gameThread = gameThread;
+        _players = new HeadlessPlayers(this);
         Server = server;
         TcpNetwork = tcpNetwork;
         UdpNetwork = udpNetwork;
@@ -375,6 +404,8 @@ public sealed class EmbeddedServerHost : IDisposable, IAsyncDisposable
             FaultPendingWaiters(ex);
             throw ServerCrashedException.FromServerException(ex);
         }
+
+        _players.AfterTick();
 
         // Drain any actions queued during the tick
         DrainGameThreadQueue();
