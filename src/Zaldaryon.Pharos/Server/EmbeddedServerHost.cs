@@ -221,6 +221,11 @@ public sealed class EmbeddedServerHost : IDisposable, IAsyncDisposable
 
     private static EmbeddedServerHost BootOnGameThread(System.Func<EngineThread, EmbeddedServerHost> boot)
     {
+        // A server a scenario kept for its next test shares the game's static server state. Shut
+        // down later, while this one runs, it would tear that state out from under it. Whoever
+        // boots a server now no longer needs the kept one.
+        ScenarioHostPool.Clear();
+
         // The server is built on the thread it will tick on, so the per-thread state it creates
         // while booting is there for every later tick.
         EngineThread gameThread = new("Pharos server game thread");
@@ -402,14 +407,11 @@ public sealed class EmbeddedServerHost : IDisposable, IAsyncDisposable
     }
 
     /// <summary>
-    /// Captures a snapshot of the current world state for later restoration.
+    /// Captures the world as it is now, for <see cref="RestoreSnapshot"/>. See
+    /// <see cref="WorldSnapshot"/> for what it holds.
     /// </summary>
-    /// <returns>A snapshot containing the current world state.</returns>
+    /// <returns>A snapshot of the loaded chunks, the players' data and the connected players.</returns>
     /// <exception cref="InvalidOperationException">The server is not running.</exception>
-    /// <remarks>
-    /// The snapshot captures chunk data and server options. Restoration typically completes
-    /// in under 100ms, much faster than restarting the server.
-    /// </remarks>
     public WorldSnapshot TakeSnapshot()
     {
         if (!IsRunning)
@@ -421,16 +423,15 @@ public sealed class EmbeddedServerHost : IDisposable, IAsyncDisposable
     }
 
     /// <summary>
-    /// Restores a previously captured snapshot to this server.
+    /// Puts the world back as it was when <paramref name="snapshot"/> was taken, in place, on the
+    /// game thread. The server keeps running and connected clients stay joined; they are sent the
+    /// restored chunks again.
     /// </summary>
     /// <param name="snapshot">The snapshot to restore.</param>
+    /// <returns>How many chunks had changed and were restored.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="snapshot"/> is null.</exception>
     /// <exception cref="InvalidOperationException">The server is not running.</exception>
-    /// <remarks>
-    /// After restoration, the server state matches the state at the time the snapshot was captured.
-    /// This allows tests to rapidly reset to a known state without restarting the server.
-    /// </remarks>
-    public void RestoreSnapshot(WorldSnapshot snapshot)
+    public int RestoreSnapshot(WorldSnapshot snapshot)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
 
@@ -439,7 +440,7 @@ public sealed class EmbeddedServerHost : IDisposable, IAsyncDisposable
             throw new InvalidOperationException("Cannot restore snapshot to a stopped server.");
         }
 
-        _gameThread.Invoke(() => snapshot.Restore(this));
+        return _gameThread.Invoke(() => snapshot.RestoreCore(this));
     }
 
     /// <summary>

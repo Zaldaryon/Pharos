@@ -19,9 +19,10 @@ namespace Zaldaryon.Pharos.XUnit;
 /// </para>
 /// <para>
 /// <see cref="WorldIsolation.Recycle"/> keeps the server running for the next test of the same
-/// class. <see cref="WorldIsolation.Restart"/> and <see cref="WorldIsolation.Rollback"/> give every
-/// test a freshly booted world. Rollback has no faster in-place restore yet, so it currently
-/// isolates by restarting.
+/// class as it is. <see cref="WorldIsolation.Rollback"/> keeps it running too, but puts the world
+/// back in place as it was after boot, without a restart; see <see cref="WorldSnapshot"/>.
+/// <see cref="WorldIsolation.Restart"/> boots a fresh server for every test. A rollback that fails
+/// falls back to a fresh server for the next test.
 /// </para>
 /// <para>
 /// Scenarios run one at a time, whatever the test collection layout: the game keeps process-wide
@@ -99,9 +100,9 @@ public abstract class ServerScenarioBase : IAsyncLifetime
         {
             ServerWorldOptions options = WorldOptions;
             IReadOnlyList<string> mods = ScenarioAttributes.ServerMods(GetType());
-            ServerPoolKey key = new(options, string.Join("|", mods));
+            ServerPoolKey key = new(options, string.Join("|", mods), WorldIsolation);
 
-            _pooled = WorldIsolation == WorldIsolation.Recycle
+            _pooled = WorldIsolation is WorldIsolation.Recycle or WorldIsolation.Rollback
                 ? ScenarioHostPool.Take<PooledServer>(GetType(), key)
                 : null;
 
@@ -119,6 +120,11 @@ public abstract class ServerScenarioBase : IAsyncLifetime
                 {
                     sandbox.Dispose();
                     throw;
+                }
+
+                if (WorldIsolation == WorldIsolation.Rollback)
+                {
+                    _pooled.TakeBaseline();
                 }
             }
 
@@ -151,7 +157,8 @@ public abstract class ServerScenarioBase : IAsyncLifetime
 
             if (_pooled != null)
             {
-                if (WorldIsolation == WorldIsolation.Recycle && _pooled.Host.IsRunning)
+                if (_pooled.Host.IsRunning
+                    && (WorldIsolation == WorldIsolation.Recycle || (WorldIsolation == WorldIsolation.Rollback && _pooled.TryRollback())))
                 {
                     // The next test judges only what it logs itself.
                     _pooled.Host.Logs.Clear();
@@ -200,16 +207,44 @@ public abstract class ServerScenarioBase : IAsyncLifetime
         _host = host;
     }
 
-    private sealed record ServerPoolKey(ServerWorldOptions Options, string Mods);
+    private sealed record ServerPoolKey(ServerWorldOptions Options, string Mods, WorldIsolation Isolation);
 
     private sealed class PooledServer(ServerSandbox sandbox, EmbeddedServerHost host, ServerPoolKey key) : IDisposable
     {
+        private WorldSnapshot? _baseline;
+        private IDisposable? _tracking;
+
         public ServerSandbox Sandbox { get; } = sandbox;
         public EmbeddedServerHost Host { get; } = host;
         public ServerPoolKey Key { get; } = key;
 
+        /// <summary>Captures the world as booted, for <see cref="TryRollback"/>.</summary>
+        public void TakeBaseline()
+        {
+            _baseline = Host.TakeSnapshot();
+            _tracking = Host.RunOnGameThread(() => _baseline.TrackChunksLoadedLater(Host));
+        }
+
+        /// <summary>Puts the world back as booted; false when that failed.</summary>
+        public bool TryRollback()
+        {
+            if (_baseline == null) return false;
+
+            try
+            {
+                Host.RestoreSnapshot(_baseline);
+                return Host.IsRunning;
+            }
+            catch (Exception ex)
+            {
+                ServerMain.Logger?.Warning("Pharos could not roll the world back, the next test boots a fresh server: {0}", ex);
+                return false;
+            }
+        }
+
         public void Dispose()
         {
+            _tracking?.Dispose();
             try
             {
                 Host.Dispose();

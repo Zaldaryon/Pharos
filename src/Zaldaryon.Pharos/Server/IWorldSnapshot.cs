@@ -8,8 +8,8 @@ namespace Zaldaryon.Pharos.Server;
 /// <remarks>
 /// <para>
 /// Snapshots enable fast test isolation by capturing and restoring world state
-/// without rebooting the server. A typical capture/restore cycle completes in
-/// under 100ms, compared to several seconds for a full server restart.
+/// without rebooting the server. A restore touches only the chunks that changed, which
+/// costs far less than the several seconds of a full server restart.
 /// </para>
 /// <para>
 /// Implementations should be immutable records that hold a serialized copy

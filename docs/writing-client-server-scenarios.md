@@ -142,17 +142,35 @@ public async Task ClientReconnects_AfterPacketLoss()
 2. Initialize headless client with offscreen GLFW context and null audio
 3. Connect client to server over in-process loopback
 4. Run the test method
-5. Disconnect client
-6. Drain server background tasks
-7. Stop and dispose server; delete sandbox directory
+5. Under `Rollback`, roll the world back and keep the pair for the next test of the class (see [Isolation](#isolation)); otherwise go on below
+6. Disconnect client
+7. Drain server background tasks
+8. Stop and dispose server; delete sandbox directory
 
 The default watchdog is 180 seconds. Override with `[ClientServerScenario(TimeoutMs = 60_000)]`.
 
 ## Isolation
 
-Each `[ClientServerScenario]` test method gets its own server and client boot cycle. If you want to share a server across methods in a class (faster), use `ClientServerScenarioBase.IsolationMode`:
+Override `WorldIsolation` to choose what the next test of the same class starts from:
+
+| Mode | Behavior |
+|------|----------|
+| `Rollback` (default) | The server, the client and its connection stay up. The world is put back in place as it was when the client joined. |
+| `Restart` | Every test boots a new server and client. `Recycle` does the same here. |
+
+Under `Rollback`, after each test:
+
+- **Test players:** they leave.
+- **World:** the snapshot taken after the join is restored on the server's game thread (see [Rollback](writing-server-scenarios.md#rollback)).
+- **Joined player:** it goes back to where it stood, with the game mode and inventories it had.
+- **Client:** it is sent the restored chunks. Its held controls are released and its dialogs closed. Its packet recorder, network degradation, sound recorder and logs are reset.
+
+The next test of the class gets the same client, already joined, with no boot. A test that disconnects the client, cuts its link, or overrides `WaitForPlayerJoinOnInit` to false gets a freshly booted pair, as does the next test after a failed rollback.
 
 ```csharp
-// Override in your base class to share server/client across methods
-// Default: IsolationMode.FreshClient (new client per test)
+public class ExpensiveSetupTests : ClientServerScenarioBase
+{
+    // Every test boots its own pair.
+    protected override WorldIsolation WorldIsolation => WorldIsolation.Restart;
+}
 ```

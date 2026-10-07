@@ -10,6 +10,7 @@ using Zaldaryon.Pharos.Audio;
 using Zaldaryon.Pharos.Core;
 using Zaldaryon.Pharos.Platform;
 using Zaldaryon.Pharos.Reporting;
+using Zaldaryon.Pharos.XUnit;
 
 namespace Zaldaryon.Pharos.Bootstrap;
 
@@ -28,6 +29,11 @@ public static class HeadlessClientBootstrap
         lock (_bootLock)
         {
             options ??= new HeadlessClientOptions();
+
+            // A client a scenario kept for its next test owns a window too. Two clients cannot
+            // live side by side in one process: disposing one later tears down the other's
+            // window. Whoever boots a client now no longer needs the kept one.
+            ScenarioHostPool.Clear();
 
             // 1. Initialize resolver and locate game installation
             HeadlessPlatformResolver.Initialize(options);
