@@ -24,6 +24,12 @@ public sealed class InventoryAutomation
     /// <summary>
     /// Creates an InventoryAutomation instance backed by a real player inventory accessor.
     /// </summary>
+    /// <summary>
+    /// The GUI-driven inventory of an engine-mode client. When set and not in mock mode, slot
+    /// selection presses the number keys and stack moves are clicks in the inventory GUI.
+    /// </summary>
+    internal LiveInventory? Live { get; set; }
+
     public InventoryAutomation(IPlayerInventoryAccessor accessor)
     {
         _accessor = accessor ?? throw new ArgumentNullException(nameof(accessor));
@@ -95,8 +101,9 @@ public sealed class InventoryAutomation
             }
         }
 
-        // Use real accessor for hotbar selection
-        return _accessor.SelectHotbarSlot(slotIndex);
+        // An engine-mode client selects through the number keys, like a player; a fixture-mode
+        // client sets the selection directly.
+        return Live?.SelectHotbarSlot(slotIndex) ?? _accessor.SelectHotbarSlot(slotIndex);
     }
 
     /// <summary>
@@ -162,8 +169,24 @@ public sealed class InventoryAutomation
             }
         }
 
-        // Real inventory drag would use TryFlipItems or similar
-        // For now, return true as the operation is recorded
+        if (Live != null)
+        {
+            return Live.MoveHotbarStack(fromSlot, toSlot);
+        }
+
+        // A fixture-mode client has no server to send the move to, so the two slots are
+        // swapped in the client's own hotbar.
+        IInventory? hotbar = _accessor.Hotbar;
+        if (hotbar == null || fromSlot >= hotbar.Count || toSlot >= hotbar.Count)
+        {
+            return false;
+        }
+
+        ItemStack? moving = hotbar[fromSlot].Itemstack;
+        hotbar[fromSlot].Itemstack = hotbar[toSlot].Itemstack;
+        hotbar[toSlot].Itemstack = moving;
+        hotbar[fromSlot].MarkDirty();
+        hotbar[toSlot].MarkDirty();
         return true;
     }
 

@@ -152,6 +152,12 @@ public sealed class HeadlessClient : IDisposable
     /// </summary>
     public PlayerControls Controls => _controls ??= new PlayerControls(this);
 
+    /// <summary>
+    /// The live GUI of an engine-mode client: open dialogs, their elements with text and bounds,
+    /// and real clicks and typing aimed at an element. Null for a fixture-mode client.
+    /// </summary>
+    public GuiDriver? Ui { get; }
+
     private PlayerControls? _controls;
 
     /// <summary>
@@ -237,6 +243,9 @@ public sealed class HeadlessClient : IDisposable
         {
             Input.Sink = new EngineInputSink(this);
             ((ClientTestPlayer)TestPlayer).UseEngineCamera();
+            Ui = new GuiDriver(this);
+            Gui.Driver = Ui;
+            Inventory.Live = new LiveInventory(this, Ui);
         }
     }
 

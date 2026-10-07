@@ -97,6 +97,31 @@ await session.Blocks.AimAtAsync(pos, BlockFacing.NORTH); // just aim
 
 `PlaceAsync` first puts a stack of the block in the active hotbar slot through the server. On an engine-mode client, `Player.Camera` reads and writes the engine's own view angles (pitch 0 looks ahead and positive looks up, as for a fixture-mode client), and `Camera.Position` is the eye position the engine casts its selection ray from.
 
+## GUI and inventory
+
+`HeadlessClient.Ui` reads and drives the GUI of an engine-mode client. Clicks are real mouse clicks at an element's centre, so they go through the game's own hit testing and handlers:
+
+```csharp
+client.Input.PressKey(GlKeys.Escape);
+var back = client.Ui.Elements("GuiDialogEscapeMenu")
+    .Single(e => e.Type == "GuiElementTextButton" && e.Text == "Back to Game");
+client.Ui.Click("GuiDialogEscapeMenu", back.Key);
+
+client.Ui.TypeInto("GuiDialogInventory", "searchbox", "granite");
+client.Ui.ClickSlot("HudHotbar", "hotbargrid", slotIndex: 2);
+bool open = client.Ui.IsOpen("GuiDialogCharacter");
+```
+
+`Elements(dialog)` lists every element of every composer of an open dialog, with its key, type, screen bounds and text. Dialogs are matched by class name or debug name. `client.Gui` (`GuiInspector`) answers from the same live dialogs, and its `SimulateButtonClick` becomes a real click.
+
+`client.Inventory` works through the GUI too. `SelectSlot(i)` presses the slot's number key. `DragSlot(from, to)` opens the inventory, clicks the stack in the hotbar and clicks the target slot, so the server applies the move by its own rules:
+
+```csharp
+client.Inventory.SelectSlot(4);
+client.Inventory.DragSlot(0, 3);
+await session.StepUntilAsync(() => /* server sees the stack in slot 3 */ true);
+```
+
 ## Threads
 
 The engine-mode client runs on a dedicated main thread, and an embedded server on a dedicated game thread, as in the game. Pharos marshals boot, frames, captures and teardown there, whichever thread the test runs on. Code that touches GL or queues engine main-thread work should use `HeadlessClient.RunOnClientThread(...)`, and code that touches live server state should use `EmbeddedServerHost.RunOnGameThread(...)`.
