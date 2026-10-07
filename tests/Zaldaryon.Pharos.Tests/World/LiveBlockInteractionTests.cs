@@ -4,6 +4,7 @@ using Vintagestory.API.MathTools;
 using Vintagestory.API.Server;
 using Xunit;
 using Zaldaryon.Pharos.Bootstrap;
+using Zaldaryon.Pharos.Network;
 using Zaldaryon.Pharos.Player;
 using Zaldaryon.Pharos.XUnit;
 
@@ -18,6 +19,9 @@ public class LiveBlockInteractionTests : ClientServerScenarioBase
         Width = 640,
         Height = 360,
     };
+
+    /// <summary>The id of the packet a client sends when it starts using a block or item.</summary>
+    private const int HandInteractionPacketId = 25;
 
     private ICoreServerAPI ServerApi => (ICoreServerAPI)Server!.Api;
 
@@ -86,14 +90,20 @@ public class LiveBlockInteractionTests : ClientServerScenarioBase
         Assert.True(arrived, "The chest's block entity never reached the client");
 
         // The client starts a use only on a frame where it sees the button down past its build
-        // repeat delay, which a short press can miss on a slow machine. Using a chest toggles it,
-        // so press again only while the server has not opened it.
-        bool serverOpened = false;
-        for (int attempt = 0; attempt < 3 && !serverOpened; attempt++)
+        // repeat delay, which a short press can miss on a slow machine. Every use the server gets
+        // toggles the chest, so press again only while the client has sent no interaction.
+        Client!.PacketRecorder.Clear();
+        Client.PacketRecorder.Start();
+        bool used = false;
+        for (int attempt = 0; attempt < 3 && !used; attempt++)
         {
             await Session.Blocks.UseAsync(chestPos);
-            serverOpened = await StepUntilAsync(ServerOpenedChest, maxFrames: 300);
+            used = await StepUntilAsync(SentHandInteraction, maxFrames: 60);
         }
+        Client.PacketRecorder.Stop();
+        Assert.True(used, "Pressing use on the chest never sent an interaction to the server");
+
+        bool serverOpened = await StepUntilAsync(ServerOpenedChest, maxFrames: 600);
         Assert.True(serverOpened, "Using the chest never opened its inventory on the server");
 
         // The dialog opens when the server's reply arrives: a round trip through both sides'
@@ -108,6 +118,9 @@ public class LiveBlockInteractionTests : ClientServerScenarioBase
             Assert.Fail($"The server opened the chest but the client never showed its dialog. Open dialogs: {dialogs}");
         }
     }
+
+    private bool SentHandInteraction() =>
+        Client!.PacketRecorder.GetRecordedPackets().Any(p => p.Direction == PacketDirection.Outbound && p.PacketId == HandInteractionPacketId);
 
     private bool ServerOpenedChest() =>
         ServerHost!.RunOnGameThread(() =>
