@@ -3,7 +3,7 @@ using Vintagestory.API.Common;
 // Lets the game load this assembly as a client-only code mod, so a headless client can stage it
 // like any other mod. The server never needs it.
 [assembly: ModInfo("Pharos Bridge", "pharosbridge",
-    Version = "0.4.0",
+    Version = "0.5.0",
     Side = "Client",
     RequiredOnClient = false,
     RequiredOnServer = false,
