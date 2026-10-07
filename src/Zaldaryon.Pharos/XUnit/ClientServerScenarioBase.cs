@@ -40,6 +40,7 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime
     private bool _disposed;
     private IDisposable? _gate;
     private string? _clientModsDirectory;
+    private readonly List<ServerTestPlayer> _testPlayers = [];
 
     /// <summary>
     /// Gets the headless client instance.
@@ -211,6 +212,20 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime
         if (_disposed) return;
         _disposed = true;
 
+        foreach (ServerTestPlayer player in _testPlayers)
+        {
+            try
+            {
+                player.Dispose();
+            }
+            catch
+            {
+                // Ignore player teardown errors
+            }
+        }
+
+        _testPlayers.Clear();
+
         // Disconnect and dispose session
         try
         {
@@ -260,6 +275,21 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime
 
         _gate?.Dispose();
         _gate = null;
+    }
+
+    /// <summary>
+    /// Joins a headless player into the same server as the rendering client, for multiplayer
+    /// scenarios. The player is a real multiplayer connection as far as the server can tell; the
+    /// client sees it as another player. It leaves the server when the test ends.
+    /// </summary>
+    /// <param name="playerName">The player name. Must differ from <see cref="PlayerName"/>.</param>
+    /// <exception cref="InvalidOperationException">The scenario is not initialized.</exception>
+    protected async Task<ServerTestPlayer> CreateTestPlayerAsync(string playerName)
+    {
+        EmbeddedServerHost host = _serverHost ?? throw new InvalidOperationException("Session is not initialized. Call InitializeAsync first.");
+        ServerTestPlayer player = await host.JoinPlayerAsync(playerName).ConfigureAwait(false);
+        _testPlayers.Add(player);
+        return player;
     }
 
     /// <summary>

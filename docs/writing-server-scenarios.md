@@ -105,23 +105,42 @@ public class ReadOnlyTests : ServerScenarioBase { }
 
 ## Test Players
 
-Create simulated connected players:
+Join headless players into the server. Each one is a real multiplayer connection as far as the server can tell, with no rendering client behind it:
 
 ```csharp
 [ServerScenario]
 public async Task Player_CanReceiveItems()
 {
-    var player = await CreateTestPlayerAsync("TestPlayer");
+    ServerTestPlayer player = await CreateTestPlayerAsync("TestPlayer");
 
-    player.GiveItem("game:sword-iron", 1);
-    Assert.True(player.HasItem("game:sword-iron"));
+    player.GiveItem("game:stick", 5);
+    Assert.True(player.HasItem("game:stick", 5));
 
     player.GrantPrivilege("worldedit");
     await player.TeleportTo(100.0, 64.0, 100.0);
+    await player.SayAsync("/time set day"); // runs as a command with the player as caller
 }
 ```
 
-`IServerTestPlayer` is backed by a genuine `ConnectedClient` and `ServerPlayer` registered in the server's internal registries. When the player is released, Pharos purges the name claim so subsequent tests can reuse the same player name.
+A test player goes through the same join sequence as a real client, packet by packet:
+
+1. Over an in-memory socket of its own, the player sends the login token query and its identification.
+2. Once the server has spawned the player entity, the player sends the join request. The server answers it by setting up the inventories and streaming the world.
+3. The player reports itself loaded and ready, which makes it a playing player.
+
+So everything the server does for a real player also runs for a test player: the `PlayerJoin` and `PlayerNowPlaying` events, mods' join handlers, chunk sending, entity tracking and the playing-player count. A connection over an in-memory socket counts as local, so the server skips player verification and no auth server is involved.
+
+Join as many players as a scenario needs. Each gets its own socket:
+
+```csharp
+var alice = await CreateTestPlayerAsync("Alice");
+var bob = await CreateTestPlayerAsync("Bob");
+Assert.Equal(2, Host.TestPlayers.Count);
+```
+
+`player.Disconnect()` sends the leave packet a quitting client sends. Players created in a test leave when the test ends, and the same name can join again. Outside a scenario, use `EmbeddedServerHost.JoinPlayerAsync`.
+
+In a `ClientServerScenarioBase`, `CreateTestPlayerAsync` joins headless players next to the rendering client, which sees them as other players in the world.
 
 ## Server Tick Control
 

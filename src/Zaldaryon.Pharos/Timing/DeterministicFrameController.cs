@@ -246,6 +246,15 @@ public sealed class DeterministicFrameController
 
     private void StepEngine(float dt)
     {
+        // The server pushes its asset packet straight into ClientSystemStartup.instance for every
+        // player that connects over an in-memory socket, a headless test player included. Once
+        // this client has its assets that push must not reach it again: it would reload the whole
+        // client mid-game. The field is used for nothing else, so it is cleared.
+        if (_client.AssetsReceived && ClientSystemStartup.instance != null)
+        {
+            ClientSystemStartup.instance = null;
+        }
+
         // Until the server's blocks are loaded and the own player exists, vanilla shows the
         // connecting screen, which only runs the client's main thread tasks: that is where the
         // network thread hands over every received packet. ClientMain.MainRenderLoop dereferences

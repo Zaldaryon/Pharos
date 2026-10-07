@@ -4,29 +4,28 @@ using System.Linq;
 using System.Threading.Tasks;
 using Vintagestory.API.Common;
 using Vintagestory.API.Common.Entities;
+using Vintagestory.API.Config;
 using Vintagestory.API.MathTools;
 using Vintagestory.API.Server;
 using Vintagestory.Server;
+using Zaldaryon.Pharos.Server;
 
 namespace Zaldaryon.Pharos.XUnit;
 
 /// <summary>
-/// A test player implementation that wraps a server-side player for scenario testing.
+/// A test player on an embedded server.
 /// </summary>
 /// <remarks>
 /// <para>
-/// This class provides controlled access to player state, privileges, and inventory
-/// for server scenario tests. It backs onto a real or simulated <see cref="IServerPlayer"/>
-/// when connected to a running server.
+/// A player returned by <see cref="EmbeddedServerHost.JoinPlayerAsync"/> or
+/// <see cref="ServerScenarioBase.CreateTestPlayerAsync"/> is a real multiplayer connection as far
+/// as the server can tell: it went through the whole join sequence and is a playing player with a
+/// spawned entity and inventories. There is no rendering client behind it. Everything it does goes
+/// through the server's game thread, and chat and leaving go over its connection as packets.
 /// </para>
 /// <para>
-/// When the server is not running or the player is disconnected, property accessors
-/// return null or default values, and methods operate as no-ops or throw descriptive
-/// exceptions, allowing tests to safely verify behavior without a live server.
-/// </para>
-/// <para>
-/// Cleanup is handled by <see cref="Disconnect"/>, which removes the player from
-/// the server's player data and uid registries.
+/// A player created with a constructor and never joined keeps its privilege and role bookkeeping
+/// locally, which unit tests rely on.
 /// </para>
 /// </remarks>
 public sealed class ServerTestPlayer : IServerTestPlayer, IDisposable
@@ -37,6 +36,9 @@ public sealed class ServerTestPlayer : IServerTestPlayer, IDisposable
     private string _roleCode = "suplayer";
     private IServerPlayer? _player;
     private ServerMain? _server;
+    private EmbeddedServerHost? _host;
+    private HeadlessPlayerConnection? _connection;
+    private long _receivedPackets;
     private bool _disposed;
 
     /// <summary>
@@ -62,16 +64,19 @@ public sealed class ServerTestPlayer : IServerTestPlayer, IDisposable
     {
     }
 
-    /// <inheritdoc/>
+    /// <inheritdoc />
     public IServerPlayer? Player => _player;
 
-    /// <inheritdoc/>
+    /// <inheritdoc />
     public EntityPlayer? Entity => _player?.Entity;
 
-    /// <inheritdoc/>
+    /// <inheritdoc />
     public string PlayerUID => _playerUid;
 
-    /// <inheritdoc/>
+    /// <summary>The player's name, or null when not joined.</summary>
+    public string? PlayerName => _player?.PlayerName;
+
+    /// <inheritdoc />
     public string RoleCode
     {
         get => _player?.Role?.Code ?? _roleCode;
@@ -81,38 +86,38 @@ public sealed class ServerTestPlayer : IServerTestPlayer, IDisposable
 
             if (_player is ServerPlayer serverPlayer && _server is not null)
             {
-                IPlayerRole? role = _server.Config?.Roles?.Find(r =>
-                    string.Equals(r.Code, value, StringComparison.OrdinalIgnoreCase));
-
-                if (role is not null)
+                OnGameThread(() =>
                 {
-                    serverPlayer.Role = role;
-                }
+                    IPlayerRole? role = _server.Config?.Roles?.Find(r =>
+                        string.Equals(r.Code, _roleCode, StringComparison.OrdinalIgnoreCase));
+
+                    if (role is not null)
+                    {
+                        ((ICoreServerAPI)_server.Api).Permissions.SetRole(serverPlayer, role);
+                    }
+                });
             }
         }
     }
 
-    /// <summary>
-    /// Gets the server instance this player is associated with.
-    /// </summary>
+    /// <summary>The server the player is on, or null when not joined.</summary>
     public ServerMain? Server => _server;
 
     /// <summary>
-    /// Gets whether this player is currently connected to a server.
+    /// Whether the player is joined and the server still has its connection.
     /// </summary>
-    public bool IsConnected => _player is not null && _server is not null;
+    public bool IsConnected => _player is not null && _server is not null && (_connection is null || IsStillRegistered());
 
-    /// <summary>
-    /// Gets the set of privileges explicitly granted to this test player.
-    /// </summary>
+    /// <summary>How many packets the server has sent this player so far.</summary>
+    public long ReceivedPacketCount => Interlocked.Read(ref _receivedPackets);
+
+    /// <summary>Privileges granted through this player.</summary>
     public IReadOnlySet<string> GrantedPrivileges => _grantedPrivileges;
 
-    /// <summary>
-    /// Gets the set of privileges explicitly revoked from this test player.
-    /// </summary>
+    /// <summary>Privileges revoked through this player.</summary>
     public IReadOnlySet<string> RevokedPrivileges => _revokedPrivileges;
 
-    /// <inheritdoc/>
+    /// <inheritdoc />
     public void GrantPrivilege(params string[] privileges)
     {
         ArgumentNullException.ThrowIfNull(privileges);
@@ -123,10 +128,15 @@ public sealed class ServerTestPlayer : IServerTestPlayer, IDisposable
 
             _grantedPrivileges.Add(privilege);
             _revokedPrivileges.Remove(privilege);
+
+            if (_server is not null && _player is not null)
+            {
+                OnGameThread(() => Api!.Permissions.GrantPrivilege(_playerUid, privilege));
+            }
         }
     }
 
-    /// <inheritdoc/>
+    /// <inheritdoc />
     public void RevokePrivilege(params string[] privileges)
     {
         ArgumentNullException.ThrowIfNull(privileges);
@@ -137,10 +147,19 @@ public sealed class ServerTestPlayer : IServerTestPlayer, IDisposable
 
             _revokedPrivileges.Add(privilege);
             _grantedPrivileges.Remove(privilege);
+
+            if (_server is not null && _player is not null)
+            {
+                OnGameThread(() =>
+                {
+                    Api!.Permissions.RevokePrivilege(_playerUid, privilege);
+                    Api.Permissions.DenyPrivilege(_playerUid, privilege);
+                });
+            }
         }
     }
 
-    /// <inheritdoc/>
+    /// <inheritdoc />
     public Task TeleportTo(double x, double y, double z)
     {
         if (_player?.Entity is null)
@@ -148,92 +167,73 @@ public sealed class ServerTestPlayer : IServerTestPlayer, IDisposable
             return Task.CompletedTask;
         }
 
-        // Server-side teleport uses TeleportToDouble
-        _player.Entity.TeleportToDouble(x, y, z);
+        OnGameThread(() => _player.Entity.TeleportToDouble(x, y, z));
         return Task.CompletedTask;
     }
 
-    /// <inheritdoc/>
+    /// <inheritdoc />
     public void GiveItem(string itemCode, int quantity = 1)
     {
         ArgumentNullException.ThrowIfNull(itemCode);
 
         if (quantity <= 0) return;
 
-        if (_player?.Entity is null || _server?.Api is null)
+        if (_player?.Entity is null || Api is null)
         {
             return;
         }
 
-        ICoreServerAPI api = (ICoreServerAPI)_server.Api;
-
-        Item? item = api.World?.GetItem(new AssetLocation(itemCode));
-        Block? block = item is null ? api.World?.GetBlock(new AssetLocation(itemCode)) : null;
-
-        if (item is null && block is null)
+        CollectibleObject? collectible = Resolve(itemCode);
+        if (collectible is null)
         {
             return;
         }
 
-        ItemStack stack = item is not null
-            ? new ItemStack(item, quantity)
-            : new ItemStack(block!, quantity);
-
-        _player.Entity.TryGiveItemStack(stack);
+        OnGameThread(() => _player.Entity.TryGiveItemStack(new ItemStack(collectible, quantity)));
     }
 
-    /// <inheritdoc/>
+    /// <inheritdoc />
     public bool HasItem(string itemCode, int quantity = 1)
     {
         ArgumentNullException.ThrowIfNull(itemCode);
 
         if (quantity <= 0) return true;
 
-        if (_player?.Entity is null || _server?.Api is null)
+        if (_player?.Entity is null || Api is null)
         {
             return false;
         }
 
-        ICoreServerAPI api = (ICoreServerAPI)_server.Api;
-
-        Item? item = api.World?.GetItem(new AssetLocation(itemCode));
-        Block? block = item is null ? api.World?.GetBlock(new AssetLocation(itemCode)) : null;
-
-        if (item is null && block is null)
+        CollectibleObject? collectible = Resolve(itemCode);
+        if (collectible is null)
         {
             return false;
         }
 
-        IInventory[]? inventories = _player.InventoryManager?.Inventories?.Values?.ToArray();
-        if (inventories is null) return false;
-
-        int totalFound = 0;
-        foreach (IInventory inv in inventories)
+        return OnGameThread(() =>
         {
-            foreach (ItemSlot slot in inv)
+            int totalFound = 0;
+            foreach (IInventory inv in _player.InventoryManager?.Inventories?.Values?.ToArray() ?? [])
             {
-                if (slot?.Itemstack is null) continue;
+                // The creative inventory is the item catalogue, not something the player holds,
+                // and it is only populated on the client.
+                if (inv.ClassName == GlobalConstants.creativeInvClassName) continue;
 
-                bool matches = item is not null
-                    ? slot.Itemstack.Item?.Id == item.Id
-                    : slot.Itemstack.Block?.Id == block!.Id;
-
-                if (matches)
+                foreach (ItemSlot slot in inv)
                 {
-                    totalFound += slot.Itemstack.StackSize;
-                    if (totalFound >= quantity) return true;
+                    if (slot?.Itemstack?.Collectible?.Id == collectible.Id && slot.Itemstack.Class == collectible.ItemClass)
+                    {
+                        totalFound += slot.Itemstack.StackSize;
+                        if (totalFound >= quantity) return true;
+                    }
                 }
             }
-        }
 
-        return false;
+            return false;
+        });
     }
 
-    /// <summary>
-    /// Checks whether this player has the specified privilege.
-    /// </summary>
-    /// <param name="privilege">The privilege to check.</param>
-    /// <returns>True if the player has the privilege.</returns>
+    /// <inheritdoc />
     public bool HasPrivilege(string privilege)
     {
         if (string.IsNullOrWhiteSpace(privilege)) return false;
@@ -247,10 +247,24 @@ public sealed class ServerTestPlayer : IServerTestPlayer, IDisposable
     }
 
     /// <summary>
-    /// Associates this test player with the specified server player instance.
+    /// Sends a chat line from the player, as its chat box would, and lets the server handle it.
+    /// A line starting with a slash runs as a command with this player as the caller.
     /// </summary>
-    /// <param name="player">The server player to bind to.</param>
-    /// <param name="server">The server instance.</param>
+    /// <exception cref="InvalidOperationException">The player is not joined.</exception>
+    public Task SayAsync(string message, int ticks = 2)
+    {
+        ArgumentNullException.ThrowIfNull(message);
+        HeadlessPlayerConnection connection = _connection
+            ?? throw new InvalidOperationException("Only a joined player can chat.");
+
+        OnGameThread(() => connection.Chat(message));
+        _host!.Ticks(ticks);
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Binds the player to a live server player without a connection of its own.
+    /// </summary>
     internal void Bind(IServerPlayer player, ServerMain server)
     {
         _player = player;
@@ -260,50 +274,67 @@ public sealed class ServerTestPlayer : IServerTestPlayer, IDisposable
     }
 
     /// <summary>
-    /// Disconnects this test player from the server, purging player data.
+    /// Binds the player to the server player its connection joined as.
     /// </summary>
-    /// <remarks>
-    /// This method removes the player from <c>PlayerDataManager</c> and <c>PlayersByUid</c>
-    /// to ensure clean state between tests.
-    /// </remarks>
+    internal void Attach(IServerPlayer player, ServerMain server, EmbeddedServerHost host, HeadlessPlayerConnection connection)
+    {
+        _host = host;
+        _connection = connection;
+        _player = player;
+        _server = server;
+    }
+
+    /// <summary>
+    /// Takes the packets the server queued for this player. Called on the game thread every tick.
+    /// </summary>
+    internal void ReceivePending()
+    {
+        if (_connection is null) return;
+
+        List<byte[]> packets = _connection.DrainReceived();
+        Interlocked.Add(ref _receivedPackets, packets.Count);
+    }
+
+    /// <summary>
+    /// Leaves the server: the player sends the leave packet a quitting client sends, the server
+    /// disconnects it, and its socket is removed.
+    /// </summary>
     public void Disconnect()
     {
         if (_server is null || _player is null) return;
 
+        ServerMain server = _server;
+        HeadlessPlayerConnection? connection = _connection;
+        EmbeddedServerHost? host = _host;
+
         try
         {
-            // Remove from PlayersByUid dictionary
-            if (_server.PlayersByUid?.ContainsKey(_playerUid) == true)
+            if (connection is not null && host is not null && host.IsRunning)
             {
-                _server.PlayersByUid.Remove(_playerUid);
-            }
+                host.RunOnGameThread(connection.Leave);
 
-            // Remove from connected clients if present
-            if (_player is ServerPlayer serverPlayer && serverPlayer.ClientId > 0)
-            {
-                _server.Clients?.TryRemove(serverPlayer.ClientId, out _);
-            }
+                for (int i = 0; i < 200 && IsStillRegistered(); i++)
+                {
+                    host.Tick();
+                }
 
-            // Remove player data from PlayerDataManager
-            if (_server.PlayerDataManager?.PlayerDataByUid?.ContainsKey(_playerUid) == true)
-            {
-                _server.PlayerDataManager.PlayerDataByUid.Remove(_playerUid);
+                host.RunOnGameThread(() => connection.Close(server));
             }
         }
         catch
         {
-            // Best effort cleanup
+            // Best effort: a stopping server drops the player anyway.
         }
         finally
         {
             _player = null;
             _server = null;
+            _connection = null;
+            _host = null;
         }
     }
 
-    /// <summary>
-    /// Releases resources and disconnects the player if connected.
-    /// </summary>
+    /// <inheritdoc />
     public void Dispose()
     {
         if (_disposed) return;
@@ -311,4 +342,30 @@ public sealed class ServerTestPlayer : IServerTestPlayer, IDisposable
 
         Disconnect();
     }
+
+    private ICoreServerAPI? Api => _server?.Api as ICoreServerAPI;
+
+    private CollectibleObject? Resolve(string code)
+    {
+        AssetLocation location = new(code);
+        return (CollectibleObject?)Api!.World.GetItem(location) ?? Api.World.GetBlock(location);
+    }
+
+    private bool IsStillRegistered()
+    {
+        ServerMain? server = _server;
+        IServerPlayer? player = _player;
+        if (server is null || player is null) return false;
+
+        return server.Clients.TryGetValue(player.ClientId, out ConnectedClient? client)
+            && ReferenceEquals(client.Player, player);
+    }
+
+    private void OnGameThread(Action action)
+    {
+        if (_host is null) action();
+        else _host.RunOnGameThread(action);
+    }
+
+    private T OnGameThread<T>(Func<T> func) => _host is null ? func() : _host.RunOnGameThread(func);
 }
