@@ -85,21 +85,33 @@ public class LiveBlockInteractionTests : ClientServerScenarioBase
             maxFrames: 300);
         Assert.True(arrived, "The chest's block entity never reached the client");
 
+        // The client starts a use only on a frame where it sees the button down past its build
+        // repeat delay, which a short press can miss on a slow machine. Using a chest toggles it,
+        // so press again only while the server has not opened it.
+        bool serverOpened = false;
+        for (int attempt = 0; attempt < 3 && !serverOpened; attempt++)
+        {
+            await Session.Blocks.UseAsync(chestPos);
+            serverOpened = await StepUntilAsync(ServerOpenedChest, maxFrames: 300);
+        }
+        Assert.True(serverOpened, "Using the chest never opened its inventory on the server");
+
         // The dialog opens when the server's reply arrives: a round trip through both sides'
         // network threads, which a busy machine can stretch over many frames.
-        await Session.Blocks.UseAsync(chestPos);
         bool opened = await StepUntilAsync(
             () => Client!.RunOnClientThread(() => Client.Client.api.Gui.OpenedGuis.Any(g => g.GetType().Name.Contains("BlockEntityInventory"))),
             maxFrames: 600);
 
         if (!opened)
         {
-            bool serverOpened = ServerHost!.RunOnGameThread(() =>
-                Server!.GetClientByPlayername(PlayerName).Player.InventoryManager.OpenedInventories.Any(i => i.ClassName == "chest"));
             string dialogs = Client!.RunOnClientThread(() => string.Join(", ", Client.Client.api.Gui.OpenedGuis.Select(g => g.GetType().Name)));
-            Assert.Fail($"Using the chest did not open its inventory dialog. Server opened the inventory: {serverOpened}. Open dialogs: {dialogs}");
+            Assert.Fail($"The server opened the chest but the client never showed its dialog. Open dialogs: {dialogs}");
         }
     }
+
+    private bool ServerOpenedChest() =>
+        ServerHost!.RunOnGameThread(() =>
+            Server!.GetClientByPlayername(PlayerName).Player.InventoryManager.OpenedInventories.Any(i => i.ClassName == "chest"));
 
     private BlockPos GroundInFront(int distance)
     {

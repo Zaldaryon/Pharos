@@ -67,7 +67,86 @@ jobs:
           MESA_GL_VERSION_OVERRIDE: "4.5"
           MESA_GLSL_VERSION_OVERRIDE: "450"
           ALSOFT_DRIVERS: null
+          # Optional: a Vintage Story account session runs the online auth tests; without
+          # these secrets (forks, or none configured) those tests are skipped.
+          PHAROS_VS_PLAYERNAME: ${{ secrets.PHAROS_VS_PLAYERNAME }}
+          PHAROS_VS_PLAYERUID: ${{ secrets.PHAROS_VS_PLAYERUID }}
+          PHAROS_VS_SESSIONKEY: ${{ secrets.PHAROS_VS_SESSIONKEY }}
+          PHAROS_VS_SESSIONSIGNATURE: ${{ secrets.PHAROS_VS_SESSIONSIGNATURE }}
         run: xvfb-run -a -s "-screen 0 1280x720x24" dotnet test Pharos.sln -c Release --no-build
+
+  remote-server-linux:
+    name: Remote Dedicated Server (Linux)
+    runs-on: ubuntu-latest
+    env:
+      VS_CACHE_PATH: /home/runner/.vintagestory-cache
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Start the dedicated server
+        run: |
+          docker build --build-arg VS_VERSION=${{ env.VS_VERSION }} -t pharos-vs-server docker/dedicated-server
+          docker run -d --name vs -p 42420:42420/tcp -p 42420:42420/udp pharos-vs-server
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Install Mesa and Xvfb
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y mesa-utils libgl1-mesa-dri xvfb libopenal1 libglfw3 libglfw3-dev libcairo2 libcairo2-dev
+
+      - name: Cache Vintage Story
+        id: cache-vs
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.VS_CACHE_PATH }}/${{ env.VS_VERSION }}
+          key: vintagestory-linux-${{ env.VS_VERSION }}-v2
+
+      - name: Download Vintage Story
+        if: steps.cache-vs.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p ${{ env.VS_CACHE_PATH }}/${{ env.VS_VERSION }}
+          wget -q https://cdn.vintagestory.at/gamefiles/stable/vs_client_linux-x64_${{ env.VS_VERSION }}.tar.gz -O /tmp/vs.tar.gz
+          tar xzf /tmp/vs.tar.gz -C ${{ env.VS_CACHE_PATH }}/${{ env.VS_VERSION }} --strip-components=1
+          rm /tmp/vs.tar.gz
+
+      - name: Build
+        env:
+          VINTAGE_STORY: ${{ env.VS_CACHE_PATH }}/${{ env.VS_VERSION }}
+        run: dotnet build Pharos.sln -c Release
+
+      - name: Stage assets
+        run: ln -sf ${{ env.VS_CACHE_PATH }}/${{ env.VS_VERSION }}/assets tests/Zaldaryon.Pharos.Tests/bin/Release/net10.0/assets || true
+
+      - name: Wait for the server to accept players
+        run: |
+          for i in $(seq 1 90); do
+            if docker logs vs 2>&1 | grep -q "Dedicated Server now running"; then exit 0; fi
+            sleep 2
+          done
+          docker logs vs
+          exit 1
+
+      - name: Test against the dedicated server
+        env:
+          PHAROS_REMOTE_SERVER: 127.0.0.1:42420
+          VINTAGE_STORY: ${{ env.VS_CACHE_PATH }}/${{ env.VS_VERSION }}
+          LD_LIBRARY_PATH: ${{ env.VS_CACHE_PATH }}/${{ env.VS_VERSION }}/Lib:${{ env.VS_CACHE_PATH }}/${{ env.VS_VERSION }}:/usr/lib/x86_64-linux-gnu
+          LIBGL_ALWAYS_SOFTWARE: 1
+          GALLIUM_DRIVER: llvmpipe
+          MESA_LOADER_DRIVER_OVERRIDE: llvmpipe
+          MESA_GL_VERSION_OVERRIDE: "4.5"
+          MESA_GLSL_VERSION_OVERRIDE: "450"
+          ALSOFT_DRIVERS: null
+        run: xvfb-run -a -s "-screen 0 1280x720x24" dotnet test Pharos.sln -c Release --no-build --filter "FullyQualifiedName~RemoteServerTests"
+
+      - name: Server log
+        if: always()
+        run: docker logs vs 2>&1 | tail -200
 
   test-windows:
     name: Build and Test (Windows)
