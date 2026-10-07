@@ -68,6 +68,11 @@ public static class HeadlessClientBootstrap
             ClientSettings.VsyncMode = 0;
             ClientSettings.GameWindowMode = 0;
 
+            if (options.BootMode == ClientBootMode.Engine)
+            {
+                return EngineClientStartup.Boot(options, tempDataPath);
+            }
+
             // 4. Create offscreen GLFW window with attached FBO
             HeadlessWindow window = new(options);
 

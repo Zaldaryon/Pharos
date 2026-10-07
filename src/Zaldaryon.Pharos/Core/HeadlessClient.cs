@@ -50,6 +50,40 @@ public sealed class HeadlessClient : IDisposable
     public bool IsDisposed => _disposed;
 
     /// <summary>
+    /// How much of the vanilla startup this client ran. See <see cref="ClientBootMode"/>.
+    /// </summary>
+    public ClientBootMode BootMode { get; }
+
+    /// <summary>
+    /// Whether this client was booted with <see cref="ClientBootMode.Engine"/>.
+    /// </summary>
+    public bool IsEngineMode => BootMode == ClientBootMode.Engine;
+
+    /// <summary>
+    /// Whether the client has joined a server: its own player entity was spawned, every block, item
+    /// and entity type the server sent has been loaded, and the client told the server it is ready
+    /// to play, which is what makes the server start sending chunks. Only an engine-mode client
+    /// gets here.
+    /// </summary>
+    public bool IsJoined => Client.EntityPlayer?.Pos != null && Client.BlocksReceivedAndLoaded && Client.clientPlayingFired;
+
+    /// <summary>
+    /// Reads back the last rendered frame.
+    /// </summary>
+    /// <remarks>
+    /// A fixture-mode client draws into <see cref="Framebuffer"/>. An engine-mode client renders
+    /// through the vanilla pipeline, which ends by blitting to the window's back buffer, so that is
+    /// what is read here.
+    /// </remarks>
+    public FramebufferSnapshot CaptureFrame()
+    {
+        Window.NativeWindow.MakeCurrent();
+        return IsEngineMode
+            ? HeadlessFramebuffer.CaptureDefault(Platform.WindowSize.Width, Platform.WindowSize.Height)
+            : Framebuffer.Capture();
+    }
+
+    /// <summary>
     /// OpenGL command proxy for recording draw and buffer operations per frame.
     /// Recording is disabled by default. Call <see cref="GlCommandProxy.Enable"/> before a frame
     /// and <see cref="GlCommandProxy.Snapshot"/> after to capture counts.
@@ -140,8 +174,10 @@ public sealed class HeadlessClient : IDisposable
         GuiScreenRunningGame runningGameScreen,
         HeadlessWindow window,
         HeadlessClientOptions options,
-        string? tempDataPath)
+        string? tempDataPath,
+        ClientBootMode bootMode = ClientBootMode.Fixture)
     {
+        BootMode = bootMode;
         Client = client;
         Platform = platform;
         ScreenManager = screenManager;
@@ -149,7 +185,11 @@ public sealed class HeadlessClient : IDisposable
         Window = window;
         Options = options;
         _tempDataPath = tempDataPath;
-        FrameController = new DeterministicFrameController(client, platform, screenManager, runningGameScreen, window);
+        FrameController = new DeterministicFrameController(client, platform, screenManager, runningGameScreen, window)
+        {
+            BootMode = bootMode,
+            CharacterClass = options.CompleteCharacterSelection ? options.CharacterClass : null,
+        };
         Gui = new GuiInspector(screenManager);
         TestPlayer = new ClientTestPlayer(client);
         Culling = new CullingInspector(client);
@@ -382,6 +422,11 @@ public sealed class HeadlessClient : IDisposable
     {
         ArgumentNullException.ThrowIfNull(server);
 
+        if (IsEngineMode)
+        {
+            return ConnectEngineLoopback(server, playerName);
+        }
+
         ClientSettings.PlayerName = playerName;
         ClientSettings.PlayerUID = "pharos-" + playerName.ToLowerInvariant();
 
@@ -421,6 +466,60 @@ public sealed class HeadlessClient : IDisposable
         Client.Connect();
 
         return new ClientServerLoopbackSession(this, server);
+    }
+
+    private ClientServerLoopbackSession ConnectEngineLoopback(EmbeddedServerHost server, string playerName)
+    {
+        ClientSettings.PlayerName = playerName;
+        ClientSettings.PlayerUID = "pharos-" + playerName.ToLowerInvariant();
+
+        // The engine-mode client joins through the multiplayer handshake, over the same in-memory
+        // dummy sockets singleplayer uses. Singleplayer proper expects the server to push its
+        // assets straight into ClientSystemStartup while the server boots, which only works when
+        // the client already exists at that moment; an embedded server is booted first, so that
+        // push finds nobody and the client later gets ServerReady before any assets. The
+        // multiplayer path asks for everything after identifying instead. It needs no auth server:
+        // the client was started offline, so it answers the login token itself, and the server
+        // treats any dummy-socket connection as local and skips player verification.
+        Client.IsSingleplayer = false;
+        Client.Connectdata = new ServerConnectData
+        {
+            Host = "localhost",
+            Port = 42424
+        };
+
+        ForgetLocalAssetPush(server);
+
+        DummyTcpNetClient dummyTcp = new();
+        dummyTcp.SetNetwork(server.TcpNetwork);
+        Client.MainNetClient = dummyTcp;
+
+        DummyUdpNetClient dummyUdp = new();
+        dummyUdp.SetNetwork(server.UdpNetwork);
+        Client.UdpNetClient = dummyUdp;
+
+        Client.Connect();
+
+        return new ClientServerLoopbackSession(this, server);
+    }
+
+    private static readonly FieldInfo? s_serverAssetsSentLocallyField =
+        typeof(Vintagestory.Server.ServerMain).GetField("serverAssetsSentLocally", BindingFlags.Instance | BindingFlags.NonPublic);
+
+    private static readonly FieldInfo? s_worldMetaDataSentLocallyField =
+        typeof(Vintagestory.Server.ServerMain).GetField("worldMetaDataPacketAlreadySentToSinglePlayer", BindingFlags.Instance | BindingFlags.NonPublic);
+
+    private static void ForgetLocalAssetPush(EmbeddedServerHost server)
+    {
+        // When the server finishes building its asset packet it pushes its identification, assets
+        // and world metadata straight into whatever ClientSystemStartup.instance is at that
+        // moment, a static that outlives its client. It then remembers having done so and skips
+        // sending the identification over the socket to every dummy-socket client. That push can
+        // land on a client from an earlier test, or on this client before it connected, and
+        // either way the handshake below would wait for an identification that never comes.
+        // Clearing the flags makes the server send everything over the socket, in order.
+        s_serverAssetsSentLocallyField?.SetValue(server.Server, false);
+        s_worldMetaDataSentLocallyField?.SetValue(server.Server, false);
     }
 
     /// <summary>

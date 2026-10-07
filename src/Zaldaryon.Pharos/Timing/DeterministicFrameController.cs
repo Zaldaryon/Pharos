@@ -105,6 +105,20 @@ public sealed class DeterministicFrameController
     public ChunkTesselatorManager? ChunkTesselatorManager { get; set; }
 
     /// <summary>
+    /// How the client was booted. An engine-mode client renders through the vanilla
+    /// <c>ScreenManager</c> pipeline once it has joined, and its own worker threads do the
+    /// tessellation and network processing a fixture-mode frame has to step by hand.
+    /// </summary>
+    public ClientBootMode BootMode { get; init; } = ClientBootMode.Fixture;
+
+    /// <summary>
+    /// The character class an engine-mode client selects when it joins as a new player, or
+    /// <see langword="null"/> to leave the selection to the test.
+    /// See <see cref="HeadlessClientOptions.CompleteCharacterSelection"/>.
+    /// </summary>
+    public string? CharacterClass { get; init; }
+
+    /// <summary>
     /// Advances the client by a single deterministic frame.
     /// </summary>
     public void Step(float dt = 1f / 60f)
@@ -148,6 +162,14 @@ public sealed class DeterministicFrameController
                 foreach (Action task in pendingTasks)
                 {
                     task.Invoke();
+                }
+
+                if (BootMode == ClientBootMode.Engine)
+                {
+                    StepEngine(dt);
+                    GL.Flush();
+                    OnFrameCompleted?.Invoke(this, new FrameCompletedEventArgs(_totalFrames, dt, _totalElapsedSeconds));
+                    return;
                 }
 
                 // 4. Ensure offscreen FBO is bound for rendering
@@ -206,6 +228,27 @@ public sealed class DeterministicFrameController
             {
                 _isStepping = false;
             }
+        }
+    }
+
+    private void StepEngine(float dt)
+    {
+        // Until the server's blocks are loaded and the own player exists, vanilla shows the
+        // connecting screen, which only runs the client's main thread tasks: that is where the
+        // network thread hands over every received packet. ClientMain.MainRenderLoop dereferences
+        // the player, so it must not run before then.
+        if (_client.EntityPlayer?.Pos != null && _client.BlocksReceivedAndLoaded)
+        {
+            EngineClientStartup.Render(_screenManager, dt);
+
+            if (CharacterClass != null)
+            {
+                CharacterSelection.Advance(_client, CharacterClass);
+            }
+        }
+        else
+        {
+            _client.ExecuteMainThreadTasks(dt);
         }
     }
 

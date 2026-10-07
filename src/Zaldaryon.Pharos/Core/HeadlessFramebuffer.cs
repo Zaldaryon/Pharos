@@ -101,6 +101,26 @@ public sealed class HeadlessFramebuffer : IDisposable
     }
 
     /// <summary>
+    /// Reads back the window's back buffer (framebuffer 0) as a top-down RGBA pixel snapshot.
+    /// </summary>
+    /// <remarks>
+    /// The vanilla render pipeline finishes each frame by blitting its primary frame buffer to
+    /// framebuffer 0, so this is where an engine-mode frame ends up. The buffer is not swapped
+    /// between frames, which keeps the last rendered frame readable.
+    /// </remarks>
+    public static FramebufferSnapshot CaptureDefault(int width, int height)
+    {
+        GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
+        GL.ReadBuffer(ReadBufferMode.Back);
+
+        byte[] pixels = new byte[width * height * 4];
+        GL.ReadPixels(0, 0, width, height, PixelFormat.Rgba, PixelType.UnsignedByte, pixels);
+        FlipVertically(pixels, width, height);
+
+        return new FramebufferSnapshot(pixels, width, height);
+    }
+
+    /// <summary>
     /// Captures the current framebuffer and saves it as a PNG file at the given path.
     /// </summary>
     public void CaptureToFile(string path) => Capture().SaveToPng(path);

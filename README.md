@@ -133,6 +133,21 @@ public class BlockInteractionTests : ClientServerScenarioBase
 }
 ```
 
+## Quick Start: A Real Client Joining a Server
+
+Boot the client in engine mode to run the vanilla client startup. The client joins the server, goes through character creation, receives chunks and renders the world through the game's own pipeline. It needs no auth server and no outbound network access:
+
+```csharp
+using var server = EmbeddedServerHost.Boot(new ServerWorldOptions { WorldType = "superflat" });
+using var client = HeadlessClientBootstrap.Boot(new HeadlessClientOptions { BootMode = ClientBootMode.Engine });
+using var session = client.ConnectLoopback(server, "Pilot");
+
+Assert.True(session.WaitForPlayerJoined(TimeSpan.FromSeconds(120)));
+FramebufferSnapshot frame = client.CaptureFrame();
+```
+
+See [Engine Mode](docs/engine-mode.md) for what runs and how the offline join works.
+
 Run tests with:
 
 ```bash
@@ -203,6 +218,7 @@ See the [inspection API reference](docs/inspection-api.md) for method signatures
 
 - [Writing Client Scenarios](docs/writing-scenarios.md): `[ClientScenario]`, `[ClientTheory]`, `[PharosMods]`, and isolation modes
 - [Writing Server Scenarios](docs/writing-server-scenarios.md): `[ServerScenario]`, `ServerScenarioBase`, `IServerTestPlayer`, and world helpers
+- [Engine Mode](docs/engine-mode.md): Booting a client that joins a real server offline, with character creation and the vanilla render pipeline
 - [Client-Server Testing](docs/writing-client-server-scenarios.md): `[ClientServerScenario]`, lockstep stepping, and packet assertions
 - [Inspection API Reference](docs/inspection-api.md): Detailed API for all inspector classes
 - [Compatibility Matrix](docs/compatibility.md): Supported VS versions, OpenGL requirements, and platform notes
