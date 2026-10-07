@@ -43,6 +43,7 @@ internal static class RemoteServer
 /// cloud environments.
 /// </summary>
 [Collection("Sequential")]
+[Trait(PharosTraits.Category, PharosTraits.Live)]
 public class RemoteServerTests
 {
     private static readonly TimeSpan JoinTimeout = TimeSpan.FromSeconds(180);

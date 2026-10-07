@@ -10,10 +10,12 @@ using Zaldaryon.Pharos.Core;
 using Zaldaryon.Pharos.Platform;
 using Zaldaryon.Pharos.Server;
 using Zaldaryon.Pharos.Timing;
+using Zaldaryon.Pharos.XUnit;
 
 namespace Zaldaryon.Pharos.Tests;
 
 [Collection("Sequential")]
+[Trait(PharosTraits.Category, PharosTraits.Live)]
 public class WorldSynchronizationTests
 {
     static WorldSynchronizationTests()

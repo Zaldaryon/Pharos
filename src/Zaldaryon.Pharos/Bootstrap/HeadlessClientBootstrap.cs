@@ -34,6 +34,7 @@ public static class HeadlessClientBootstrap
             // live side by side in one process: disposing one later tears down the other's
             // window. Whoever boots a client now no longer needs the kept one.
             ScenarioHostPool.Clear();
+            HashSet<object> settingsWatchers = ClientSettingsWatchers.Snapshot();
 
             // 1. Initialize resolver and locate game installation
             HeadlessPlatformResolver.Initialize(options);
@@ -91,7 +92,9 @@ public static class HeadlessClientBootstrap
                     ClientSettings.MusicLevel = 100;
                 }
 
-                return EngineClientStartup.Boot(options, tempDataPath);
+                HeadlessClient engineClient = EngineClientStartup.Boot(options, tempDataPath);
+                engineClient.SettingsWatchersAtBoot = settingsWatchers;
+                return engineClient;
             }
 
             // 4. Create offscreen GLFW window with attached FBO
@@ -192,7 +195,11 @@ public static class HeadlessClientBootstrap
             client.clientSystems ??= new ClientSystem[] { client.modHandler };
             client.TerrainChunkTesselator ??= new ChunkTesselator(client);
 
-            return new HeadlessClient(client, platform, screenManager, runningGameScreen, window, options, tempDataPath) { Logs = logs };
+            return new HeadlessClient(client, platform, screenManager, runningGameScreen, window, options, tempDataPath)
+            {
+                Logs = logs,
+                SettingsWatchersAtBoot = settingsWatchers,
+            };
         }
     }
 

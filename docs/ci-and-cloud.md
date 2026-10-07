@@ -64,3 +64,15 @@ Then set `VINTAGE_STORY=/opt/vs` and run the suite with `scripts/run-headless-li
 ## Slow runners
 
 Shared CI runners render in software and are often busy. Pharos tests wait in frames or server ticks for a condition, bounded by a generous limit, rather than for a fixed time or a fixed number of steps, so a slow runner only makes them slower. Write new scenarios the same way: step until the outcome is visible, with a limit, and assert after.
+
+The client also repeats an action while its control stays held past a quarter of a second of real time, which a slow runner reaches within a couple of frames. Drive one-off interactions through `session.Blocks`, which clicks once, rather than by holding a control for a number of frames.
+
+## Quick and full runs
+
+Every test marked with a scenario attribute is `Category=Live`: it boots a real client or server and takes seconds. `PharosTraits` names the traits. A class that boots a host without a scenario attribute adds `[Trait(PharosTraits.Category, PharosTraits.Live)]`. A quick run leaves those tests out:
+
+```bash
+dotnet test --filter "Category!=Live"
+```
+
+This repository's CI runs only the quick tests on pull requests. It runs the whole suite on `main`, every night, for pull requests labeled `full-ci`, and before every release. See [CONTRIBUTING.md](../CONTRIBUTING.md#ci-pipeline).

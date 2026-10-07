@@ -4,10 +4,12 @@ using Zaldaryon.Pharos.Bootstrap;
 using Zaldaryon.Pharos.Core;
 using Zaldaryon.Pharos.Server;
 using Zaldaryon.Pharos.Timing;
+using Zaldaryon.Pharos.XUnit;
 
 namespace Zaldaryon.Pharos.Tests.Engine;
 
 [Collection("Sequential")]
+[Trait(PharosTraits.Category, PharosTraits.Live)]
 public class EngineClientJoinTests
 {
     private static readonly TimeSpan JoinTimeout = TimeSpan.FromSeconds(120);

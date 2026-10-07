@@ -964,26 +964,40 @@ public sealed class HeadlessClient : IDisposable
         if (_disposed) return;
         _disposed = true;
 
-        if (_clientThread != null)
+        try
         {
-            // Engine teardown deletes GL objects and joins engine threads; it runs where the
-            // context and the engine's main thread are.
-            try
+            if (_clientThread != null)
             {
-                _clientThread.Invoke(DisposeCore);
+                // Engine teardown deletes GL objects and joins engine threads; it runs where the
+                // context and the engine's main thread are.
+                try
+                {
+                    _clientThread.Invoke(DisposeCore);
+                }
+                finally
+                {
+                    _clientThread.Dispose();
+                }
             }
-            finally
+            else
             {
-                _clientThread.Dispose();
-                NativeHeap.Trim();
+                DisposeCore();
             }
-
-            return;
         }
-
-        DisposeCore();
-        NativeHeap.Trim();
+        finally
+        {
+            // The settings watchers this client added would otherwise run against it when a later
+            // client changes a setting.
+            if (SettingsWatchersAtBoot != null) ClientSettingsWatchers.RemoveAddedSince(SettingsWatchersAtBoot);
+            NativeHeap.Trim();
+        }
     }
+
+    /// <summary>
+    /// The process-wide settings watchers registered before this client booted. The ones it
+    /// added are removed when it is disposed.
+    /// </summary>
+    internal HashSet<object>? SettingsWatchersAtBoot { get; set; }
 
     private void DisposeCore()
     {

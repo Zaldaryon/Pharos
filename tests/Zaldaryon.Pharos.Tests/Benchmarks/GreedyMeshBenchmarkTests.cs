@@ -1,5 +1,6 @@
 using Xunit;
 using Zaldaryon.Pharos.Benchmarks;
+using Zaldaryon.Pharos.XUnit;
 
 namespace Zaldaryon.Pharos.Tests.Benchmarks;
 
@@ -7,6 +8,7 @@ namespace Zaldaryon.Pharos.Tests.Benchmarks;
 /// Tests for GreedyMeshThroughputBenchmark across all complexity tiers.
 /// All tests are pure logic tests that don't require native libraries or GPU.
 /// </summary>
+[Trait(PharosTraits.Category, PharosTraits.Benchmark)]
 public class GreedyMeshBenchmarkTests
 {
     #region Configuration Tests

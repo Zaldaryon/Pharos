@@ -1,10 +1,27 @@
 name: CI
 
+# Two lanes. A pull request runs the quick lane: the build and every test that does not boot a
+# real client or server (Category!=Live) or measure throughput (Category!=Benchmark), on Linux.
+# The full lane runs the whole suite on Linux and Windows and against a dedicated server: on a
+# push to main, every night, by hand, for a pull request labeled full-ci, and before a release
+# (release.yml calls this workflow).
+
 on:
   push:
     branches: [main]
   pull_request:
     branches: [main]
+    types: [opened, synchronize, reopened, labeled]
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+  workflow_call:
+
+# A new push to a pull request supersedes the run in progress. Adding a label other than
+# full-ci gets a group of its own, so it cannot cancel a real run.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}${{ (github.event.action == 'labeled' && github.event.label.name != 'full-ci') && '-label' || '' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   DOTNET_NOLOGO: true
@@ -12,9 +29,53 @@ env:
   VS_VERSION: "1.22.7"
 
 jobs:
+  plan:
+    name: Plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      run: ${{ steps.plan.outputs.run }}
+      full: ${{ steps.plan.outputs.full }}
+      filter: ${{ steps.plan.outputs.filter }}
+    steps:
+      - name: Checkout repository
+        if: github.event_name == 'pull_request'
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Choose the lane
+        id: plan
+        env:
+          EVENT: ${{ github.event_name }}
+          ACTION: ${{ github.event.action }}
+          LABEL: ${{ github.event.label.name }}
+          FULL_CI_LABEL: ${{ contains(github.event.pull_request.labels.*.name, 'full-ci') }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          run=true
+          full=true
+          if [ "$EVENT" = "pull_request" ]; then
+            [ "$FULL_CI_LABEL" = "true" ] || full=false
+            # A label other than full-ci changes nothing to test.
+            if [ "$ACTION" = "labeled" ] && [ "$LABEL" != "full-ci" ]; then run=false; fi
+            # Documentation alone needs no build.
+            if ! git diff --name-only "$BASE_SHA" "$HEAD_SHA" | grep -qvE '(\.md$|^docs/|^LICENSE$)'; then run=false; fi
+          fi
+          filter=""
+          [ "$full" = "true" ] || filter="Category!=Live&Category!=Benchmark"
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+          echo "full=$full" >> "$GITHUB_OUTPUT"
+          echo "filter=$filter" >> "$GITHUB_OUTPUT"
+          echo "Lane: run=$run full=$full filter='$filter'"
+
   test-linux:
     name: Build and Test (Linux)
+    needs: plan
+    if: needs.plan.outputs.run == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     env:
       VS_CACHE_PATH: /home/runner/.vintagestory-cache
     steps:
@@ -28,8 +89,8 @@ jobs:
 
       - name: Install Mesa and Xvfb
         run: |
-          sudo apt-get update
-          sudo apt-get install -y mesa-utils libgl1-mesa-dri xvfb libopenal1 libglfw3 libglfw3-dev libcairo2 libcairo2-dev
+          timeout 600 sudo apt-get update
+          timeout 600 sudo apt-get install -y mesa-utils libgl1-mesa-dri xvfb libopenal1 libglfw3 libglfw3-dev libcairo2 libcairo2-dev
 
       - name: Cache Vintage Story
         id: cache-vs
@@ -73,11 +134,20 @@ jobs:
           PHAROS_VS_PLAYERUID: ${{ secrets.PHAROS_VS_PLAYERUID }}
           PHAROS_VS_SESSIONKEY: ${{ secrets.PHAROS_VS_SESSIONKEY }}
           PHAROS_VS_SESSIONSIGNATURE: ${{ secrets.PHAROS_VS_SESSIONSIGNATURE }}
-        run: xvfb-run -a -s "-screen 0 1280x720x24" dotnet test Pharos.sln -c Release --no-build
+          TEST_FILTER: ${{ needs.plan.outputs.filter }}
+        run: |
+          if [ -n "$TEST_FILTER" ]; then
+            xvfb-run -a -s "-screen 0 1280x720x24" dotnet test Pharos.sln -c Release --no-build --filter "$TEST_FILTER"
+          else
+            xvfb-run -a -s "-screen 0 1280x720x24" dotnet test Pharos.sln -c Release --no-build
+          fi
 
   remote-server-linux:
     name: Remote Dedicated Server (Linux)
+    needs: plan
+    if: needs.plan.outputs.run == 'true' && needs.plan.outputs.full == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     env:
       VS_CACHE_PATH: /home/runner/.vintagestory-cache
     steps:
@@ -96,8 +166,8 @@ jobs:
 
       - name: Install Mesa and Xvfb
         run: |
-          sudo apt-get update
-          sudo apt-get install -y mesa-utils libgl1-mesa-dri xvfb libopenal1 libglfw3 libglfw3-dev libcairo2 libcairo2-dev
+          timeout 600 sudo apt-get update
+          timeout 600 sudo apt-get install -y mesa-utils libgl1-mesa-dri xvfb libopenal1 libglfw3 libglfw3-dev libcairo2 libcairo2-dev
 
       - name: Cache Vintage Story
         id: cache-vs
@@ -150,7 +220,10 @@ jobs:
 
   test-windows:
     name: Build and Test (Windows)
+    needs: plan
+    if: needs.plan.outputs.run == 'true' && needs.plan.outputs.full == 'true'
     runs-on: windows-latest
+    timeout-minutes: 90
     env:
       VS_CACHE_PATH: C:\vintagestory-cache
     steps:
@@ -215,7 +288,9 @@ jobs:
   benchmark-baselines:
     name: Validate Benchmark Baselines
     runs-on: ubuntu-latest
-    needs: [test-linux]
+    needs: plan
+    if: needs.plan.outputs.run == 'true'
+    timeout-minutes: 5
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4

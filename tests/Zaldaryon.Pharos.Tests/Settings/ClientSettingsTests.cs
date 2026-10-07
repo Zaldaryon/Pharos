@@ -45,6 +45,7 @@ public class ClientSettingsProfileTests
 
 [Collection("Sequential")]
 [ClientSetting("viewDistance", 96)]
+[Trait(PharosTraits.Category, PharosTraits.Live)]
 public class LiveClientSettingsTests : ClientServerScenarioBase
 {
     protected override HeadlessClientOptions ClientOptions => new()
