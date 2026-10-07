@@ -202,6 +202,30 @@ protected override IEnumerable<string> AllowedLoggedErrors => ["Failed to load o
 
 The errors are taken when the test body ends, before teardown, so what the game logs while it shuts down does not count. A pooled host starts each test with empty logs.
 
+## Client settings
+
+`HeadlessClient.Settings` reads and changes settings live, by their keys in `clientsettings.json`, as the settings menu does. Watchers fire, and a graphics change rebuilds the frame buffers and reloads the shaders. `Apply` returns a handle that puts the previous values back:
+
+```csharp
+using (client.Settings.Apply(ClientSettingsProfile.Of("far", ("viewDistance", 256))))
+{
+    await session.StepFramesAsync(30);
+}
+```
+
+`ClientSettingsProfile.Presets` holds the game's graphics presets (`minimum` to `maximum`) with the settings the graphics menu applies for each. A theory runs once per preset:
+
+```csharp
+[Theory, ClientSettingsMatrix("minimum", "high")]
+public async Task WorldRenders(ClientSettingsProfile profile)
+{
+    using IDisposable _ = Client!.Settings.Apply(profile);
+    await Session!.StepFramesAsync(10);
+}
+```
+
+`[ClientSetting("viewDistance", 96)]` on a scenario class applies a setting to each of its tests once the client is up, and restores it when the test ends. Settings are process-wide in the game, so always restore what a test changes.
+
 ## Threads
 
 The engine-mode client runs on a dedicated main thread, and an embedded server on a dedicated game thread, as in the game. Pharos marshals boot, frames, captures and teardown there, whichever thread the test runs on. Code that touches GL or queues engine main-thread work should use `HeadlessClient.RunOnClientThread(...)`, and code that touches live server state should use `EmbeddedServerHost.RunOnGameThread(...)`.

@@ -31,6 +31,7 @@ namespace Zaldaryon.Pharos.XUnit;
 /// </remarks>
 public abstract class ClientScenarioBase : IAsyncLifetime
 {
+    private IDisposable? _classSettings;
     private ClientIsolationManager? _isolationManager;
     private IDisposable? _gate;
     private PooledClient? _pooled;
@@ -117,6 +118,11 @@ public abstract class ClientScenarioBase : IAsyncLifetime
 
             Client = _pooled.Client;
             GetIsolationManager().PrepareForTest(Client);
+
+            if (ScenarioAttributes.ClientSettings(GetType()) is { } settings)
+            {
+                _classSettings = Client.Settings.Apply(settings);
+            }
         }
         catch
         {
@@ -132,6 +138,16 @@ public abstract class ClientScenarioBase : IAsyncLifetime
     public virtual Task DisposeAsync()
     {
         IReadOnlyList<LogEntry> loggedErrors = LoggedErrorGate.Collect(FailOnLoggedErrors, AllowedLoggedErrors, Client?.Logs);
+
+        // Settings are process-wide, and a pooled client serves the next test as it is left.
+        try
+        {
+            _classSettings?.Dispose();
+        }
+        finally
+        {
+            _classSettings = null;
+        }
 
         try
         {

@@ -38,6 +38,7 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime
     private EmbeddedServerHost? _serverHost;
     private HeadlessClient? _client;
     private ClientServerLoopbackSession? _session;
+    private IDisposable? _classSettings;
     private bool _disposed;
     private IDisposable? _gate;
     private string? _clientModsDirectory;
@@ -217,6 +218,11 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime
                     "Override WaitForPlayerJoinOnInit to false for manual join control.");
             }
         }
+
+        if (ScenarioAttributes.ClientSettings(GetType()) is { } settings)
+        {
+            _classSettings = _client.Settings.Apply(settings);
+        }
     }
 
     /// <summary>
@@ -228,6 +234,17 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime
         _disposed = true;
 
         IReadOnlyList<LogEntry> loggedErrors = LoggedErrorGate.Collect(FailOnLoggedErrors, AllowedLoggedErrors, _client?.Logs, _serverHost?.Logs);
+
+        // Settings are process-wide: the next scenario's client must not inherit them.
+        try
+        {
+            _classSettings?.Dispose();
+        }
+        catch
+        {
+            // Ignore settings restore errors during teardown
+        }
+        _classSettings = null;
 
         foreach (ServerTestPlayer player in _testPlayers)
         {
