@@ -1,0 +1,11 @@
+{
+  "type": "code",
+  "modid": "pharosclientmod",
+  "name": "Pharos Client Mod",
+  "version": "1.0.0",
+  "side": "Universal",
+  "requiredOnClient": true,
+  "description": "Source mod the client command tests stage: it registers a client command with outcomes the tests assert on.",
+  "authors": ["Pharos"],
+  "dependencies": { "game": "" }
+}

@@ -185,6 +185,23 @@ public sealed class HeadlessClient : IDisposable
     public SoundRecorder Sounds { get; } = new();
 
     /// <summary>
+    /// Runs the client's chat commands, the ones that start with a dot, and returns their result.
+    /// See <see cref="ClientCommandDriver"/>.
+    /// </summary>
+    public ClientCommandDriver Commands => _commands ??= new ClientCommandDriver(this);
+
+    private ClientCommandDriver? _commands;
+
+    /// <summary>
+    /// Steps one frame for a driver that waits on the game: the whole session's when the client is
+    /// in a <see cref="ClientServerLoopbackSession"/>, so the server keeps ticking, and the
+    /// client's own frame otherwise.
+    /// </summary>
+    internal System.Func<CancellationToken, Task>? SessionStepper { get; set; }
+
+    internal Task StepAsync(CancellationToken ct) => SessionStepper?.Invoke(ct) ?? Frame(ct: ct);
+
+    /// <summary>
     /// The client's settings, read and changed live as the settings menu does. See
     /// <see cref="ClientSettingsDriver"/>.
     /// </summary>
@@ -614,6 +631,8 @@ public sealed class HeadlessClient : IDisposable
     {
         ArgumentException.ThrowIfNullOrEmpty(host);
         ConnectOverNetwork(host, port, auth);
+        // The remote server runs on its own: waiting drivers step only this client.
+        SessionStepper = null;
         return new RemoteServerSession(this, host, port);
     }
 
