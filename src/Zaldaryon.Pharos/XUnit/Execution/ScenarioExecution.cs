@@ -60,8 +60,19 @@ internal static class ScenarioTimeouts
     /// The timeout of a scenario test in milliseconds, 0 for none: the attribute's xUnit
     /// <c>Timeout</c> when set, else its <c>TimeoutMs</c>, scaled by <c>PHAROS_TIMEOUT_SCALE</c>.
     /// </summary>
+    private static readonly AsyncLocal<int?> s_override = new();
+
+    /// <summary>Replaces the attribute's timeout on this flow, in milliseconds: the smoke runner's <c>--timeout</c>.</summary>
+    internal static int? Override
+    {
+        get => s_override.Value;
+        set => s_override.Value = value;
+    }
+
     public static int Of(ITestMethod testMethod)
     {
+        if (Override is { } overridden) return overridden;
+
         IAttributeInfo? attribute = testMethod.Method.GetCustomAttributes(typeof(FactAttribute)).FirstOrDefault();
         if (attribute == null) return 0;
 

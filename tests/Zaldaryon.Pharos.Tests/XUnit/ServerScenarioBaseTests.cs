@@ -35,6 +35,12 @@ public class ServerScenarioBaseTests
     }
 
     [Fact]
+    public void CommandResult_Ok_ReturnsFalseForAnUnknownCommand()
+    {
+        Assert.False(new CommandResult(EnumCommandStatus.NoSuchCommand, null).Ok);
+    }
+
+    [Fact]
     public void CommandResult_Ok_ReturnsTrueForDeferred()
     {
         var result = new CommandResult(EnumCommandStatus.Deferred, null);

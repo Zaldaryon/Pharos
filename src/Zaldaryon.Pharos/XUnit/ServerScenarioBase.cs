@@ -1,4 +1,5 @@
 using Vintagestory.API.Common;
+using Vintagestory.API.Config;
 using Vintagestory.API.Server;
 using Vintagestory.Server;
 using Xunit;
@@ -430,6 +431,15 @@ public abstract class ServerScenarioBase : IAsyncLifetime, IScenarioLifecycle
         }
     }
 
+    /// <summary>The caller the game gives a command typed into the server console: an admin with every privilege.</summary>
+    internal static Caller ConsoleCaller() => new()
+    {
+        Type = EnumCallerType.Console,
+        CallerRole = "admin",
+        CallerPrivileges = ["*"],
+        FromChatGroupId = GlobalConstants.ConsoleGroup,
+    };
+
     private Task<CommandResult> ExecuteCommandCore(string command, Caller? caller)
     {
         TaskCompletionSource<CommandResult> tcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -446,12 +456,13 @@ public abstract class ServerScenarioBase : IAsyncLifetime, IScenarioLifecycle
         TextCommandCallingArgs args = new()
         {
             RawArgs = new CmdArgs(rawArgs),
-            Caller = caller ?? new Caller { Type = EnumCallerType.Console }
+            Caller = caller ?? ConsoleCaller()
         };
 
         // Execute command with callback for async completion, on the server's game thread like a
         // command typed into the server console
-        void Execute() => Api!.ChatCommands.ExecuteUnparsed(cmdName, args, result =>
+        // ExecuteUnparsed takes the text as typed: it drops the leading slash itself.
+        void Execute() => Api!.ChatCommands.ExecuteUnparsed("/" + normalizedCommand, args, result =>
         {
             CommandResult cmdResult = new(
                 result.Status,

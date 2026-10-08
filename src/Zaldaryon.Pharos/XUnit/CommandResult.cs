@@ -14,9 +14,10 @@ public sealed record CommandResult(
     object? ReturnValue = null)
 {
     /// <summary>
-    /// Returns true if the command executed successfully (not Error or UnknownLegacy).
+    /// Returns true if the command ran and succeeded, or was deferred: not an error, not an
+    /// unknown command.
     /// </summary>
-    public bool Ok => Status is not EnumCommandStatus.Error and not EnumCommandStatus.UnknownLegacy;
+    public bool Ok => Status is EnumCommandStatus.Success or EnumCommandStatus.Deferred;
 
     /// <summary>
     /// Creates a successful command result with an optional message.
