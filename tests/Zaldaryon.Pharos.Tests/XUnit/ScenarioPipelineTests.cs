@@ -86,7 +86,8 @@ public class ScenarioPipelineTests
 
         Assert.Equal(["init", "before", "body", "timedOut:stopped", "capture:timedOut", "dispose"], Recorder.Events);
         Assert.StartsWith(typeof(TestTimeoutException).FullName + ": ", result.FailureMessage);
-        Assert.Contains("200", result.FailureMessage);
+        // 200 ms, times PHAROS_TIMEOUT_SCALE where a slow lane sets it.
+        Assert.Matches(@"timed out after \d+ milliseconds", result.FailureMessage);
         Assert.True(Recorder.BodyAborted.Task.Wait(TimeSpan.FromSeconds(5)), "The body was not stopped at its next step");
     }
 
