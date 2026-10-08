@@ -30,6 +30,7 @@ internal static class ScenarioHostPool
     private static PooledHost? s_pooled;
 
     private static int s_reclaim;
+    private static string? s_poisoned;
 
     static ScenarioHostPool()
     {
@@ -41,6 +42,7 @@ internal static class ScenarioHostPool
     /// </summary>
     public static async Task<IDisposable> EnterAsync(TimeSpan timeout, CancellationToken ct = default)
     {
+        ThrowIfPoisoned();
         if (!await s_gate.WaitAsync(timeout, ct).ConfigureAwait(false))
         {
             throw new TimeoutException(
@@ -48,7 +50,34 @@ internal static class ScenarioHostPool
                 "Scenarios run one at a time because the game keeps process-wide static state.");
         }
 
+        // The scenario that held the gate may have wedged the game on its way out.
+        try
+        {
+            ThrowIfPoisoned();
+        }
+        catch
+        {
+            s_gate.Release();
+            throw;
+        }
+
         return new Releaser();
+    }
+
+    /// <summary>
+    /// Stops every later scenario in this process from booting: a timed-out scenario left the
+    /// game's threads busy, and a new host would share the game's process-wide state with them.
+    /// </summary>
+    internal static void Poison(string reason) => Volatile.Write(ref s_poisoned, reason);
+
+    private static void ThrowIfPoisoned()
+    {
+        if (Volatile.Read(ref s_poisoned) is { } reason)
+        {
+            throw new InvalidOperationException(
+                $"No scenario can run in this process any more: {reason} kept running on the game's threads after it timed out. " +
+                "See its failure artifacts for where it was stuck.");
+        }
     }
 
     /// <summary>

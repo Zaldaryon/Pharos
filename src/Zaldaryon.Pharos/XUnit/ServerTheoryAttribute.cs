@@ -16,6 +16,7 @@ namespace Zaldaryon.Pharos.XUnit;
 /// Use <see cref="ServerModsAttribute"/> to stage mods before server bootstrap.
 /// </para>
 /// </remarks>
+[XunitTestCaseDiscoverer(Execution.ScenarioTheoryDiscoverer.TypeName, Execution.ScenarioTheoryDiscoverer.AssemblyName)]
 [TraitDiscoverer(LiveTraitDiscoverer.TypeName, LiveTraitDiscoverer.AssemblyName)]
 [AttributeUsage(AttributeTargets.Method, AllowMultiple = false, Inherited = true)]
 public sealed class ServerTheoryAttribute : Xunit.TheoryAttribute, ITraitAttribute
@@ -32,8 +33,9 @@ public sealed class ServerTheoryAttribute : Xunit.TheoryAttribute, ITraitAttribu
     public WorldIsolation Isolation { get; set; } = WorldIsolation.Rollback;
 
     /// <summary>
-    /// Gets or sets the watchdog timeout in milliseconds.
-    /// When not set, uses <see cref="DefaultTimeoutMs"/> (120 seconds).
+    /// The watchdog timeout in milliseconds for the test body, 0 for none. A body that runs longer
+    /// fails, and its failure artifacts are saved. Scaled by <c>PHAROS_TIMEOUT_SCALE</c>. xUnit's own
+    /// <c>Timeout</c>, when set, takes its place.
     /// </summary>
     public int TimeoutMs { get; set; } = DefaultTimeoutMs;
 

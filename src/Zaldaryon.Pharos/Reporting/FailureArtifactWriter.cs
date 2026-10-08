@@ -3,6 +3,7 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Encodings.Web;
 using System.Text.Json;
 using Vintagestory.API.Config;
 using Zaldaryon.Pharos.Core;
@@ -34,8 +35,20 @@ internal sealed record ScenarioFailure
     /// <summary>The server, when the scenario has one.</summary>
     public EmbeddedServerHost? Server { get; init; }
 
-    /// <summary>The lockstep session, when the scenario has one.</summary>
-    public ClientServerLoopbackSession? Session { get; init; }
+    /// <summary>The frames the client stepped during the test, when known.</summary>
+    public long? Frames { get; init; }
+
+    /// <summary>The ticks the server ran during the test, when known.</summary>
+    public long? ServerTicks { get; init; }
+
+    /// <summary>
+    /// Whether the client may be reached for a screenshot: false when a timed-out body may still
+    /// hold its GL context.
+    /// </summary>
+    public bool ClientReachable { get; init; } = true;
+
+    /// <summary>Where the server keeps its files, when the server did not boot far enough to say.</summary>
+    public string? ServerDataPath { get; init; }
 
     /// <summary>The server's sandbox, kept with <c>PHAROS_KEEP_SANDBOX=1</c>.</summary>
     public ServerSandbox? Sandbox { get; init; }
@@ -124,14 +137,33 @@ internal static class FailureArtifactWriter
     private static readonly string s_processRunId = Guid.NewGuid().ToString("N")[..12];
     private static readonly object s_directoryLock = new();
 
+    private static readonly AsyncLocal<string?> s_rootOverride = new();
+
+    /// <summary>Saves this flow's artifacts under another folder, for tests of Pharos itself.</summary>
+    internal static string? RootOverride
+    {
+        get => s_rootOverride.Value;
+        set => s_rootOverride.Value = value;
+    }
+
     /// <summary>The root folder artifacts are saved under.</summary>
     public static string Root =>
-        Environment.GetEnvironmentVariable(DirectoryVariable) is { Length: > 0 } root
+        RootOverride is { } overridden ? overridden
+        : Environment.GetEnvironmentVariable(DirectoryVariable) is { Length: > 0 } root
             ? Path.GetFullPath(root)
             : Path.Combine(AppContext.BaseDirectory, "TestResults", "pharos");
 
+    private static readonly AsyncLocal<bool?> s_keepSandboxOverride = new();
+
+    /// <summary>Overrides <c>PHAROS_KEEP_SANDBOX</c> on this flow, for tests of Pharos itself.</summary>
+    internal static bool? KeepSandboxOverride
+    {
+        get => s_keepSandboxOverride.Value;
+        set => s_keepSandboxOverride.Value = value;
+    }
+
     /// <summary>Whether <c>PHAROS_KEEP_SANDBOX</c> asks to keep failed sandboxes.</summary>
-    public static bool KeepSandbox => Environment.GetEnvironmentVariable(KeepSandboxVariable) is "1" or "true" or "TRUE" or "True";
+    public static bool KeepSandbox => KeepSandboxOverride ?? Environment.GetEnvironmentVariable(KeepSandboxVariable) is "1" or "true" or "TRUE" or "True";
 
     /// <summary>The run id written to run.json.</summary>
     public static string RunId =>
@@ -168,7 +200,7 @@ internal static class FailureArtifactWriter
 
         FailureArtifacts artifacts = failure.Artifacts;
 
-        if (artifacts.HasFlag(FailureArtifacts.Screenshot) && failure.Client is { IsDisposed: false } client)
+        if (artifacts.HasFlag(FailureArtifacts.Screenshot) && failure.ClientReachable && failure.Client is { IsDisposed: false } client)
         {
             Step("screenshot.png", files, problems, () => client.CaptureFrame().SaveToPng(Path.Combine(directory, "screenshot.png")));
         }
@@ -184,8 +216,9 @@ internal static class FailureArtifactWriter
             if (failure.Server != null)
             {
                 Step("server.log", files, problems, () => WriteLog(failure.Server.Logs, Path.Combine(directory, "server.log")));
-                CopyGameLogs(failure.Server.DataPath, Path.Combine(directory, "server-logs"), "server-logs", files, problems);
             }
+
+            CopyGameLogs(failure.Server?.DataPath ?? failure.ServerDataPath, Path.Combine(directory, "server-logs"), "server-logs", files, problems);
         }
 
         if (artifacts.HasFlag(FailureArtifacts.Packets) && failure.Client is { } recorded && recorded.PacketRecorder.PacketCount > 0)
@@ -262,21 +295,36 @@ internal static class FailureArtifactWriter
     /// <summary>Runs one step with a time limit; a step that fails or hangs is listed, not thrown.</summary>
     private static void Step(string name, List<string> files, List<string> problems, Action step)
     {
-        try
+        // A thread of its own: a wedged game must not take a thread pool thread with it.
+        Exception? error = null;
+        Thread thread = new(() =>
         {
-            Task task = Task.Run(step);
-            if (!task.Wait(StepTimeout))
+            try
             {
-                problems.Add($"{name} (gave up after {StepTimeout.TotalSeconds:0} s)");
-                return;
+                step();
             }
-
-            files.Add(name);
-        }
-        catch (Exception ex)
+            catch (Exception ex)
+            {
+                error = ex;
+            }
+        })
         {
-            Exception inner = ex is AggregateException { InnerException: { } single } ? single : ex;
-            problems.Add($"{name} ({inner.GetType().Name}: {inner.Message})");
+            IsBackground = true,
+            Name = "Pharos failure artifacts",
+        };
+        thread.Start();
+
+        if (!thread.Join(StepTimeout))
+        {
+            problems.Add($"{name} (gave up after {StepTimeout.TotalSeconds:0} s)");
+        }
+        else if (error != null)
+        {
+            problems.Add($"{name} ({error.GetType().Name}: {error.Message})");
+        }
+        else
+        {
+            files.Add(name);
         }
     }
 
@@ -346,8 +394,8 @@ internal static class FailureArtifactWriter
             ["playStyle"] = failure.World?.PlayStyle,
             ["isolation"] = failure.Isolation,
             ["clientBootMode"] = failure.Client?.BootMode.ToString(),
-            ["frames"] = failure.Session?.FrameCount,
-            ["serverTicks"] = failure.Session?.ServerTickCount ?? failure.Server?.TickCount,
+            ["frames"] = failure.Frames,
+            ["serverTicks"] = failure.ServerTicks,
             ["runId"] = RunId,
             ["timeUtc"] = DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture),
             ["os"] = RuntimeInformation.OSDescription,
@@ -357,7 +405,7 @@ internal static class FailureArtifactWriter
             ["kept"] = kept.ToArray(),
         };
 
-        File.WriteAllText(path, JsonSerializer.Serialize(info, new JsonSerializerOptions { WriteIndented = true }), new UTF8Encoding(false));
+        File.WriteAllText(path, JsonSerializer.Serialize(info, new JsonSerializerOptions { WriteIndented = true, Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping }), new UTF8Encoding(false));
     }
 
     /// <summary>The version of the game that is loaded, which can differ from the one Pharos was built against.</summary>

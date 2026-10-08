@@ -27,6 +27,7 @@ using Zaldaryon.Pharos.Timing;
 using Zaldaryon.Pharos.Network;
 using Zaldaryon.Pharos.UI;
 using Zaldaryon.Pharos.World;
+using Zaldaryon.Pharos.XUnit.Execution;
 
 namespace Zaldaryon.Pharos.Core;
 
@@ -102,6 +103,7 @@ public sealed class HeadlessClient : IDisposable
     public void RunOnClientThread(Action action)
     {
         ArgumentNullException.ThrowIfNull(action);
+        ScenarioAbort.ThrowIfAborted();
         if (_clientThread == null) action();
         else _clientThread.Invoke(action);
     }
@@ -113,6 +115,7 @@ public sealed class HeadlessClient : IDisposable
     public T RunOnClientThread<T>(Func<T> func)
     {
         ArgumentNullException.ThrowIfNull(func);
+        ScenarioAbort.ThrowIfAborted();
         return _clientThread == null ? func() : _clientThread.Invoke(func);
     }
 
@@ -227,6 +230,9 @@ public sealed class HeadlessClient : IDisposable
     /// <see cref="ManagedLeakTracker.GetLeakReport"/> after to detect leaks.
     /// </summary>
     public ManagedLeakTracker ManagedLeaks { get; } = new();
+
+    /// <summary>Whether <see cref="RetainDataPath"/> was called.</summary>
+    internal bool IsDataPathRetained => _retainDataPath;
 
     /// <summary>The client's data path: the one given in the options, or its temporary one.</summary>
     internal string? DataPath => Options.DataPath ?? _tempDataPath;

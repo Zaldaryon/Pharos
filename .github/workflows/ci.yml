@@ -135,6 +135,7 @@ jobs:
           PHAROS_VS_PLAYERUID: ${{ secrets.PHAROS_VS_PLAYERUID }}
           PHAROS_VS_SESSIONKEY: ${{ secrets.PHAROS_VS_SESSIONKEY }}
           PHAROS_VS_SESSIONSIGNATURE: ${{ secrets.PHAROS_VS_SESSIONSIGNATURE }}
+          PHAROS_ARTIFACTS: ${{ github.workspace }}/artifacts/pharos
           TEST_FILTER: ${{ needs.plan.outputs.filter }}
         run: |
           if [ -n "$TEST_FILTER" ]; then
@@ -142,6 +143,15 @@ jobs:
           else
             xvfb-run -a -s "-screen 0 1280x720x24" dotnet test Pharos.sln -c Release --no-build
           fi
+
+      - name: Upload failure artifacts
+        if: failure() || cancelled()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pharos-failures-linux-${{ github.run_attempt }}
+          path: ${{ github.workspace }}/artifacts/pharos
+          if-no-files-found: ignore
+          retention-days: 14
 
   remote-server-linux:
     name: Remote Dedicated Server (Linux)
@@ -214,7 +224,17 @@ jobs:
           MESA_GL_VERSION_OVERRIDE: "4.5"
           MESA_GLSL_VERSION_OVERRIDE: "450"
           ALSOFT_DRIVERS: null
+          PHAROS_ARTIFACTS: ${{ github.workspace }}/artifacts/pharos
         run: xvfb-run -a -s "-screen 0 1280x720x24" dotnet test Pharos.sln -c Release --no-build --filter "FullyQualifiedName~RemoteServerTests"
+
+      - name: Upload failure artifacts
+        if: failure() || cancelled()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pharos-failures-remote-server-${{ github.run_attempt }}
+          path: ${{ github.workspace }}/artifacts/pharos
+          if-no-files-found: ignore
+          retention-days: 14
 
       - name: Server log
         if: always()
@@ -285,7 +305,20 @@ jobs:
           LIBGL_ALWAYS_INDIRECT: 0
           MESA_GL_VERSION_OVERRIDE: "4.5"
           MESA_GLSL_VERSION_OVERRIDE: "450"
+          PHAROS_ARTIFACTS: ${{ github.workspace }}/artifacts/pharos
+          # Software rendering on the Windows runner is the slowest lane; the watchdog only
+          # catches hangs, so it gets twice the time.
+          PHAROS_TIMEOUT_SCALE: "2"
         run: dotnet test Pharos.sln -c Release --no-build
+
+      - name: Upload failure artifacts
+        if: failure() || cancelled()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pharos-failures-windows-${{ github.run_attempt }}
+          path: ${{ github.workspace }}/artifacts/pharos
+          if-no-files-found: ignore
+          retention-days: 14
 
   benchmark-baselines:
     name: Validate Benchmark Baselines

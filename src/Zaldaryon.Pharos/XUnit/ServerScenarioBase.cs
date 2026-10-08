@@ -2,9 +2,10 @@ using Vintagestory.API.Common;
 using Vintagestory.API.Server;
 using Vintagestory.Server;
 using Xunit;
-using Zaldaryon.Pharos.Server;
-
 using Zaldaryon.Pharos.Reporting;
+using Zaldaryon.Pharos.Server;
+using Zaldaryon.Pharos.XUnit.Execution;
+
 namespace Zaldaryon.Pharos.XUnit;
 
 /// <summary>
@@ -33,8 +34,9 @@ namespace Zaldaryon.Pharos.XUnit;
 /// through their completion callback.
 /// </para>
 /// </remarks>
-public abstract class ServerScenarioBase : IAsyncLifetime
+public abstract class ServerScenarioBase : IAsyncLifetime, IScenarioLifecycle
 {
+    private readonly ScenarioRun _run = new();
     private EmbeddedServerHost? _host;
     private IDisposable? _gate;
     private PooledServer? _pooled;
@@ -90,6 +92,20 @@ public abstract class ServerScenarioBase : IAsyncLifetime
     protected virtual IEnumerable<string> AllowedLoggedErrors => [];
 
     /// <summary>
+    /// What the test saves when it fails or times out; see <see cref="Reporting.FailureArtifacts"/>
+    /// and <c>docs/failure-artifacts.md</c>. A server scenario has no client, so no screenshot.
+    /// </summary>
+    protected virtual FailureArtifacts Artifacts => FailureArtifacts.Default;
+
+    /// <summary>
+    /// Called when the test fails, while the server is still up, to add files of the test's own
+    /// to <paramref name="directory"/>, the folder of its failure artifacts.
+    /// </summary>
+    protected virtual void OnFailure(string directory)
+    {
+    }
+
+    /// <summary>
     /// Boots the server, or takes the pooled one when <see cref="WorldIsolation"/> allows it.
     /// </summary>
     public virtual async Task InitializeAsync()
@@ -116,10 +132,12 @@ public abstract class ServerScenarioBase : IAsyncLifetime
                     ScenarioAttributes.StageMods(mods, sandbox.ModsPath);
                     _pooled = new PooledServer(sandbox, EmbeddedServerHost.Boot(sandbox, options), key);
                 }
-                catch
+                catch (Exception ex)
                 {
+                    Exception failure = ScenarioRun.SetupFailed(ex, (error, test) => Describe(test, error, timedOut: false, server: null, sandbox));
                     sandbox.Dispose();
-                    throw;
+                    if (ReferenceEquals(failure, ex)) throw;
+                    throw failure;
                 }
 
                 if (WorldIsolation == WorldIsolation.Rollback)
@@ -130,13 +148,49 @@ public abstract class ServerScenarioBase : IAsyncLifetime
 
             _host = _pooled.Host;
         }
-        catch
+        catch (Exception ex)
         {
+            Exception failure = ScenarioRun.SetupFailed(ex, (error, test) => Describe(test, error, timedOut: false, _pooled?.Host, _pooled?.Sandbox));
+            if (_pooled != null && _host == null)
+            {
+                _pooled.Dispose();
+                _pooled = null;
+                ScenarioHostPool.HostDisposed();
+            }
+
             _gate.Dispose();
             _gate = null;
-            throw;
+            if (ReferenceEquals(failure, ex)) throw;
+            throw failure;
         }
     }
+
+    void IScenarioLifecycle.BeforeBody() => _run.BodyStarting(frames: null, ticks: _host?.TickCount);
+
+    void IScenarioLifecycle.CheckLoggedErrors() =>
+        LoggedErrorGate.ThrowIfAny(LoggedErrorGate.Collect(FailOnLoggedErrors, AllowedLoggedErrors, _host?.Logs));
+
+    void IScenarioLifecycle.BodyTimedOut(bool stillRunning) => _run.BodyTimedOut(stillRunning);
+
+    string? IScenarioLifecycle.CaptureFailure(ScenarioTestInfo test, Exception exception, bool timedOut) =>
+        FailureArtifactWriter.Write(Describe(test, exception, timedOut, _host, _pooled?.Sandbox)).Summary();
+
+    private ScenarioFailure Describe(ScenarioTestInfo test, Exception exception, bool timedOut, EmbeddedServerHost? server, ServerSandbox? sandbox) => new()
+    {
+        DisplayName = test.DisplayName,
+        TestClass = test.TestClass,
+        MethodName = test.MethodName,
+        TimedOut = timedOut,
+        Exception = exception,
+        Server = server,
+        ServerDataPath = server?.DataPath ?? sandbox?.RootPath,
+        Sandbox = sandbox,
+        World = WorldOptions,
+        Isolation = WorldIsolation.ToString(),
+        ServerTicks = ScenarioRun.Since(_run.TicksAtStart, server?.TickCount),
+        Artifacts = Artifacts,
+        AddFiles = OnFailure,
+    };
 
     /// <summary>
     /// Stops the server, or pools it for the next test of this class under
@@ -144,7 +198,20 @@ public abstract class ServerScenarioBase : IAsyncLifetime
     /// </summary>
     public virtual Task DisposeAsync()
     {
-        IReadOnlyList<LogEntry> loggedErrors = LoggedErrorGate.Collect(FailOnLoggedErrors, AllowedLoggedErrors, _host?.Logs);
+        IReadOnlyList<LogEntry> loggedErrors = _run.PipelineChecksLoggedErrors
+            ? []
+            : LoggedErrorGate.Collect(FailOnLoggedErrors, AllowedLoggedErrors, _host?.Logs);
+
+        if (_run.Abandoned)
+        {
+            // The timed-out body still runs on the game thread: the host is left as it is.
+            _testPlayers.Clear();
+            _pooled = null;
+            _host = null;
+            _gate?.Dispose();
+            _gate = null;
+            return Task.CompletedTask;
+        }
 
         try
         {
@@ -157,7 +224,7 @@ public abstract class ServerScenarioBase : IAsyncLifetime
 
             if (_pooled != null)
             {
-                if (_pooled.Host.IsRunning
+                if (_pooled.Host.IsRunning && !_run.TimedOut && !_pooled.Sandbox.IsRetained
                     && (WorldIsolation == WorldIsolation.Recycle || (WorldIsolation == WorldIsolation.Rollback && _pooled.TryRollback())))
                 {
                     // The next test judges only what it logs itself.

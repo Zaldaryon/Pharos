@@ -1,3 +1,4 @@
+using Zaldaryon.Pharos.XUnit.Execution;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -130,6 +131,8 @@ public sealed class DeterministicFrameController
     /// </summary>
     public void Step(float dt = 1f / 60f)
     {
+        ScenarioAbort.ThrowIfAborted();
+
         if (dt <= 0f || float.IsNaN(dt) || float.IsInfinity(dt))
         {
             throw new ArgumentOutOfRangeException(nameof(dt), "Delta time must be positive and finite.");

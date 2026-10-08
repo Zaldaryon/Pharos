@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Runtime.ExceptionServices;
+using Zaldaryon.Pharos.XUnit.Execution;
 
 namespace Zaldaryon.Pharos.Platform;
 
@@ -55,12 +56,14 @@ internal sealed class EngineThread : IDisposable
     /// <summary>Runs <paramref name="func"/> on this thread and returns its result.</summary>
     public T Invoke<T>(Func<T> func)
     {
+        // A scenario body that ran out of time may not queue any more work.
+        ScenarioAbort.ThrowIfAborted();
         if (IsCurrent) return func();
         if (Volatile.Read(ref _disposed) != 0) throw new ObjectDisposedException(nameof(EngineThread));
 
         T result = default!;
         ExceptionDispatchInfo? error = null;
-        using ManualResetEventSlim done = new();
+        ManualResetEventSlim done = new();
 
         _work.Add(() =>
         {
@@ -78,7 +81,17 @@ internal sealed class EngineThread : IDisposable
             }
         });
 
-        done.Wait();
+        try
+        {
+            done.Wait(ScenarioAbort.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            // The work still runs and sets the event later, so it is not disposed here.
+            throw new ScenarioAbortedException();
+        }
+
+        done.Dispose();
         error?.Throw();
         return result;
     }
