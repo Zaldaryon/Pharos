@@ -118,7 +118,59 @@ What a restore does:
 - **Changed chunks:** swapped for their saved copy the way the game reloads a chunk from disk. Their entities are despawned, the saved ones are loaded with their original ids, and their block entities are initialized.
 - **Players:** any player who joined after the snapshot is forgotten, so a later player of the same name starts fresh.
 
-Not restored: the calendar and weather, world-level mod data, and tick listeners or event handlers a test registered. A chunk that unloads during a test is saved with its changes. A restore that fails leaves the next test a freshly booted server.
+Not restored: the calendar and weather, world-level mod data, and C# event handlers a test added (such as `Api.Event.PlayerJoin += ...`). A chunk that unloads during a test is saved with its changes. A restore that fails leaves the next test a freshly booted server.
+
+### Listeners a test leaves
+
+Before the world is restored, the rollback removes what was added since the world was captured:
+
+- tick listeners, delayed callbacks and event-bus listeners whose handler is the test's own: compiled into the test class's assembly or a base class's, lambdas and local functions included. Override `IsTestListener(Delegate)` to judge otherwise;
+- every block-position delayed callback scheduled since, whoever scheduled it and in whatever chunk, such as water still spreading: it carries on a change the restore undoes.
+
+Listeners the game or mods registered stay. A mod resets its own state on `pharos:rollback:restored`.
+
+### Mods and rollbacks
+
+Pharos fires two events on the server's event bus, on the game thread:
+
+| Event | When |
+|-------|------|
+| `pharos:rollback:captured` (`RollbackEvents.Captured`) | Once, when the world is captured after boot. |
+| `pharos:rollback:restored` (`RollbackEvents.Restored`) | After every rollback, before the next test starts. |
+
+The data is a `TreeAttribute` with `test`, the test whose world was captured or rolled back, and, for `restored`, `chunks`, how many chunks were restored. A mod that caches world state listens for `restored` and reloads it:
+
+```csharp
+api.Event.RegisterEventBusListener((string name, ref EnumHandling handling, IAttribute data) =>
+{
+    if (name == "pharos:rollback:restored") myCache.Clear();
+});
+```
+
+The scenario class gets the same through `OnRollbackCaptured()` and `OnRollbackRestored()`, which it can override. Listeners the class registers in `OnRollbackCaptured()` live as long as the server; the ones a test registers are removed by the next rollback, so a listener a test registers for `restored` is gone before the event fires. A handler or hook that throws fails the rollback, and the next test boots a fresh server. What the handlers log counts against the next test. Do not step the server from a handler.
+
+### Isolation report
+
+`Isolation` tells a test how its server was made ready:
+
+| `Kind` | Meaning |
+|--------|---------|
+| `FirstBoot` | The class's first test booted it. |
+| `RolledBack` | The previous test's server was kept and its world rolled back. `ChunksRestored`, `ListenersRemoved` and `Duration` say what that took. |
+| `Recycled` | The previous test's server was kept as it was. |
+| `Restarted` | It was booted again. `Reason` says why when a rollback was expected: the previous test stopped the server or timed out, its rollback failed, or another class used the pooled server in between. |
+
+Each test's output ends with how it was made ready, how it left the server, and a summary of the class so far:
+
+```
+isolation: rolled back (12 chunks, 3 listeners removed, 340 ms)
+after this test: rolled back (4 chunks, 0 listeners removed, 120 ms)
+MyTests so far: 1 first boot, 6 rolled back
+```
+
+A test's output shows in test explorers, in trx files, and in the console with `--logger "console;verbosity=detailed"`. A failed test's `run.json` holds the report as `isolationReport`.
+
+With `[ServerWorld(StrictIsolation = true)]` or an override of `StrictIsolation`, a test after which the world cannot be rolled back fails with an `IsolationException` naming why, instead of the next test quietly booting a fresh server. A test that timed out, or whose sandbox is kept for inspection, is not failed for it. In a client-server class that overrides `WaitForPlayerJoinOnInit` to false, nothing is ever rolled back, so `StrictIsolation` has no effect there.
 
 The same works outside the scenario base:
 

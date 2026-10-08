@@ -1,16 +1,25 @@
 using System;
 using Vintagestory.API.Client;
 using Vintagestory.API.Common;
+using Vintagestory.API.Server;
 
 namespace PharosClientMod;
 
 /// <summary>Registers <c>.pharoscmd</c>, a client command with one subcommand per outcome.</summary>
 public sealed class PharosClientModSystem : ModSystem
 {
+    private int _captured, _restored;
+
     public override bool ShouldLoad(EnumAppSide forSide) => forSide == EnumAppSide.Client;
 
     public override void StartClientSide(ICoreClientAPI api)
     {
+        api.Event.RegisterEventBusListener((string name, ref EnumHandling _, Vintagestory.API.Datastructures.IAttribute data) =>
+        {
+            if (name == "pharos:rollback:captured") _captured++;
+            if (name == "pharos:rollback:restored") _restored++;
+        });
+
         IChatCommand command = api.ChatCommands.Create("pharoscmd").WithDescription("Pharos client command test");
 
         command.BeginSubCommand("status")
@@ -36,9 +45,35 @@ public sealed class PharosClientModSystem : ModSystem
             .HandleWith(args => TextCommandResult.Success("done later: " + args[0]))
             .EndSubCommand();
 
+        command.BeginSubCommand("rollbacks")
+            .HandleWith(_ => TextCommandResult.Success($"captured={_captured} restored={_restored}"))
+            .EndSubCommand();
+
         command.BeginSubCommand("boom")
             .HandleWith(_ => throw new InvalidOperationException("pharoscmd boom"))
             .EndSubCommand();
+    }
+}
+
+/// <summary>Counts the rollback events on the server; <c>/pharosrollbacks</c> tells them.</summary>
+public sealed class PharosServerRollbackSystem : ModSystem
+{
+    private int _captured, _restored;
+
+    public override bool ShouldLoad(EnumAppSide forSide) => forSide == EnumAppSide.Server;
+
+    public override void StartServerSide(ICoreServerAPI api)
+    {
+        api.Event.RegisterEventBusListener((string name, ref EnumHandling _, Vintagestory.API.Datastructures.IAttribute data) =>
+        {
+            if (name == "pharos:rollback:captured") _captured++;
+            if (name == "pharos:rollback:restored") _restored++;
+        });
+
+        api.ChatCommands.Create("pharosrollbacks")
+            .WithDescription("Pharos rollback event counts")
+            .RequiresPrivilege(Privilege.controlserver)
+            .HandleWith(_ => TextCommandResult.Success($"captured={_captured} restored={_restored}"));
     }
 }
 

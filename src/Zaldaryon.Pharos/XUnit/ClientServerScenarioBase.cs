@@ -54,6 +54,9 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime, IScenarioLifecy
     private string? _clientModsDirectory;
     private WorldSnapshot? _baseline;
     private IDisposable? _baselineTracking;
+    private ListenerWatermark? _serverListeners;
+    private ListenerWatermark? _clientListeners;
+    private bool _setupFailed;
     private ClientServerPoolKey? _poolKey;
     private readonly List<ServerTestPlayer> _testPlayers = [];
 
@@ -93,16 +96,58 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime, IScenarioLifecy
     protected bool IsConnected => _session?.IsConnected ?? false;
 
     /// <summary>
-    /// Gets the world isolation mode used for tests in this class.
-    /// Override in derived classes to change isolation behavior.
+    /// Gets the world isolation mode used for tests in this class. Defaults to the
+    /// <see cref="ServerWorldAttribute.Isolation"/> of the class, or <see cref="WorldIsolation.Rollback"/>.
     /// </summary>
-    protected virtual WorldIsolation WorldIsolation => WorldIsolation.Rollback;
+    protected virtual WorldIsolation WorldIsolation =>
+        ScenarioAttributes.ServerWorld(GetType())?.Isolation ?? WorldIsolation.Rollback;
 
     /// <summary>
-    /// Gets the world configuration options for this scenario.
-    /// Override to customize world settings like seed, play style, or world type.
+    /// Whether a test whose world cannot be rolled back fails, under <see cref="WorldIsolation.Rollback"/>.
+    /// Defaults to <see cref="ServerWorldAttribute.StrictIsolation"/>.
     /// </summary>
-    protected virtual ServerWorldOptions WorldOptions => new();
+    protected virtual bool StrictIsolation => ScenarioAttributes.ServerWorld(GetType())?.StrictIsolation ?? false;
+
+    /// <summary>
+    /// How this test's server and client were made ready: booted, or kept from the previous test
+    /// with its world rolled back, with what it cost and why they were booted again when a
+    /// rollback was expected. Null until <see cref="InitializeAsync"/> completes.
+    /// </summary>
+    protected IsolationReport? Isolation { get; private set; }
+
+    /// <summary>
+    /// Called once the world has been captured for rollbacks, after
+    /// <see cref="RollbackEvents.Captured"/> has fired on the server and on the client.
+    /// </summary>
+    protected virtual void OnRollbackCaptured()
+    {
+    }
+
+    /// <summary>
+    /// Called once the world has been rolled back after this test and the client has it again,
+    /// after <see cref="RollbackEvents.Restored"/> has fired on the server and on the client, so
+    /// the class can reload state of its own before the next test. What it throws fails the
+    /// rollback.
+    /// </summary>
+    protected virtual void OnRollbackRestored()
+    {
+    }
+
+    /// <summary>
+    /// Whether a tick listener, delayed callback or event-bus listener added during a test, on the
+    /// server or the client, is the test's own, and so removed by a rollback. By default, a handler
+    /// compiled into this class's assembly or a base class's, other than Pharos's.
+    /// </summary>
+    protected virtual bool IsTestListener(Delegate handler) => ListenerWatermark.DeclaredIn(handler, IsolationLog.TestAssemblies(GetType()));
+
+    /// <summary>
+    /// Gets the world configuration options for this scenario. Defaults to the class-level
+    /// <see cref="ServerWorldAttribute"/> when there is one, and to the
+    /// <see cref="ServerWorldOptions"/> defaults otherwise. Override to customize world settings
+    /// like seed, play style, or world type.
+    /// </summary>
+    protected virtual ServerWorldOptions WorldOptions =>
+        ScenarioAttributes.ServerWorld(GetType()) != null ? ScenarioAttributes.WorldOptions(GetType()) : new();
 
     /// <summary>
     /// Gets the client configuration options for this scenario. An engine-mode client by default,
@@ -215,10 +260,12 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime, IScenarioLifecy
             {
                 Adopt(pooled);
                 ApplyClassSettings();
+                Isolation = IsolationLog.Prepared(GetType(), reused: true, recycled: false, TimeSpan.Zero);
                 return;
             }
 
             ScenarioHostPool.Clear();
+            long bootStart = System.Diagnostics.Stopwatch.GetTimestamp();
             await StartAsync().ConfigureAwait(false);
 
             // Checked before the pair is snapshotted or pooled: a pair that fails it is torn down.
@@ -232,7 +279,18 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime, IScenarioLifecy
             {
                 _baseline = _serverHost!.TakeSnapshot();
                 _baselineTracking = _serverHost.RunOnGameThread(() => _baseline.TrackChunksLoadedLater(_serverHost));
+
+                string? test = ScenarioTestInfo.Current?.DisplayName;
+                RollbackParticipants.Push(_serverHost, RollbackEvents.Captured, test, chunks: null);
+                RollbackParticipants.Push(_client!, RollbackEvents.Captured, test, chunks: null);
+                OnRollbackCaptured();
+
+                // After the hook: what the class sets up there lives as long as the pair.
+                _serverListeners = RollbackParticipants.Capture(_serverHost);
+                _clientListeners = RollbackParticipants.Capture(_client!);
             }
+
+            Isolation = IsolationLog.Prepared(GetType(), reused: false, recycled: false, System.Diagnostics.Stopwatch.GetElapsedTime(bootStart));
         }
         catch (Exception ex)
         {
@@ -243,6 +301,7 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime, IScenarioLifecy
             // gate must be released either way or every later scenario waits for it. Nothing it
             // throws may replace the setup's own failure.
             _run.SetupFailing();
+            _setupFailed = true;
             try
             {
                 await DisposeAsync().ConfigureAwait(false);
@@ -295,6 +354,7 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime, IScenarioLifecy
         Sandbox = _sandbox,
         World = WorldOptions,
         Isolation = WorldIsolation.ToString(),
+        IsolationReport = Isolation,
         Frames = ScenarioRun.Since(_run.FramesAtStart, _session?.FrameCount),
         ServerTicks = ScenarioRun.Since(_run.TicksAtStart, _session?.ServerTickCount),
         Artifacts = Artifacts,
@@ -393,6 +453,8 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime, IScenarioLifecy
 
         if (_run.Abandoned)
         {
+            IsolationLog.Left(GetType(), null, "the previous test timed out and was left running");
+
             // The timed-out body still drives the client and the server: they are left as they are.
             _classSettings = null;
             _testPlayers.Clear();
@@ -430,14 +492,34 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime, IScenarioLifecy
 
         _testPlayers.Clear();
 
-        bool reusable = !_run.TimedOut && _sandbox is { IsRetained: false } && _client is { IsDataPathRetained: false };
-        if (_poolKey != null && reusable && await TryRollbackAsync().ConfigureAwait(false))
+        string? fallback = _setupFailed ? "the test failed to start"
+            : _run.TimedOut ? "the test timed out"
+            : _sandbox is { IsRetained: true } || _client is { IsDataPathRetained: true } ? "the sandbox was kept for inspection"
+            : null;
+        bool strict = fallback == null && StrictIsolation;
+        IsolationReport? rolledBack = null;
+        if (_poolKey != null && fallback == null)
         {
-            ScenarioHostPool.Return(GetType(), _poolKey, Detach());
+            (rolledBack, fallback) = await TryRollbackAsync().ConfigureAwait(false);
+        }
+
+        IsolationLog.Left(GetType(), rolledBack, _poolKey != null ? fallback : null, kept: rolledBack != null);
+        IsolationException? isolationFailure = _poolKey != null && fallback != null && strict
+            ? new IsolationException($"The world could not be rolled back after this test: {fallback}.")
+            : null;
+
+        if (rolledBack != null)
+        {
+            ScenarioHostPool.Return(GetType(), _poolKey!, Detach());
             _gate?.Dispose();
             _gate = null;
-            LoggedErrorGate.ThrowIfAny(loggedErrors);
+            ScenarioFailures.ThrowAll(isolationFailure, () => LoggedErrorGate.ThrowIfAny(loggedErrors));
             return;
+        }
+
+        if (_poolKey != null && fallback != null)
+        {
+            ServerMain.Logger?.Warning("Pharos could not roll the world back, the next test boots a fresh server and client: {0}", fallback);
         }
 
         _baselineTracking?.Dispose();
@@ -494,24 +576,29 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime, IScenarioLifecy
         _gate?.Dispose();
         _gate = null;
 
-        LoggedErrorGate.ThrowIfAny(loggedErrors);
+        ScenarioFailures.ThrowAll(isolationFailure, () => LoggedErrorGate.ThrowIfAny(loggedErrors));
     }
 
     /// <summary>
     /// Puts the world back as it was when the client joined and readies the client for the next
-    /// test. False when the pair cannot be reused.
+    /// test: removes the listeners the test left, restores the world, waits until the client has
+    /// it, and tells mods and the class. Returns what it did, or why the pair cannot be reused.
     /// </summary>
-    private async Task<bool> TryRollbackAsync()
+    private async Task<(IsolationReport? Report, string? Failure)> TryRollbackAsync()
     {
+        long start = System.Diagnostics.Stopwatch.GetTimestamp();
         EmbeddedServerHost? server = _serverHost;
         HeadlessClient? client = _client;
         ClientServerLoopbackSession? session = _session;
-        if (_baseline == null || server == null || client == null || session == null) return false;
-        if (!server.IsRunning || client.IsDisposed || !session.IsConnected || session.IsLinkSevered || client.DisconnectSimulator.IsDisconnected) return false;
+        if (_baseline == null || server == null || client == null || session == null) return (null, "the world was never captured");
+        if (!server.IsRunning) return (null, "the server stopped");
+        if (client.IsDisposed) return (null, "the client was disposed");
+        if (!session.IsConnected || session.IsLinkSevered || client.DisconnectSimulator.IsDisconnected) return (null, "the client was disconnected");
 
         try
         {
-            if (!client.IsJoined || server.RunOnGameThread(() => server.Server.GetClientByPlayername(PlayerName) == null)) return false;
+            if (!client.IsJoined) return (null, "the client is no longer in the world");
+            if (server.RunOnGameThread(() => server.Server.GetClientByPlayername(PlayerName) == null)) return (null, "the player left the server");
 
             client.Controls.ReleaseAll();
             client.RunOnClientThread(() =>
@@ -524,7 +611,12 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime, IScenarioLifecy
             client.NetworkDegradation.Reset();
             client.PacketRecorder.Stop();
 
-            server.RestoreSnapshot(_baseline);
+            // Taken out before the restore, so the listeners the restore itself sets up for the
+            // world's block entities stay.
+            int listeners = RollbackParticipants.Remove(server, _serverListeners, IsTestListener)
+                + RollbackParticipants.Remove(client, _clientListeners, IsTestListener);
+
+            int chunks = server.RestoreSnapshot(_baseline);
 
             // The client has the world again once the server has sent every restored chunk.
             bool sent = await session.StepUntilAsync(
@@ -542,12 +634,23 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime, IScenarioLifecy
             client.Logs.Clear();
             server.Logs.Clear();
 
-            return sent && home && session.IsConnected && client.IsJoined;
+            if (!sent) return (null, "the server did not send the restored chunks within 600 frames");
+            if (!home) return (null, "the player did not get back to where it stood within 600 frames");
+            if (!session.IsConnected || !client.IsJoined) return (null, "the client was disconnected during the rollback");
+
+            // Told only once the pair is ready to be kept. What the handlers log counts against the
+            // next test.
+            string? test = ScenarioTestInfo.Current?.DisplayName;
+            string? failure = RollbackParticipants.Try($"A server {RollbackEvents.Restored} handler", () => RollbackParticipants.Push(server, RollbackEvents.Restored, test, chunks))
+                ?? RollbackParticipants.Try($"A client {RollbackEvents.Restored} handler", () => RollbackParticipants.Push(client, RollbackEvents.Restored, test, chunks))
+                ?? RollbackParticipants.Try(nameof(OnRollbackRestored), OnRollbackRestored);
+            if (failure != null) return (null, failure);
+
+            return (new IsolationReport(IsolationKind.RolledBack, null, chunks, listeners, System.Diagnostics.Stopwatch.GetElapsedTime(start)), null);
         }
         catch (Exception ex)
         {
-            ServerMain.Logger?.Warning("Pharos could not roll the world back, the next test boots a fresh server: {0}", ex);
-            return false;
+            return (null, $"the rollback threw {ex.GetType().Name}: {ex.Message}");
         }
     }
 
@@ -575,17 +678,21 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime, IScenarioLifecy
         _clientModsDirectory = pooled.ClientModsDirectory;
         _baseline = pooled.Baseline;
         _baselineTracking = pooled.BaselineTracking;
+        _serverListeners = pooled.ServerListeners;
+        _clientListeners = pooled.ClientListeners;
     }
 
     private PooledClientServer Detach()
     {
-        PooledClientServer pooled = new(_sandbox!, _serverHost!, _client!, _session!, _clientModsDirectory, _baseline!, _baselineTracking);
+        PooledClientServer pooled = new(_sandbox!, _serverHost!, _client!, _session!, _clientModsDirectory, _baseline!, _baselineTracking, _serverListeners, _clientListeners);
         _sandbox = null;
         _serverHost = null;
         _client = null;
         _session = null;
         _baseline = null;
         _baselineTracking = null;
+        _serverListeners = null;
+        _clientListeners = null;
         return pooled;
     }
 
@@ -601,7 +708,9 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime, IScenarioLifecy
         ClientServerLoopbackSession Session,
         string? ClientModsDirectory,
         WorldSnapshot Baseline,
-        IDisposable? BaselineTracking) : IDisposable
+        IDisposable? BaselineTracking,
+        ListenerWatermark? ServerListeners,
+        ListenerWatermark? ClientListeners) : IDisposable
     {
         public void Dispose()
         {

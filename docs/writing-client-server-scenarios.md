@@ -151,7 +151,7 @@ The default watchdog is 180 seconds. Override with `[ClientServerScenario(Timeou
 
 ## Isolation
 
-Override `WorldIsolation` to choose what the next test of the same class starts from:
+Override `WorldIsolation`, or set `[ServerWorld(Isolation = ...)]`, to choose what the next test of the same class starts from. `[ServerWorld]` on a client-server class also sets its world: seed, play style and world type.
 
 | Mode | Behavior |
 |------|----------|
@@ -165,6 +165,9 @@ Under `Rollback`, after each test:
 - **Joined player:** it goes back to where it stood, with the game mode and inventories it had.
 - **Client:** it is sent the restored chunks. Its held controls are released and its dialogs closed. Its packet recorder, network degradation, sound recorder and logs are reset.
 
+- **Listeners:** tick listeners, delayed callbacks and event-bus listeners the test registered, on the server and on the client, are removed, as are block-position callbacks the test's changes scheduled (see [Listeners a test leaves](writing-server-scenarios.md#listeners-a-test-leaves)).
+- **Mods:** once the client has the world back, `pharos:rollback:restored` fires on the server's event bus, then on the client's, and the class's `OnRollbackRestored()` runs. `pharos:rollback:captured` fires on both sides once, when the world is captured after the join (see [Mods and rollbacks](writing-server-scenarios.md#mods-and-rollbacks)).
+
 The next test of the class gets the same client, already joined, with no boot. A test that disconnects the client, cuts its link, or overrides `WaitForPlayerJoinOnInit` to false gets a freshly booted pair, as does the next test after a failed rollback.
 
 ```csharp
@@ -172,5 +175,15 @@ public class ExpensiveSetupTests : ClientServerScenarioBase
 {
     // Every test boots its own pair.
     protected override WorldIsolation WorldIsolation => WorldIsolation.Restart;
+}
+```
+
+`Isolation` and `StrictIsolation` work as for server scenarios (see [Isolation report](writing-server-scenarios.md#isolation-report)). A test that disconnects the client on purpose cannot be rolled back, so under `StrictIsolation` it fails.
+
+```csharp
+[ServerWorld(Isolation = WorldIsolation.Rollback, StrictIsolation = true)]
+public class MyTests : ClientServerScenarioBase
+{
+    protected override void OnRollbackRestored() => MyModSystem.Instance.ReloadFromWorld();
 }
 ```
