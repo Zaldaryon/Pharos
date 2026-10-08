@@ -50,6 +50,8 @@ public static class HeadlessClientBootstrap
             }
 
             GamePaths.DataPath = dataPath;
+            // Before any mod code is compiled, so nothing inlines the paths it rewrites.
+            Server.SideDataPaths.Patch();
             // Logs, Saves, Cache and the rest: the engine opens files under all of them.
             GamePaths.EnsurePathsExist();
 

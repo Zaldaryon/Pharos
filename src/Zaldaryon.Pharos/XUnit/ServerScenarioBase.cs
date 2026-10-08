@@ -158,7 +158,8 @@ public abstract class ServerScenarioBase : IAsyncLifetime, IScenarioLifecycle
         {
             ServerWorldOptions options = WorldOptions;
             IReadOnlyList<string> mods = ScenarioAttributes.ServerMods(GetType());
-            ServerPoolKey key = new(options, string.Join("|", mods), WorldIsolation);
+            DataFileSet files = ScenarioAttributes.DataFiles(GetType(), EnumAppSide.Server);
+            ServerPoolKey key = new(options, string.Join("|", mods), WorldIsolation, files.Key);
 
             _pooled = WorldIsolation is WorldIsolation.Recycle or WorldIsolation.Rollback
                 ? ScenarioHostPool.Take<PooledServer>(GetType(), key)
@@ -175,7 +176,8 @@ public abstract class ServerScenarioBase : IAsyncLifetime, IScenarioLifecycle
                 try
                 {
                     ScenarioAttributes.StageMods(mods, sandbox.ModsPath);
-                    _pooled = new PooledServer(sandbox, EmbeddedServerHost.Boot(sandbox, options), key);
+                    files.WriteTo(sandbox.RootPath, EnumAppSide.Server);
+                    _pooled = new PooledServer(sandbox, EmbeddedServerHost.Boot(sandbox, options), key, files);
                 }
                 catch (Exception ex)
                 {
@@ -205,6 +207,10 @@ public abstract class ServerScenarioBase : IAsyncLifetime, IScenarioLifecycle
             }
 
             Isolation = IsolationLog.Prepared(GetType(), reused, WorldIsolation == WorldIsolation.Recycle, System.Diagnostics.Stopwatch.GetElapsedTime(bootStart));
+
+            // A client booted since, by another scenario or the test before, moved the game's data
+            // folder to its own.
+            if (reused) Vintagestory.API.Config.GamePaths.DataPath = _pooled.Sandbox.RootPath;
             _host = _pooled.Host;
         }
         catch (Exception ex)
@@ -370,13 +376,25 @@ public abstract class ServerScenarioBase : IAsyncLifetime, IScenarioLifecycle
         _host = host;
     }
 
-    private sealed record ServerPoolKey(ServerWorldOptions Options, string Mods, WorldIsolation Isolation);
+    /// <summary>
+    /// The port a <c>{{pharos:port:NAME}}</c> placeholder got in this test's data files. See
+    /// <see cref="DataFilesAttribute"/>.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">The server has not booted yet.</exception>
+    /// <exception cref="ArgumentException">No data file of the test has that placeholder.</exception>
+    protected int DataFilePort(string name) =>
+        (_pooled ?? throw new InvalidOperationException("Data file ports are known once the server has booted.")).Files.Port(name);
 
-    private sealed class PooledServer(ServerSandbox sandbox, EmbeddedServerHost host, ServerPoolKey key) : IDisposable
+    private sealed record ServerPoolKey(ServerWorldOptions Options, string Mods, WorldIsolation Isolation, string DataFiles);
+
+    private sealed class PooledServer(ServerSandbox sandbox, EmbeddedServerHost host, ServerPoolKey key, DataFileSet files) : IDisposable
     {
         private WorldSnapshot? _baseline;
         private IDisposable? _tracking;
         private ListenerWatermark? _listeners;
+        private DataFileBaseline? _dataFiles;
+
+        public DataFileSet Files { get; } = files;
 
         public ServerSandbox Sandbox { get; } = sandbox;
         public EmbeddedServerHost Host { get; } = host;
@@ -387,6 +405,7 @@ public abstract class ServerScenarioBase : IAsyncLifetime, IScenarioLifecycle
         {
             _baseline = Host.TakeSnapshot();
             _tracking = Host.RunOnGameThread(() => _baseline.TrackChunksLoadedLater(Host));
+            _dataFiles = Host.RunOnGameThread(() => DataFileBaseline.Capture(Sandbox.RootPath, Files, EnumAppSide.Server));
         }
 
         /// <summary>Notes the listeners that live as long as the server; later ones are the tests'.</summary>
@@ -400,18 +419,19 @@ public abstract class ServerScenarioBase : IAsyncLifetime, IScenarioLifecycle
         {
             if (_baseline == null) return (null, "the world was never captured");
 
-            int listeners = 0, chunks = 0;
+            int listeners = 0, chunks = 0, files = 0;
             string? failure = null;
             TimeSpan took = IsolationLog.Time(() =>
             {
                 failure = RollbackParticipants.Try("Removing the test's listeners", () => listeners = RollbackParticipants.Remove(Host, _listeners, ownedByTest))
                     ?? RollbackParticipants.Try("The rollback", () => chunks = Host.RestoreSnapshot(_baseline))
                     ?? (Host.IsRunning ? null : "the server stopped during the rollback")
+                    ?? RollbackParticipants.Try("Restoring the data files", () => files = Host.RunOnGameThread(() => _dataFiles?.Restore() ?? 0))
                     ?? RollbackParticipants.Try("Clearing the logs", Host.Logs.Clear)
                     ?? RollbackParticipants.Try($"A {RollbackEvents.Restored} handler", () => RollbackParticipants.Push(Host, RollbackEvents.Restored, test, chunks));
             });
 
-            return failure != null ? (null, failure) : (new IsolationReport(IsolationKind.RolledBack, null, chunks, listeners, took), null);
+            return failure != null ? (null, failure) : (new IsolationReport(IsolationKind.RolledBack, null, chunks, listeners, took) { DataFilesRestored = files }, null);
         }
 
         public void Dispose()

@@ -1,3 +1,4 @@
+using Vintagestory.API.Common;
 using Vintagestory.Server;
 using Xunit;
 using Zaldaryon.Pharos.Bootstrap;
@@ -57,6 +58,9 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime, IScenarioLifecy
     private ListenerWatermark? _serverListeners;
     private ListenerWatermark? _clientListeners;
     private bool _setupFailed;
+    private DataFileSet _files = DataFileSet.Empty;
+    private DataFileBaseline? _serverFiles;
+    private DataFileBaseline? _clientFiles;
     private ClientServerPoolKey? _poolKey;
     private readonly List<ServerTestPlayer> _testPlayers = [];
 
@@ -254,6 +258,7 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime, IScenarioLifecy
         try
         {
             bool rollback = WorldIsolation == WorldIsolation.Rollback && WaitForPlayerJoinOnInit;
+            _files = ScenarioAttributes.DataFiles(GetType(), EnumAppSide.Server, EnumAppSide.Client);
             _poolKey = rollback ? PoolKey() : null;
 
             if (_poolKey != null && ScenarioHostPool.Take<PooledClientServer>(GetType(), _poolKey) is { } pooled)
@@ -288,6 +293,8 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime, IScenarioLifecy
                 // After the hook: what the class sets up there lives as long as the pair.
                 _serverListeners = RollbackParticipants.Capture(_serverHost);
                 _clientListeners = RollbackParticipants.Capture(_client!);
+                _serverFiles = _serverHost.RunOnGameThread(() => DataFileBaseline.Capture(_sandbox!.RootPath, _files, EnumAppSide.Server));
+                _clientFiles = _client!.RunOnClientThread(() => DataFileBaseline.Capture(_client.DataPath!, _files, EnumAppSide.Client));
             }
 
             Isolation = IsolationLog.Prepared(GetType(), reused: false, recycled: false, System.Diagnostics.Stopwatch.GetElapsedTime(bootStart));
@@ -373,6 +380,12 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime, IScenarioLifecy
         ScenarioAttributes.StageMods(serverMods, _sandbox.ModsPath);
         _clientModsDirectory = Path.Combine(_sandbox.RootPath, "ClientMods");
         ScenarioAttributes.StageMods([.. serverMods, .. ClientModPaths], _clientModsDirectory);
+        _files.WriteTo(_sandbox.RootPath, EnumAppSide.Server);
+        if (_files.HasFilesFor(EnumAppSide.Client) && ClientOptions.DataPath != null)
+        {
+            throw new NotSupportedException(
+                "Client data files need the client's own temporary data folder: they would overwrite files in ClientOptions.DataPath for good. Leave DataPath unset.");
+        }
 
         // Boot embedded server in sandbox
         _serverHost = EmbeddedServerHost.Boot(_sandbox, WorldOptions);
@@ -399,6 +412,9 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime, IScenarioLifecy
             LoadBridge = clientOptions.LoadBridge,
             ModPaths = [.. clientOptions.ModPaths, _clientModsDirectory],
         });
+
+        // The client's mods start when it joins: its files go in before.
+        _files.WriteTo(_client.DataPath!, EnumAppSide.Client);
 
         // Create loopback session connecting client to server
         _session = _client.ConnectLoopback(_serverHost, PlayerName);
@@ -436,8 +452,16 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime, IScenarioLifecy
             PlayerName,
             client.BootMode,
             client.Width,
-            client.Height);
+            client.Height,
+            _files.Key);
     }
+
+    /// <summary>
+    /// The port a <c>{{pharos:port:NAME}}</c> placeholder got in this test's data files, the same
+    /// on the server and the client. See <see cref="DataFilesAttribute"/>.
+    /// </summary>
+    /// <exception cref="ArgumentException">No data file of the test has that placeholder.</exception>
+    protected int DataFilePort(string name) => _files.Port(name);
 
     /// <summary>
     /// Tears down the client-server scenario: disconnects client, stops server, cleans sandbox.
@@ -658,6 +682,16 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime, IScenarioLifecy
             if (!home) return (null, "the player did not get back to where it stood within 600 frames");
             if (!session.IsConnected || !client.IsJoined) return (null, "the client was disconnected during the rollback");
 
+            int files;
+            try
+            {
+                files = server.RunOnGameThread(() => _serverFiles?.Restore() ?? 0) + client.RunOnClientThread(() => _clientFiles?.Restore() ?? 0);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                return (null, $"a data file could not be restored: {ex.Message}");
+            }
+
             // Told only once the pair is ready to be kept. What the handlers log counts against the
             // next test.
             string? test = ScenarioTestInfo.Current?.DisplayName;
@@ -666,7 +700,7 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime, IScenarioLifecy
                 ?? RollbackParticipants.Try(nameof(OnRollbackRestored), OnRollbackRestored);
             if (failure != null) return (null, failure);
 
-            return (new IsolationReport(IsolationKind.RolledBack, null, chunks, listeners, System.Diagnostics.Stopwatch.GetElapsedTime(start)), null);
+            return (new IsolationReport(IsolationKind.RolledBack, null, chunks, listeners, System.Diagnostics.Stopwatch.GetElapsedTime(start)) { DataFilesRestored = files }, null);
         }
         catch (Exception ex)
         {
@@ -700,11 +734,14 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime, IScenarioLifecy
         _baselineTracking = pooled.BaselineTracking;
         _serverListeners = pooled.ServerListeners;
         _clientListeners = pooled.ClientListeners;
+        _files = pooled.Files;
+        _serverFiles = pooled.ServerFiles;
+        _clientFiles = pooled.ClientFiles;
     }
 
     private PooledClientServer Detach()
     {
-        PooledClientServer pooled = new(_sandbox!, _serverHost!, _client!, _session!, _clientModsDirectory, _baseline!, _baselineTracking, _serverListeners, _clientListeners);
+        PooledClientServer pooled = new(_sandbox!, _serverHost!, _client!, _session!, _clientModsDirectory, _baseline!, _baselineTracking, _serverListeners, _clientListeners, _files, _serverFiles, _clientFiles);
         _sandbox = null;
         _serverHost = null;
         _client = null;
@@ -718,7 +755,7 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime, IScenarioLifecy
 
     private sealed record ClientServerPoolKey(
         ServerWorldOptions World, string ServerMods, string ClientMods, string PlayerName,
-        ClientBootMode BootMode, int Width, int Height);
+        ClientBootMode BootMode, int Width, int Height, string DataFiles);
 
     /// <summary>A joined client and its server, kept for the next test of the same class.</summary>
     private sealed record PooledClientServer(
@@ -730,7 +767,10 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime, IScenarioLifecy
         WorldSnapshot Baseline,
         IDisposable? BaselineTracking,
         ListenerWatermark? ServerListeners,
-        ListenerWatermark? ClientListeners) : IDisposable
+        ListenerWatermark? ClientListeners,
+        DataFileSet Files,
+        DataFileBaseline? ServerFiles,
+        DataFileBaseline? ClientFiles) : IDisposable
     {
         public void Dispose()
         {

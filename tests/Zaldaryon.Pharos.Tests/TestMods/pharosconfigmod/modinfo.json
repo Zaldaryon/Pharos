@@ -1,0 +1,11 @@
+{
+  "type": "code",
+  "modid": "pharosconfigmod",
+  "name": "Pharos Config Mod",
+  "version": "1.0.0",
+  "side": "Universal",
+  "requiredOnClient": true,
+  "description": "Source mod the data file tests stage: each side reads ModConfig/pharosconfig.json when it starts and reports what it read.",
+  "authors": ["Pharos"],
+  "dependencies": { "game": "" }
+}

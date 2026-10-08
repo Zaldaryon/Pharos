@@ -112,6 +112,12 @@ public abstract class ClientScenarioBase : IAsyncLifetime, IScenarioLifecycle
     public virtual async Task InitializeAsync()
     {
         BootCheck.ThrowIfFailedBefore(GetType());
+        if (GetType().IsDefined(typeof(DataFilesAttribute), inherit: true)
+            || Execution.ScenarioTestInfo.Current?.Method?.IsDefined(typeof(DataFilesAttribute), inherit: true) == true)
+        {
+            throw new NotSupportedException("[DataFiles] works in ServerScenarioBase and ClientServerScenarioBase classes, not in client-only scenarios.");
+        }
+
         _gate = await ScenarioHostPool.EnterAsync(HostWaitTimeout).ConfigureAwait(false);
 
         try

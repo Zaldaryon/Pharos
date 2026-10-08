@@ -1,0 +1,4 @@
+{
+  "Label": "client",
+  "Port": {{pharos:port:metrics}}
+}

@@ -46,6 +46,24 @@ internal static class ScenarioAttributes
     }
 
     /// <summary>
+    /// The data files the class and the running test seed, for the sides a scenario has. See
+    /// <see cref="DataFilesAttribute"/>.
+    /// </summary>
+    public static DataFileSet DataFiles(Type testClass, params Vintagestory.API.Common.EnumAppSide[] sides)
+    {
+        // Each class is a level of its own, from the base down, so a derived class can replace
+        // its base's file; the test comes last.
+        List<IEnumerable<DataFilesAttribute>> levels = [];
+        for (Type? type = testClass; type != null && type != typeof(object); type = type.BaseType)
+        {
+            levels.Insert(0, type.GetCustomAttributes<DataFilesAttribute>(inherit: false));
+        }
+
+        levels.Add(Execution.ScenarioTestInfo.Current?.Method?.GetCustomAttributes<DataFilesAttribute>(inherit: true) ?? []);
+        return DataFileSet.Create(levels, sides);
+    }
+
+    /// <summary>
     /// Mod paths from every <see cref="ServerModsAttribute"/> on the class, its base classes and
     /// its assembly.
     /// </summary>
