@@ -214,21 +214,69 @@ public static class HeadlessPlatformResolver
             return;
         }
 
+        // Several test processes can start in one output folder at once, as `pharos run
+        // --parallel` does: one stages, the others wait and find the folder there.
+        using FileStream? gate = LockStaging(Path.GetDirectoryName(targetDir)!);
+        if (Directory.Exists(targetDir))
+        {
+            return;
+        }
+
         try
         {
             Directory.CreateSymbolicLink(targetDir, sourceDir);
+            return;
         }
-        catch
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or PlatformNotSupportedException)
+        {
+            // No symbolic links here: copy.
+        }
+
+        // Copied beside it and moved into place, so a process that stops halfway never leaves a
+        // folder that looks staged but is not.
+        string staging = $"{targetDir}.staging-{Environment.ProcessId}";
+        try
+        {
+            if (Directory.Exists(staging)) Directory.Delete(staging, recursive: true);
+            CopyDirectoryRecursive(sourceDir, staging);
+            Directory.Move(staging, targetDir);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // Best-effort staging
+            try
+            {
+                if (Directory.Exists(staging)) Directory.Delete(staging, recursive: true);
+            }
+            catch (Exception cleanup) when (cleanup is IOException or UnauthorizedAccessException)
+            {
+            }
+        }
+    }
+
+    // A lock other processes see too: a file only one of them can hold open. Null when it cannot
+    // be had within ten minutes, and staging goes ahead without it.
+    private static FileStream? LockStaging(string directory)
+    {
+        string path = Path.Combine(directory, ".pharos-staging.lock");
+        System.Diagnostics.Stopwatch waited = System.Diagnostics.Stopwatch.StartNew();
+        while (waited.Elapsed < TimeSpan.FromMinutes(10))
         {
             try
             {
-                CopyDirectoryRecursive(sourceDir, targetDir);
+                return new FileStream(path, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
             }
-            catch
+            catch (IOException)
             {
-                // Best-effort staging
+                Thread.Sleep(200);
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return null;
             }
         }
+
+        return null;
     }
 
     private static void CopyDirectoryRecursive(string sourceDir, string targetDir)

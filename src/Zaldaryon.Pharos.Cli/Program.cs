@@ -12,8 +12,9 @@ internal static class Program
             return RunHere(args);
         }
 
-        // Help and Atlas migration need no game; the test runner, benchmarks and smoke tests do.
-        bool needsGame = args.Length > 0 && args[0] is not ("help" or "migrate-atlas" or "-h" or "--help")
+        // Help, Atlas migration and `run`, which starts `dotnet vstest` workers, need no game; the
+        // in-process test runner, benchmarks and smoke tests do.
+        bool needsGame = args.Length > 0 && args[0] is not ("help" or "migrate-atlas" or "run" or "-h" or "--help")
             && !args.Contains("--help") && !args.Contains("-h");
         if (!needsGame) return RunHere(args);
 

@@ -72,6 +72,13 @@ public static class PhCliRunner
                 case "smoke":
                     return SmokeCommand.Run(args[1..], stdout, stderr);
 
+                case "run":
+                    return ParallelRuns.RunCommand.Run(args[1..], stdout, stderr);
+
+                case "help" when args.Length > 1 && args[1] == "run":
+                    stdout.WriteLine(ParallelRuns.RunCommand.HelpText);
+                    return ExitCodeSuccess;
+
                 case "help" when args.Length == 1:
                     stdout.WriteLine(GetMainHelpText());
                     return ExitCodeSuccess;
@@ -288,6 +295,7 @@ public static class PhCliRunner
 
         Commands:
           (default)         Run xUnit tests from a test assembly
+          run               Run a test assembly's classes in parallel worker processes
           benchmark         Run performance benchmarks and check for regressions
           smoke             Boot, join and play with a mod, failing on errors
           migrate-atlas     Migrate Atlas test suites to Pharos
@@ -312,6 +320,7 @@ public static class PhCliRunner
           pharos -a MyTests.dll -f "Inventory" -v
           pharos benchmark --baseline-file pharos-baselines.json
           pharos smoke --mod bin/Release/mymod.zip --strict
+          pharos run tests/MyMod.Tests --filter "Category=Live" --parallel 4
           pharos migrate-atlas ./MyTestProject --dry-run
           pharos help migrate-atlas
         """;
