@@ -16,7 +16,7 @@ internal interface IVirtualInputSink
     void KeyUp(GlKeys key, bool shift, bool ctrl, bool alt);
     void KeyPress(char character);
     void MouseMove(int x, int y, int deltaX, int deltaY);
-    void MouseButton(EnumMouseButton button, bool pressed, int x, int y);
+    void MouseButton(EnumMouseButton button, bool pressed, int x, int y, int modifiers);
     void MouseWheel(int delta);
 }
 
@@ -43,8 +43,16 @@ internal sealed class EngineInputSink : IVirtualInputSink
     private static readonly FieldInfo? s_mouseX = typeof(ClientPlatformWindows).GetField("mouseX", BindingFlags.Instance | BindingFlags.NonPublic);
     private static readonly FieldInfo? s_mouseY = typeof(ClientPlatformWindows).GetField("mouseY", BindingFlags.Instance | BindingFlags.NonPublic);
 
+    // A key pressed within this long of the last key released carries that key as its second
+    // key, as the platform does: double-tap bindings such as the fly toggle rely on it. Measured
+    // in the frames' own time, not the wall clock, so the outcome does not depend on how fast the
+    // machine steps.
+    private const double DoubleTapMs = 200;
+
     private readonly HeadlessClient _client;
     private float _wheelValue;
+    private double _lastKeyUpMs = double.NegativeInfinity;
+    private int _lastKeyUpKey;
 
     public EngineInputSink(HeadlessClient client)
     {
@@ -53,16 +61,32 @@ internal sealed class EngineInputSink : IVirtualInputSink
 
     private ClientPlatformWindows Platform => _client.Platform;
 
+    private double NowMs => _client.FrameController.TotalElapsedSeconds * 1000;
+
+    /// <summary>Remembers a key released outside this sink, such as by a triggered hotkey.</summary>
+    public void NoteKeyUp(int key)
+    {
+        _lastKeyUpMs = NowMs;
+        _lastKeyUpKey = key;
+    }
+
+    /// <summary>Forgets the last key released, so the next key pressed is not part of a double tap.</summary>
+    public void ForgetKeyUp() => _lastKeyUpMs = double.NegativeInfinity;
+
     public void KeyDown(GlKeys key, bool shift, bool ctrl, bool alt) => _client.RunOnClientThread(() =>
     {
+        int? second = NowMs - _lastKeyUpMs <= DoubleTapMs ? _lastKeyUpKey : null;
         foreach (KeyEventHandler handler in Platform.keyEventHandlers.ToArray())
         {
-            handler.OnKeyDown(new KeyEvent { KeyCode = (int)key, ShiftPressed = shift, CtrlPressed = ctrl, AltPressed = alt });
+            KeyEvent e = new() { KeyCode = (int)key, ShiftPressed = shift, CtrlPressed = ctrl, AltPressed = alt };
+            if (second.HasValue) e.KeyCode2 = second.Value;
+            handler.OnKeyDown(e);
         }
     });
 
     public void KeyUp(GlKeys key, bool shift, bool ctrl, bool alt) => _client.RunOnClientThread(() =>
     {
+        NoteKeyUp((int)key);
         foreach (KeyEventHandler handler in Platform.keyEventHandlers.ToArray())
         {
             handler.OnKeyUp(new KeyEvent { KeyCode = (int)key, ShiftPressed = shift, CtrlPressed = ctrl, AltPressed = alt });
@@ -88,14 +112,14 @@ internal sealed class EngineInputSink : IVirtualInputSink
         }
     });
 
-    public void MouseButton(EnumMouseButton button, bool pressed, int x, int y) => _client.RunOnClientThread(() =>
+    public void MouseButton(EnumMouseButton button, bool pressed, int x, int y, int modifiers) => _client.RunOnClientThread(() =>
     {
         s_mouseX?.SetValue(Platform, (float)x);
         s_mouseY?.SetValue(Platform, (float)y);
 
         foreach (MouseEventHandler handler in Platform.mouseEventHandlers.ToArray())
         {
-            MouseEvent e = new(x, y, button, 0);
+            MouseEvent e = new(x, y, button, modifiers);
             if (pressed) handler.OnMouseDown(e);
             else handler.OnMouseUp(e);
         }

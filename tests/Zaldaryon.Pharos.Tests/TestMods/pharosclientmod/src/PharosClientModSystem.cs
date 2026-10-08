@@ -5,9 +5,14 @@ using Vintagestory.API.Server;
 
 namespace PharosClientMod;
 
-/// <summary>Registers <c>.pharoscmd</c>, a client command with one subcommand per outcome.</summary>
+/// <summary>
+/// Registers <c>.pharoscmd</c>, a client command with one subcommand per outcome, and two hotkeys
+/// that count their presses.
+/// </summary>
 public sealed class PharosClientModSystem : ModSystem
 {
+    private int _pings, _pongs;
+    private bool _pingPasses;
     private int _captured, _restored;
 
     public override bool ShouldLoad(EnumAppSide forSide) => forSide == EnumAppSide.Client;
@@ -18,6 +23,21 @@ public sealed class PharosClientModSystem : ModSystem
         {
             if (name == "pharos:rollback:captured") _captured++;
             if (name == "pharos:rollback:restored") _restored++;
+        });
+
+        api.Input.RegisterHotKey("pharosclientmod:ping", "Pharos ping", GlKeys.O, HotkeyType.GUIOrOtherControls, ctrlPressed: true, shiftPressed: true);
+        api.Input.SetHotKeyHandler("pharosclientmod:ping", _ =>
+        {
+            if (_pingPasses) return false;
+            _pings++;
+            return true;
+        });
+
+        api.Input.RegisterHotKey("pharosclientmod:pong", "Pharos pong", GlKeys.L, HotkeyType.GUIOrOtherControls, ctrlPressed: true, shiftPressed: true);
+        api.Input.SetHotKeyHandler("pharosclientmod:pong", _ =>
+        {
+            _pongs++;
+            return true;
         });
 
         IChatCommand command = api.ChatCommands.Create("pharoscmd").WithDescription("Pharos client command test");
@@ -47,6 +67,19 @@ public sealed class PharosClientModSystem : ModSystem
 
         command.BeginSubCommand("rollbacks")
             .HandleWith(_ => TextCommandResult.Success($"captured={_captured} restored={_restored}"))
+            .EndSubCommand();
+
+        command.BeginSubCommand("presses")
+            .HandleWith(_ => TextCommandResult.Success($"ping={_pings} pong={_pongs}"))
+            .EndSubCommand();
+
+        command.BeginSubCommand("pingpasses")
+            .WithArgs(api.ChatCommands.Parsers.Bool("passes"))
+            .HandleWith(args =>
+            {
+                _pingPasses = (bool)args[0];
+                return TextCommandResult.Success();
+            })
             .EndSubCommand();
 
         command.BeginSubCommand("boom")
