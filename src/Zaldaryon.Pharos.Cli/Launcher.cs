@@ -54,6 +54,10 @@ internal static class Launcher
         start.Environment["VINTAGE_STORY"] = game;
 
         using Process child = Process.Start(start) ?? throw new InvalidOperationException("Could not start the staged pharos.");
+
+        // A signal to the launcher reaches the game too: a CI runner that stops `pharos` must
+        // not leave a server and a client running.
+        using IDisposable forwarding = ForwardSignals(child);
         child.WaitForExit();
         return child.ExitCode;
     }
@@ -65,12 +69,15 @@ internal static class Launcher
         if (!File.Exists(api)) throw new FileNotFoundException($"'{game}' is not a Vintage Story install: it has no VintagestoryAPI.dll.", api);
 
         string tool = AppContext.BaseDirectory;
-        string key = Hash($"{typeof(Launcher).Assembly.ManifestModule.ModuleVersionId}|{game}|{new FileInfo(api).Length}|{File.GetLastWriteTimeUtc(api).Ticks}");
+        string key = Key(tool, game);
         string root = Environment.GetEnvironmentVariable("PHAROS_CLI_CACHE") is { Length: > 0 } cache
             ? Path.GetFullPath(cache)
             : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData, Environment.SpecialFolderOption.Create), "pharos", "cli");
         string staged = Path.Combine(root, key);
         if (File.Exists(Path.Combine(staged, Marker))) return staged;
+
+        Directory.CreateDirectory(root);
+        RemoveLeftovers(root, staged);
 
         // Built aside and moved into place, so a concurrent run never sees half a folder.
         string building = staged + ".building-" + Environment.ProcessId.ToString(System.Globalization.CultureInfo.InvariantCulture);
@@ -91,6 +98,23 @@ internal static class Launcher
             File.Copy(file, target);
         }
 
+        // The game's folders, linked here rather than by the game at run time: a run stopped
+        // half way through copying them would leave a broken folder behind.
+        foreach (string folder in new[] { "Lib", "Mods", "assets" })
+        {
+            string source = Path.Combine(game, folder);
+            if (!Directory.Exists(source)) continue;
+
+            try
+            {
+                Directory.CreateSymbolicLink(Path.Combine(building, folder), source);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or PlatformNotSupportedException)
+            {
+                // No symbolic links here: the game copies the folder when it first runs.
+            }
+        }
+
         File.WriteAllText(Path.Combine(building, Marker), $"game: {game}{Environment.NewLine}tool: {tool}{Environment.NewLine}", new UTF8Encoding(false));
 
         try
@@ -104,6 +128,44 @@ internal static class Launcher
         }
 
         return staged;
+    }
+
+    /// <summary>
+    /// Names the staged folder after every file it is made of: the tool's own and the install's,
+    /// by name, size and time, so a rebuilt tool or an updated install gets a fresh folder.
+    /// </summary>
+    internal static string Key(string tool, string game)
+    {
+        StringBuilder text = new();
+        text.Append(game).Append('|');
+        foreach (string file in Directory.EnumerateFiles(tool).Concat(GameFiles(game)).Order(StringComparer.Ordinal))
+        {
+            FileInfo info = new(file);
+            text.Append(file).Append(':').Append(info.Length).Append(':').Append(info.LastWriteTimeUtc.Ticks).Append('|');
+        }
+
+        return Hash(text.ToString());
+    }
+
+    /// <summary>
+    /// Clears what earlier runs left: a folder for this key without its marker, and folders
+    /// another run was building but did not finish, an hour or more ago.
+    /// </summary>
+    private static void RemoveLeftovers(string root, string staged)
+    {
+        try
+        {
+            if (Directory.Exists(staged)) Directory.Delete(staged, recursive: true);
+
+            foreach (string building in Directory.EnumerateDirectories(root, "*.building-*"))
+            {
+                if (Directory.GetLastWriteTimeUtc(building) < DateTime.UtcNow.AddHours(-1)) Directory.Delete(building, recursive: true);
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // Another run may be using them; a later run cleans up.
+        }
     }
 
     /// <summary>The install's assemblies, their symbols and its native libraries, from its root and <c>Lib</c>.</summary>
@@ -121,6 +183,42 @@ internal static class Launcher
         {
             yield return file;
         }
+    }
+
+    private static IDisposable ForwardSignals(Process child)
+    {
+        void Stop()
+        {
+            try
+            {
+                if (!child.HasExited) child.Kill(entireProcessTree: true);
+            }
+            catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception)
+            {
+                // It has exited already.
+            }
+        }
+
+        if (OperatingSystem.IsWindows())
+        {
+            ConsoleCancelEventHandler handler = (_, _) => Stop();
+            Console.CancelKeyPress += handler;
+            return new Disposer(() => Console.CancelKeyPress -= handler);
+        }
+
+        PosixSignalRegistration[] registrations =
+        [
+            .. new[] { PosixSignal.SIGINT, PosixSignal.SIGTERM, PosixSignal.SIGQUIT }.Select(signal => PosixSignalRegistration.Create(signal, _ => Stop())),
+        ];
+        return new Disposer(() =>
+        {
+            foreach (PosixSignalRegistration registration in registrations) registration.Dispose();
+        });
+    }
+
+    private sealed class Disposer(Action dispose) : IDisposable
+    {
+        public void Dispose() => dispose();
     }
 
     private static void Link(string source, string target)

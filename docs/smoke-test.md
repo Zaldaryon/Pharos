@@ -41,7 +41,7 @@ xvfb-run -a pharos smoke --mod bin/Release/mymod.zip --strict
 | `--strict` | Fail on any warning logged while booting. |
 | `--allow <regex>` | A boot warning that `--strict` lets pass. Repeatable. |
 | `--allow-error <text>` | A fragment of a logged error to let pass. Repeatable. |
-| `--timeout <seconds>` | How long the play may take, 300 by default. |
+| `--timeout <seconds>` | How long the play may take, 300 by default, scaled by `PHAROS_TIMEOUT_SCALE`. |
 | `--artifacts <dir>` | Where failure artifacts and `smoke.log` go: `$PHAROS_ARTIFACTS`, else `./pharos-artifacts`. |
 | `--game <dir>` | The game install, instead of `$VINTAGE_STORY`. |
 | `--seed`, `--world-type`, `--play-style` | The world. Superflat and creative building by default, which boot fast but skip world generation and survival systems: use `--world-type standard --play-style surviveandbuild` to cover them. |
@@ -54,7 +54,9 @@ xvfb-run -a pharos smoke --mod bin/Release/mymod.zip --strict
 | 2 | It could not run: bad arguments, no game install, no display, or a mod that does not exist. |
 
 Besides the play's own watchdog, a whole run (boot and teardown included) is given up after the
-play's timeout plus ten minutes, so a mod that hangs while loading cannot hang a CI job.
+play's timeout plus ten minutes, both scaled by `PHAROS_TIMEOUT_SCALE`, so a mod that hangs while
+loading cannot hang a CI job. Stopping `pharos` (Ctrl+C, or a CI runner's timeout) stops the game
+it started too.
 
 ### Your game, not ours
 
@@ -63,7 +65,10 @@ run against an install, the tool builds a folder holding its own files and links
 install's assemblies and native libraries, laid out the way the game expects them. It runs from
 that folder from then on. The folder lives under the local application data folder
 (`~/.local/share/pharos/cli` on Linux), or under `PHAROS_CLI_CACHE`. It is rebuilt when the tool
-or the install changes. Where the system does not allow symbolic links, the files are copied.
+or the install changes; delete it to start afresh. Where the system does not allow symbolic links,
+the files are copied, the game's `assets` folder included, which costs nearly a gigabyte per
+folder. The tool is tested on Linux; Windows and macOS installs lay their files out differently
+and are not covered by its CI yet.
 
 ## In a test project
 
@@ -84,8 +89,8 @@ public class Smoke : ModSmokeTest
 - `[AllowBootDiagnostic]` allows known boot warnings.
 - `[PharosMods]` adds client-only mods.
 
-It fails at once when no mod is named, since a smoke test of vanilla alone would pass for every
-mod. Each run boots fresh hosts (`WorldIsolation.Restart`).
+It fails before booting when no mod is named, since a smoke test of vanilla alone would pass for
+every mod. Each run boots fresh hosts (`WorldIsolation.Restart`).
 
 ## In CI
 

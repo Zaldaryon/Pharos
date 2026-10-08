@@ -28,7 +28,7 @@ public sealed record SmokeOptions
     /// <summary>Fragments of logged errors to allow.</summary>
     public IReadOnlyList<string> AllowErrors { get; init; } = [];
 
-    /// <summary>The watchdog for the play, in seconds; null for the default five minutes.</summary>
+    /// <summary>The watchdog for the play, in seconds, scaled by <c>PHAROS_TIMEOUT_SCALE</c>; null for the default five minutes.</summary>
     public int? TimeoutSeconds { get; init; }
 
     /// <summary>Where failure artifacts go; null for <c>PHAROS_ARTIFACTS</c>, else <c>./pharos-artifacts</c>.</summary>
@@ -82,7 +82,7 @@ public static class SmokeCommand
           --strict                Fail on any warning logged while booting
           --allow <regex>         A boot warning to allow with --strict (repeatable)
           --allow-error <text>    A fragment of a logged error to allow (repeatable)
-          --timeout <seconds>     How long the play may take (default: 300)
+          --timeout <seconds>     How long the play may take (default: 300; scaled by PHAROS_TIMEOUT_SCALE)
           --artifacts <dir>       Where failure artifacts go (default: $PHAROS_ARTIFACTS or ./pharos-artifacts)
           --game <dir>            The Vintage Story install (default: $VINTAGE_STORY)
           --seed <seed>           The world seed
@@ -215,8 +215,10 @@ public static class SmokeCommand
         {
             if (gameOutput != null)
             {
-                Console.SetOut(gameOutput);
-                Console.SetError(gameOutput);
+                // One synchronized writer for both: the game writes from several threads.
+                TextWriter synchronized = TextWriter.Synchronized(gameOutput);
+                Console.SetOut(synchronized);
+                Console.SetError(synchronized);
             }
 
             result = RunScenario(options, artifacts).GetAwaiter().GetResult();
@@ -245,6 +247,11 @@ public static class SmokeCommand
         foreach (string failure in result.Failures)
         {
             stdout.WriteLine(failure);
+        }
+
+        if (result.Failures.Count == 0)
+        {
+            stdout.WriteLine($"The smoke test reported no result. See {log} and the artifacts in {artifacts}.");
         }
 
         return ExitFailed;
@@ -290,11 +297,12 @@ public static class SmokeCommand
     private static async Task<ScenarioRunner.Result> RunScenario(SmokeOptions options, string artifacts)
     {
         // The scenario reads the game install from VINTAGE_STORY, like every Pharos host.
+        string? previousGame = Environment.GetEnvironmentVariable("VINTAGE_STORY");
         if (options.GamePath != null) Environment.SetEnvironmentVariable("VINTAGE_STORY", Path.GetFullPath(options.GamePath));
 
         FailureArtifactWriter.RootOverride = artifacts;
         ScenarioTimeouts.Override = options.TimeoutSeconds is { } seconds
-            ? (int)Math.Min(int.MaxValue, seconds * 1000L)
+            ? (int)Math.Min(int.MaxValue, seconds * 1000L * ScenarioTimeouts.Scale)
             : null;
         BootCheck.Forget(typeof(CliModSmokeTest));
 
@@ -307,6 +315,7 @@ public static class SmokeCommand
             BootCheck.Forget(typeof(CliModSmokeTest));
             FailureArtifactWriter.RootOverride = null;
             ScenarioTimeouts.Override = null;
+            Environment.SetEnvironmentVariable("VINTAGE_STORY", previousGame);
         }
     }
 

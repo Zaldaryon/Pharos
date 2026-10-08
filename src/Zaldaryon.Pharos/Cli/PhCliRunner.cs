@@ -72,6 +72,10 @@ public static class PhCliRunner
                 case "smoke":
                     return SmokeCommand.Run(args[1..], stdout, stderr);
 
+                case "help" when args.Length == 1:
+                    stdout.WriteLine(GetMainHelpText());
+                    return ExitCodeSuccess;
+
                 case "help" when args.Length > 1 && args[1] == "smoke":
                     stdout.WriteLine(SmokeCommand.HelpText);
                     return ExitCodeSuccess;

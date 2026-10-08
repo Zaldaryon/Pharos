@@ -41,16 +41,20 @@ internal static class ScenarioRunner
         IXunitTestCaseDiscoverer discoverer = (IXunitTestCaseDiscoverer)Activator.CreateInstance(discovererType, new NullMessageSink())!;
 
         CollectingBus bus = new();
+        ExceptionAggregator aggregator = new();
         foreach (IXunitTestCase testCase in discoverer.Discover(new DiscoveryOptions(), testMethod, fact))
         {
-            await testCase.RunAsync(new NullMessageSink(), bus, constructorArguments, new ExceptionAggregator(), new CancellationTokenSource()).ConfigureAwait(false);
+            await testCase.RunAsync(new NullMessageSink(), bus, constructorArguments, aggregator, new CancellationTokenSource()).ConfigureAwait(false);
         }
 
         IMessageSinkMessage[] messages = [.. bus.Messages];
-        return new Result(
-            messages.OfType<ITestPassed>().Count(),
-            [.. messages.OfType<ITestFailed>().Select(f => string.Join(Environment.NewLine, f.Messages))],
-            messages.OfType<ITestSkipped>().Count());
+        List<string> failures = [.. messages.OfType<ITestFailed>().Select(f => string.Join(Environment.NewLine, f.Messages))];
+
+        // What failed outside any one test: discovery or the test case's own setup.
+        failures.AddRange(messages.OfType<IErrorMessage>().Select(e => string.Join(Environment.NewLine, e.Messages)));
+        if (aggregator.HasExceptions) failures.Add(aggregator.ToException().ToString());
+
+        return new Result(messages.OfType<ITestPassed>().Count(), failures, messages.OfType<ITestSkipped>().Count());
     }
 
     private sealed class DiscoveryOptions : ITestFrameworkDiscoveryOptions

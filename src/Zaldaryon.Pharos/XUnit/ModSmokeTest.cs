@@ -20,8 +20,8 @@ namespace Zaldaryon.Pharos.XUnit;
 /// public class Smoke : ModSmokeTest;
 /// </code>
 /// <para>
-/// <see cref="StrictBootAttribute"/> also fails the boot on warnings. The test fails at once when
-/// no mod is named: a smoke test that boots nothing but vanilla would pass for every mod.
+/// <see cref="StrictBootAttribute"/> also fails the boot on warnings. The test fails before booting
+/// when no mod is named: a smoke test that boots nothing but vanilla would pass for every mod.
 /// </para>
 /// </remarks>
 public abstract class ModSmokeTest : ClientServerScenarioBase
@@ -51,12 +51,6 @@ public abstract class ModSmokeTest : ClientServerScenarioBase
     [ClientServerScenario(TimeoutMs = SmokeTimeoutMs)]
     public async Task ModBootsJoinsAndPlays()
     {
-        if (ServerModPaths.Count == 0 && ClientModPaths.Count == 0)
-        {
-            throw new InvalidOperationException(
-                $"{GetType().Name} names no mod: add [ServerMods(...)] or [PharosMods(...)], or it only smoke-tests vanilla.");
-        }
-
         AssertAlive("joining");
 
         foreach (string command in SmokeCommands)
@@ -91,6 +85,18 @@ public abstract class ModSmokeTest : ClientServerScenarioBase
         AssertAlive("playing");
     }
 
+    /// <summary>Refuses a smoke test without mods before booting anything.</summary>
+    public override Task InitializeAsync()
+    {
+        if (ServerModPaths.Count == 0 && ClientModPaths.Count == 0)
+        {
+            throw new InvalidOperationException(
+                $"{GetType().Name} names no mod: add [ServerMods(...)] or [PharosMods(...)], or it only smoke-tests vanilla.");
+        }
+
+        return base.InitializeAsync();
+    }
+
     private async Task TurnAsync(float yawPerFrame, float pitchPerFrame, int frames)
     {
         IClientTestPlayer player = Player ?? throw new InvalidOperationException("The client has no player.");
@@ -114,15 +120,24 @@ public abstract class ModSmokeTest : ClientServerScenarioBase
         ICoreServerAPI api = (ICoreServerAPI)Server!.Api;
         string normalized = command.TrimStart('/');
         TaskCompletionSource<TextCommandResult> done = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        bool deferred = false;
         // ExecuteUnparsed takes the text as typed: it drops the leading slash itself.
         ServerHost!.RunOnGameThread(() => api.ChatCommands.ExecuteUnparsed(
             "/" + normalized,
             new TextCommandCallingArgs { Caller = ServerScenarioBase.ConsoleCaller() },
-            result => done.TrySetResult(result)));
+            result =>
+            {
+                // A deferred result is followed by the real one once the command has finished.
+                if (result.Status == EnumCommandStatus.Deferred) deferred = true;
+                else done.TrySetResult(result);
+            }));
 
         bool finished = await Session!.StepUntilAsync(() => done.Task.IsCompleted, maxFrames: 600).ConfigureAwait(false);
         if (!finished)
         {
+            // A command that deferred and never reported back is taken as accepted, as
+            // CommandResult.Ok takes it.
+            if (deferred) return;
             throw new TimeoutException($"The command '{command}' did not finish within 600 frames.");
         }
 

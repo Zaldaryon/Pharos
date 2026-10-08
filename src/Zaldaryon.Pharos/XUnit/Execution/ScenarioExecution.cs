@@ -56,10 +56,6 @@ internal static class ScenarioTimeouts
     /// <summary>How long an aborted body gets to stop before its host is given up.</summary>
     internal static TimeSpan Grace { get; set; } = TimeSpan.FromSeconds(15);
 
-    /// <summary>
-    /// The timeout of a scenario test in milliseconds, 0 for none: the attribute's xUnit
-    /// <c>Timeout</c> when set, else its <c>TimeoutMs</c>, scaled by <c>PHAROS_TIMEOUT_SCALE</c>.
-    /// </summary>
     private static readonly AsyncLocal<int?> s_override = new();
 
     /// <summary>Replaces the attribute's timeout on this flow, in milliseconds: the smoke runner's <c>--timeout</c>.</summary>
@@ -69,6 +65,10 @@ internal static class ScenarioTimeouts
         set => s_override.Value = value;
     }
 
+    /// <summary>
+    /// The timeout of a scenario test in milliseconds, 0 for none: the attribute's xUnit
+    /// <c>Timeout</c> when set, else its <c>TimeoutMs</c>, scaled by <c>PHAROS_TIMEOUT_SCALE</c>.
+    /// </summary>
     public static int Of(ITestMethod testMethod)
     {
         if (Override is { } overridden) return overridden;

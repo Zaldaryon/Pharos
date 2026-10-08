@@ -148,7 +148,9 @@ jobs:
         env:
           VINTAGE_STORY: ${{ env.VS_CACHE_PATH }}/${{ env.VS_VERSION }}
         run: |
-          dotnet pack src/Zaldaryon.Pharos.Cli/Zaldaryon.Pharos.Cli.csproj -c Release --no-build -o ./tool-nupkg
+          # A version of its own, so the install below can only take this build, never a
+          # published package of the same version.
+          dotnet pack src/Zaldaryon.Pharos.Cli/Zaldaryon.Pharos.Cli.csproj -c Release -o ./tool-nupkg -p:Version=0.0.0-ci.${{ github.run_id }}.${{ github.run_attempt }}
           scripts/check-tool-package.sh ./tool-nupkg/Zaldaryon.Pharos.Cli.*.nupkg "$VINTAGE_STORY"
 
       - name: Smoke-test mods with the installed pharos tool
@@ -163,7 +165,8 @@ jobs:
           ALSOFT_DRIVERS: null
           TEST_MODS: ${{ github.workspace }}/tests/Zaldaryon.Pharos.Tests/TestMods
         run: |
-          dotnet tool install Zaldaryon.Pharos.Cli --tool-path "$RUNNER_TEMP/pharos-tool" --add-source ./tool-nupkg
+          dotnet tool install Zaldaryon.Pharos.Cli --tool-path "$RUNNER_TEMP/pharos-tool" --add-source ./tool-nupkg \
+            --version "0.0.0-ci.${{ github.run_id }}.${{ github.run_attempt }}"
           # From outside the repository, as a mod's own CI would run it.
           cd "$RUNNER_TEMP"
           xvfb-run -a "$RUNNER_TEMP/pharos-tool/pharos" smoke --mod "$TEST_MODS/pharostestmod" --frames 300 \

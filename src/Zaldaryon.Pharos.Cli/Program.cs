@@ -5,8 +5,6 @@ namespace Zaldaryon.Pharos.Cli;
 /// <summary>The <c>pharos</c> command. See <c>docs/smoke-test.md</c> and <c>pharos help</c>.</summary>
 internal static class Program
 {
-    private static readonly string[] s_needsGame = ["smoke", "benchmark"];
-
     private static int Main(string[] args)
     {
         if (Launcher.IsStaged)
@@ -14,12 +12,14 @@ internal static class Program
             return RunHere(args);
         }
 
-        bool needsGame = args.Length > 0 && s_needsGame.Contains(args[0]) && !args.Contains("--help") && !args.Contains("-h");
+        // Help and Atlas migration need no game; the test runner, benchmarks and smoke tests do.
+        bool needsGame = args.Length > 0 && args[0] is not ("help" or "migrate-atlas" or "-h" or "--help")
+            && !args.Contains("--help") && !args.Contains("-h");
+        if (!needsGame) return RunHere(args);
+
         string? game = Launcher.GamePath(args);
         if (game == null)
         {
-            if (!needsGame) return RunHere(args);
-
             Console.Error.WriteLine("Error: no Vintage Story install: set VINTAGE_STORY or pass --game.");
             return 2;
         }
@@ -28,7 +28,7 @@ internal static class Program
         {
             return Launcher.RunStaged(game, args);
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException or System.ComponentModel.Win32Exception)
         {
             Console.Error.WriteLine($"Error: could not prepare pharos for the install at {game}: {ex.Message}");
             return 2;
@@ -42,7 +42,18 @@ internal static class Program
     [MethodImpl(MethodImplOptions.NoInlining)]
     private static int RunHere(string[] args)
     {
-        if (args.Length > 0 && args[0] == "smoke") StartWholeRunWatchdog(args);
+        if (args.Length > 0 && args[0] == "smoke")
+        {
+            StartWholeRunWatchdog(args);
+
+            // A crash on one of the game's threads is a failed smoke test, not a broken tool.
+            AppDomain.CurrentDomain.UnhandledException += (_, e) =>
+            {
+                Console.Error.WriteLine($"Smoke test failed: the game crashed: {e.ExceptionObject}");
+                Console.Error.Flush();
+                Environment.Exit(1);
+            };
+        }
 
         int code = PhCliRunner.Run(args);
         Console.Out.Flush();
@@ -61,7 +72,9 @@ internal static class Program
     {
         int index = Array.IndexOf(args, "--timeout");
         int playSeconds = index >= 0 && index + 1 < args.Length && int.TryParse(args[index + 1], out int seconds) && seconds > 0 ? seconds : 300;
-        TimeSpan limit = TimeSpan.FromSeconds(playSeconds) + TimeSpan.FromMinutes(10);
+        double scale = double.TryParse(Environment.GetEnvironmentVariable("PHAROS_TIMEOUT_SCALE"), System.Globalization.NumberStyles.Float,
+            System.Globalization.CultureInfo.InvariantCulture, out double factor) && factor > 0 ? factor : 1;
+        TimeSpan limit = (TimeSpan.FromSeconds(playSeconds) + TimeSpan.FromMinutes(10)) * scale;
 
         Thread watchdog = new(() =>
         {
