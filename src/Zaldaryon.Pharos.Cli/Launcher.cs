@@ -155,7 +155,8 @@ internal static class Launcher
     {
         try
         {
-            if (Directory.Exists(staged)) Directory.Delete(staged, recursive: true);
+            // Checked again: another run may have moved its finished folder into place meanwhile.
+            if (Directory.Exists(staged) && !File.Exists(Path.Combine(staged, Marker))) Directory.Delete(staged, recursive: true);
 
             foreach (string building in Directory.EnumerateDirectories(root, "*.building-*"))
             {

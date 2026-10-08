@@ -128,7 +128,7 @@ public abstract class ModSmokeTest : ClientServerScenarioBase
             result =>
             {
                 // A deferred result is followed by the real one once the command has finished.
-                if (result.Status == EnumCommandStatus.Deferred) deferred = true;
+                if (result.Status == EnumCommandStatus.Deferred) Volatile.Write(ref deferred, true);
                 else done.TrySetResult(result);
             }));
 
@@ -137,7 +137,7 @@ public abstract class ModSmokeTest : ClientServerScenarioBase
         {
             // A command that deferred and never reported back is taken as accepted, as
             // CommandResult.Ok takes it.
-            if (deferred) return;
+            if (Volatile.Read(ref deferred)) return;
             throw new TimeoutException($"The command '{command}' did not finish within 600 frames.");
         }
 
