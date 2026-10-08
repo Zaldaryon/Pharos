@@ -193,6 +193,14 @@ public sealed class HeadlessClient : IDisposable
     private ClientCommandDriver? _commands;
 
     /// <summary>
+    /// The client's hotkeys, its own and its mods': what they are bound to, and firing them by code.
+    /// See <see cref="HotkeyDriver"/>.
+    /// </summary>
+    public HotkeyDriver Hotkeys => _hotkeys ??= new HotkeyDriver(this);
+
+    private HotkeyDriver? _hotkeys;
+
+    /// <summary>
     /// Steps one frame for a driver that waits on the game: the whole session's when the client is
     /// in a <see cref="ClientServerLoopbackSession"/>, so the server keeps ticking, and the
     /// client's own frame otherwise.
