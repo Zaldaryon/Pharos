@@ -85,17 +85,18 @@ public class ReceivedPacketsTests : ServerScenarioBase
         Vec3d at = alice.Entity!.Pos.XYZ;
         List<BlockPos> marked = [at.AsBlockPos.AddCopy(1, 0, 0), at.AsBlockPos.AddCopy(2, 0, 0)];
 
-        // The server sends particles only to players it has already sent the chunk they are in,
-        // which a slow runner may not have done yet.
+        // The server sends particles only to playing clients it has already sent the chunk the
+        // particles start in, which a slow runner may not have done yet. They start where the
+        // player stands, so that is the chunk to wait for.
         long chunk = Host!.Server.WorldMap.ChunkIndex3D((int)at.X / 32, (int)at.Y / 32, (int)at.Z / 32);
         bool chunkSent = await Host.TickUntilAsync(
-            () => Host.RunOnGameThread(() => Host.Server.Clients[alice.Player!.ClientId].DidSendChunk(chunk)),
+            () => Host.RunOnGameThread(() => Host.Server.Clients[alice.Player!.ClientId] is { IsPlayingClient: true } client && client.DidSendChunk(chunk)),
             maxTicks: 600);
         Assert.True(chunkSent, "The server never sent the player the chunk they stand in");
 
         Host.RunOnGameThread(() =>
         {
-            Sapi.World.SpawnParticles(new SimpleParticleProperties(5, 5, ColorUtil.WhiteArgb, at, at.AddCopy(1, 1, 1), new Vec3f(), new Vec3f()));
+            Sapi.World.SpawnParticles(new SimpleParticleProperties(5, 5, ColorUtil.WhiteArgb, at, at.Clone(), new Vec3f(), new Vec3f()));
             Sapi.World.PlaySoundAt(new AssetLocation("game:sounds/block/planks"), at.X, at.Y, at.Z, null, false, 32f, 1f);
             Sapi.World.HighlightBlocks(alice.Player, 7, marked, [ColorUtil.WhiteArgb]);
         });
