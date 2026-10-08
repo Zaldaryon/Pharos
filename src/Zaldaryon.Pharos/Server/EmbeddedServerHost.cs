@@ -313,6 +313,8 @@ public sealed class EmbeddedServerHost : IDisposable, IAsyncDisposable
         };
 
         ModSafetyCheck.Disable();
+        SideDataPaths.Patch();
+        SideDataPaths.UseServerDataPath(dataPath);
         ServerMain server = new(startArgs, new[] { "--dataPath", dataPath }, progArgs, isDedicatedServer: false);
 
         // CRITICAL: Assign exitState BEFORE PreLaunch() to prevent NRE in packet parser threads
@@ -405,6 +407,8 @@ public sealed class EmbeddedServerHost : IDisposable, IAsyncDisposable
         };
 
         ModSafetyCheck.Disable();
+        SideDataPaths.Patch();
+        SideDataPaths.UseServerDataPath(dataPath);
         ServerMain server = new(startArgs, new[] { "--dataPath", dataPath }, progArgs, isDedicatedServer: false);
 
         // CRITICAL: Assign exitState BEFORE PreLaunch() to prevent NRE in packet parser threads

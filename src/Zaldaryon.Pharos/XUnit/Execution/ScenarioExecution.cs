@@ -11,7 +11,8 @@ namespace Zaldaryon.Pharos.XUnit.Execution;
 /// <param name="DisplayName">The display name, theory arguments included.</param>
 /// <param name="TestClass">The test class.</param>
 /// <param name="MethodName">The test method's name.</param>
-internal sealed record ScenarioTestInfo(string DisplayName, Type TestClass, string MethodName)
+/// <param name="Method">The test method, when the scenario pipeline runs it.</param>
+internal sealed record ScenarioTestInfo(string DisplayName, Type TestClass, string MethodName, MethodInfo? Method = null)
 {
     private static readonly AsyncLocal<ScenarioTestInfo?> s_current = new();
 
@@ -220,7 +221,7 @@ internal sealed class ScenarioTestRunner(
     {
         // Async, so the test info stays on this test's flow: the class's InitializeAsync reads it
         // to save artifacts when the scenario cannot even start.
-        ScenarioTestInfo.Current = new ScenarioTestInfo(Test.DisplayName, TestClass, TestMethod.Name);
+        ScenarioTestInfo.Current = new ScenarioTestInfo(Test.DisplayName, TestClass, TestMethod.Name, TestMethod);
         return await new ScenarioTestInvoker(Test, MessageBus, TestClass, ConstructorArguments, TestMethod, TestMethodArguments, BeforeAfterAttributes, aggregator, CancellationTokenSource, timeoutMs)
             .RunAsync().ConfigureAwait(false);
     }

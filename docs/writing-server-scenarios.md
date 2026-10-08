@@ -328,6 +328,26 @@ public class ModIntegrationTests : ServerScenarioBase
 }
 ```
 
+## Data Files
+
+Use `[DataFiles]` to put a file, such as a mod's config, into the server's data folder before it boots. A `{{pharos:port:NAME}}` placeholder in it becomes a free port, which `DataFilePort("NAME")` reads back:
+
+```csharp
+[ServerMods("mods/mymod.zip")]
+[DataFiles("Fixtures/mymod.json", To = "ModConfig/mymod.json", Side = EnumAppSide.Server)]
+public class MyModConfigTests : ServerScenarioBase
+{
+    [ServerScenario]
+    public void TheModListensOnItsPort()
+    {
+        using TcpClient tcp = new();
+        tcp.Connect("127.0.0.1", DataFilePort("metrics"));
+    }
+}
+```
+
+A rollback puts changed data files back. See [Data files](data-files.md).
+
 ## Watchdog
 
 Tests that wedge or run too long fail automatically. The default watchdog is 120 seconds. Override per class:

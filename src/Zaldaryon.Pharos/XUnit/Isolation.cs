@@ -51,13 +51,16 @@ public enum IsolationKind
 /// <param name="Duration">How long the boot or the rollback took.</param>
 public sealed record IsolationReport(IsolationKind Kind, string? Reason, int ChunksRestored, int ListenersRemoved, TimeSpan Duration)
 {
+    /// <summary>How many seeded data files and mod configs the rollback put back. See <see cref="DataFilesAttribute"/>.</summary>
+    public int DataFilesRestored { get; init; }
+
     /// <inheritdoc />
     public override string ToString()
     {
         string ms = Duration.TotalMilliseconds.ToString("0", CultureInfo.InvariantCulture) + " ms";
         return Kind switch
         {
-            IsolationKind.RolledBack => $"rolled back ({ChunksRestored} chunks, {ListenersRemoved} listeners removed, {ms})",
+            IsolationKind.RolledBack => $"rolled back ({ChunksRestored} chunks, {ListenersRemoved} listeners removed, {(DataFilesRestored > 0 ? $"{DataFilesRestored} data file{(DataFilesRestored == 1 ? "" : "s")} restored, " : "")}{ms})",
             IsolationKind.Recycled => "recycled",
             IsolationKind.FirstBoot => $"booted ({ms})",
             _ => Reason != null ? $"booted again: {Reason} ({ms})" : $"booted again ({ms})",

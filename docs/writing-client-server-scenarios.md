@@ -134,6 +134,10 @@ public async Task ClientReconnects_AfterPacketLoss()
 }
 ```
 
+## Data Files
+
+`[DataFiles]` puts files, such as mod configs, into the server's data folder, the client's, or both, before they boot. `{{pharos:port:NAME}}` placeholders get the same free port on both sides, read back with `DataFilePort("NAME")`. Each side's mod API reads its own folder. See [Data files](data-files.md).
+
 ## Lifecycle
 
 `ClientServerScenarioBase` handles the full lifecycle:
