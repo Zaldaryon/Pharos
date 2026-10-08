@@ -69,6 +69,17 @@ public static class PhCliRunner
                 case "benchmark":
                     return RunBenchmark(args, stdout, stderr);
 
+                case "smoke":
+                    return SmokeCommand.Run(args[1..], stdout, stderr);
+
+                case "help" when args.Length == 1:
+                    stdout.WriteLine(GetMainHelpText());
+                    return ExitCodeSuccess;
+
+                case "help" when args.Length > 1 && args[1] == "smoke":
+                    stdout.WriteLine(SmokeCommand.HelpText);
+                    return ExitCodeSuccess;
+
                 case "help" when args.Length > 1 && args[1] == "migrate-atlas":
                     stdout.WriteLine(MigrateAtlasCommand.GetHelpText());
                     return ExitCodeSuccess;
@@ -278,6 +289,7 @@ public static class PhCliRunner
         Commands:
           (default)         Run xUnit tests from a test assembly
           benchmark         Run performance benchmarks and check for regressions
+          smoke             Boot, join and play with a mod, failing on errors
           migrate-atlas     Migrate Atlas test suites to Pharos
           help <command>    Show help for a specific command
 
@@ -299,6 +311,7 @@ public static class PhCliRunner
           pharos MyTests.dll
           pharos -a MyTests.dll -f "Inventory" -v
           pharos benchmark --baseline-file pharos-baselines.json
+          pharos smoke --mod bin/Release/mymod.zip --strict
           pharos migrate-atlas ./MyTestProject --dry-run
           pharos help migrate-atlas
         """;

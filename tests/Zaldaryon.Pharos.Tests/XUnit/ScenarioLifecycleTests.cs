@@ -33,7 +33,22 @@ public class ServerScenarioLifecycleTests : ServerScenarioBase
     [ServerScenario]
     public async Task ExecuteSuccess_RunsAConsoleCommand()
     {
-        await ExecuteSuccess("/time set day");
+        await ExecuteSuccess("/time set midnight");
+        double night = Host!.RunOnGameThread(() => Api!.World.Calendar.HourOfDay);
+
+        await ExecuteSuccess("/time set 12:00");
+        double noon = Host.RunOnGameThread(() => Api!.World.Calendar.HourOfDay);
+
+        Assert.True(Math.Abs(noon - 12) < 1, $"The clock reads {noon:0.0} after /time set 12:00");
+        Assert.True(night < 1 || night > 23, $"The clock read {night:0.0} after /time set midnight");
+    }
+
+    [ServerScenario]
+    public async Task ExecuteSuccess_FailsOnAnUnknownCommand()
+    {
+        CommandExecutionException error = await Assert.ThrowsAsync<CommandExecutionException>(() => ExecuteSuccess("/pharosnosuchcommand"));
+
+        Assert.Equal(Vintagestory.API.Common.EnumCommandStatus.NoSuchCommand, error.Result.Status);
     }
 }
 

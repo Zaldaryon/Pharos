@@ -1,0 +1,11 @@
+{
+  "type": "code",
+  "modid": "pharoserrormod",
+  "name": "Pharos Error Mod",
+  "version": "1.0.0",
+  "side": "Server",
+  "requiredOnClient": false,
+  "description": "Source mod the smoke test tests stage: it boots cleanly and logs an error a second after a player joins, as a mod that breaks during play would.",
+  "authors": ["Pharos"],
+  "dependencies": { "game": "" }
+}

@@ -124,6 +124,15 @@ jobs:
           dotnet pack src/Zaldaryon.Pharos.Bridge/Zaldaryon.Pharos.Bridge.csproj -c Release --no-build -o ./nupkg
           dotnet pack src/Zaldaryon.Pharos.XUnit/Zaldaryon.Pharos.XUnit.csproj -c Release --no-build -o ./nupkg
           dotnet pack src/Zaldaryon.Pharos.AtlasCompat/Zaldaryon.Pharos.AtlasCompat.csproj -c Release --no-build -o ./nupkg
+          dotnet pack src/Zaldaryon.Pharos.Cli/Zaldaryon.Pharos.Cli.csproj -c Release --no-build -o ./nupkg
+
+      - name: Check that no package carries the game
+        env:
+          VINTAGE_STORY: ${{ env.VS_CACHE_PATH }}/${{ env.VS_VERSION }}
+        run: |
+          for package in ./nupkg/*.nupkg; do
+            scripts/check-tool-package.sh "$package" "$VINTAGE_STORY"
+          done
 
       - name: Login to NuGet.org (trusted publishing)
         id: nuget-login

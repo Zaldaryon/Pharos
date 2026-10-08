@@ -26,15 +26,18 @@ internal static class BootCheck
         testClass.GetCustomAttribute<StrictBootAttribute>(inherit: true) != null
         || testClass.Assembly.GetCustomAttribute<StrictBootAttribute>() != null;
 
-    /// <summary>The allowances of the class, its base classes and its assembly, and the harness's own.</summary>
+    /// <summary>The allowances of the class, its base classes and its assembly.</summary>
     public static IReadOnlyList<AllowBootDiagnosticAttribute> Allowances(Type testClass) =>
         [.. testClass.Assembly.GetCustomAttributes<AllowBootDiagnosticAttribute>(),
-         .. testClass.GetCustomAttributes<AllowBootDiagnosticAttribute>(inherit: true),
-         .. HarnessAllowances];
+         .. testClass.GetCustomAttributes<AllowBootDiagnosticAttribute>(inherit: true)];
 
-    /// <summary>Judges <paramref name="boots"/> against the class's allowances.</summary>
+    /// <summary>Judges <paramref name="boots"/> against the class's allowances and the harness's own.</summary>
     public static BootDiagnosticsResult Evaluate(Type testClass, params BootDiagnostics?[] boots) =>
-        BootDiagnosticsResult.Of(boots.OfType<BootDiagnostics>(), Allowances(testClass));
+        Evaluate(Allowances(testClass), boots);
+
+    /// <summary>Judges <paramref name="boots"/> against <paramref name="allowances"/> and the harness's own.</summary>
+    public static BootDiagnosticsResult Evaluate(IEnumerable<AllowBootDiagnosticAttribute> allowances, params BootDiagnostics?[] boots) =>
+        BootDiagnosticsResult.Of(boots.OfType<BootDiagnostics>(), [.. allowances, .. HarnessAllowances]);
 
     /// <summary>
     /// Throws when an earlier test of the class failed its strict boot: the class is not booted
@@ -42,10 +45,13 @@ internal static class BootCheck
     /// allowances is invalid.
     /// </summary>
     /// <exception cref="ArgumentException">An allowance is invalid.</exception>
-    public static void ThrowIfFailedBefore(Type testClass)
+    public static void ThrowIfFailedBefore(Type testClass) => ThrowIfFailedBefore(testClass, Allowances(testClass));
+
+    /// <inheritdoc cref="ThrowIfFailedBefore(Type)" />
+    public static void ThrowIfFailedBefore(Type testClass, IEnumerable<AllowBootDiagnosticAttribute> allowances)
     {
         // A mistake in an allowance is found before anything boots, on every test of the class.
-        foreach (AllowBootDiagnosticAttribute allowance in Allowances(testClass))
+        foreach (AllowBootDiagnosticAttribute allowance in allowances)
         {
             allowance.Validate();
         }
@@ -63,11 +69,15 @@ internal static class BootCheck
     /// gate afresh: what was logged at boot was judged here, not by the gate.
     /// </summary>
     /// <exception cref="BootDiagnosticsException">The boot logged what the class does not allow.</exception>
-    public static bool Enforce(Type testClass, params BootDiagnostics?[] boots)
-    {
-        if (!IsStrict(testClass)) return false;
+    public static bool Enforce(Type testClass, params BootDiagnostics?[] boots) =>
+        Enforce(testClass, IsStrict(testClass), Allowances(testClass), boots);
 
-        BootDiagnosticsResult result = Evaluate(testClass, boots);
+    /// <inheritdoc cref="Enforce(Type, BootDiagnostics?[])" />
+    public static bool Enforce(Type testClass, bool strict, IEnumerable<AllowBootDiagnosticAttribute> allowances, params BootDiagnostics?[] boots)
+    {
+        if (!strict) return false;
+
+        BootDiagnosticsResult result = Evaluate(allowances, boots);
         if (result.Passed) return true;
 
         BootDiagnosticsException failure = new(result) { Test = ScenarioTestInfo.Current?.DisplayName };
