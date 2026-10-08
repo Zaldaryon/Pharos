@@ -22,6 +22,8 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Source mods the game compiles itself when it loads them; not part of the test assembly. -->
+    <Compile Remove="TestMods\**" />
     <None Include="TestMods\**\*" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 

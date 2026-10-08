@@ -149,6 +149,32 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime, IScenarioLifecy
     protected virtual IEnumerable<string> AllowedLoggedErrors => [];
 
     /// <summary>
+    /// The mods staged into the server, and into the client, which needs every universal mod the
+    /// server runs. Defaults to every <see cref="ServerModsAttribute"/> on the class, its base
+    /// classes and its assembly.
+    /// </summary>
+    protected virtual IReadOnlyList<string> ServerModPaths => ScenarioAttributes.ServerMods(GetType());
+
+    /// <summary>
+    /// Mods staged into the client only. Defaults to every <see cref="PharosModsAttribute"/> on
+    /// the class, its base classes and its assembly.
+    /// </summary>
+    protected virtual IReadOnlyList<string> ClientModPaths => ScenarioAttributes.ClientMods(GetType());
+
+    /// <summary>
+    /// Whether a fresh boot fails on boot diagnostics <see cref="BootAllowances"/> does not allow.
+    /// Defaults to <see cref="StrictBootAttribute"/> on the class, its base classes or its assembly.
+    /// See <c>docs/boot-diagnostics.md</c>.
+    /// </summary>
+    protected virtual bool StrictBoot => BootCheck.IsStrict(GetType());
+
+    /// <summary>
+    /// The boot diagnostics the class allows. Defaults to every <see cref="AllowBootDiagnosticAttribute"/>
+    /// on the class, its base classes and its assembly.
+    /// </summary>
+    protected virtual IEnumerable<AllowBootDiagnosticAttribute> BootAllowances => BootCheck.Allowances(GetType());
+
+    /// <summary>
     /// What the test saves when it fails or times out; see <see cref="Reporting.FailureArtifacts"/>
     /// and <c>docs/failure-artifacts.md</c>.
     /// </summary>
@@ -177,7 +203,7 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime, IScenarioLifecy
     /// </remarks>
     public virtual async Task InitializeAsync()
     {
-        BootCheck.ThrowIfFailedBefore(GetType());
+        BootCheck.ThrowIfFailedBefore(GetType(), BootAllowances);
         _gate = await ScenarioHostPool.EnterAsync(HostWaitTimeout).ConfigureAwait(false);
 
         try
@@ -196,7 +222,7 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime, IScenarioLifecy
             await StartAsync().ConfigureAwait(false);
 
             // Checked before the pair is snapshotted or pooled: a pair that fails it is torn down.
-            if (BootCheck.Enforce(GetType(), _serverHost!.BootDiagnostics, _client!.BootDiagnostics))
+            if (BootCheck.Enforce(GetType(), StrictBoot, BootAllowances, _serverHost!.BootDiagnostics, _client!.BootDiagnostics))
             {
                 _serverHost.Logs.Clear();
                 _client.Logs.Clear();
@@ -236,7 +262,7 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime, IScenarioLifecy
     /// <see cref="AllowBootDiagnosticAttribute"/>s, whether or not the class is
     /// <see cref="StrictBootAttribute"/>. See <c>docs/boot-diagnostics.md</c>.
     /// </summary>
-    protected BootDiagnosticsResult UnexpectedBootDiagnostics => BootCheck.Evaluate(GetType(), _serverHost?.BootDiagnostics, _client?.BootDiagnostics);
+    protected BootDiagnosticsResult UnexpectedBootDiagnostics => BootCheck.Evaluate(BootAllowances, _serverHost?.BootDiagnostics, _client?.BootDiagnostics);
 
     void IScenarioLifecycle.BeforeBody()
     {
@@ -283,10 +309,10 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime, IScenarioLifecy
 
         // The server's mods go to both sides: a real client needs every universal mod the server
         // runs, and an in-memory client has no mod download step to fetch them.
-        IReadOnlyList<string> serverMods = ScenarioAttributes.ServerMods(GetType());
+        IReadOnlyList<string> serverMods = ServerModPaths;
         ScenarioAttributes.StageMods(serverMods, _sandbox.ModsPath);
         _clientModsDirectory = Path.Combine(_sandbox.RootPath, "ClientMods");
-        ScenarioAttributes.StageMods([.. serverMods, .. ScenarioAttributes.ClientMods(GetType())], _clientModsDirectory);
+        ScenarioAttributes.StageMods([.. serverMods, .. ClientModPaths], _clientModsDirectory);
 
         // Boot embedded server in sandbox
         _serverHost = EmbeddedServerHost.Boot(_sandbox, WorldOptions);
@@ -345,8 +371,8 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime, IScenarioLifecy
         HeadlessClientOptions client = ClientOptions;
         return new ClientServerPoolKey(
             WorldOptions,
-            string.Join("|", ScenarioAttributes.ServerMods(GetType())),
-            string.Join("|", [.. ScenarioAttributes.ClientMods(GetType()), .. client.ModPaths]),
+            string.Join("|", ServerModPaths),
+            string.Join("|", [.. ClientModPaths, .. client.ModPaths]),
             PlayerName,
             client.BootMode,
             client.Width,
