@@ -27,6 +27,7 @@ using Zaldaryon.Pharos.Timing;
 using Zaldaryon.Pharos.Network;
 using Zaldaryon.Pharos.UI;
 using Zaldaryon.Pharos.World;
+using Zaldaryon.Pharos.XUnit.Execution;
 
 namespace Zaldaryon.Pharos.Core;
 
@@ -37,6 +38,7 @@ public sealed class HeadlessClient : IDisposable
 {
     private bool _disposed;
     private readonly string? _tempDataPath;
+    private bool _retainDataPath;
 
     public ClientMain Client { get; }
     public ClientPlatformWindows Platform { get; }
@@ -101,6 +103,7 @@ public sealed class HeadlessClient : IDisposable
     public void RunOnClientThread(Action action)
     {
         ArgumentNullException.ThrowIfNull(action);
+        ScenarioAbort.ThrowIfAborted();
         if (_clientThread == null) action();
         else _clientThread.Invoke(action);
     }
@@ -112,6 +115,7 @@ public sealed class HeadlessClient : IDisposable
     public T RunOnClientThread<T>(Func<T> func)
     {
         ArgumentNullException.ThrowIfNull(func);
+        ScenarioAbort.ThrowIfAborted();
         return _clientThread == null ? func() : _clientThread.Invoke(func);
     }
 
@@ -226,6 +230,22 @@ public sealed class HeadlessClient : IDisposable
     /// <see cref="ManagedLeakTracker.GetLeakReport"/> after to detect leaks.
     /// </summary>
     public ManagedLeakTracker ManagedLeaks { get; } = new();
+
+    /// <summary>Whether <see cref="RetainDataPath"/> was called.</summary>
+    internal bool IsDataPathRetained => _retainDataPath;
+
+    /// <summary>The client's data path: the one given in the options, or its temporary one.</summary>
+    internal string? DataPath => Options.DataPath ?? _tempDataPath;
+
+    /// <summary>
+    /// Keeps a temporary data path when the client is disposed, so it can be inspected after a
+    /// failure. Returns the path kept, or null when the client has no temporary data path.
+    /// </summary>
+    internal string? RetainDataPath()
+    {
+        _retainDataPath = true;
+        return _tempDataPath;
+    }
 
     internal HeadlessClient(
         ClientMain client,
@@ -1107,7 +1127,7 @@ public sealed class HeadlessClient : IDisposable
             ClientSettings.MpToken = null;
         }
 
-        if (!string.IsNullOrEmpty(_tempDataPath) && Directory.Exists(_tempDataPath))
+        if (!_retainDataPath && !string.IsNullOrEmpty(_tempDataPath) && Directory.Exists(_tempDataPath))
         {
             try
             {

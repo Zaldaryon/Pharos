@@ -2,9 +2,10 @@ using Xunit;
 using Zaldaryon.Pharos.Bootstrap;
 using Zaldaryon.Pharos.Core;
 using Zaldaryon.Pharos.Player;
-using Zaldaryon.Pharos.Timing;
-
 using Zaldaryon.Pharos.Reporting;
+using Zaldaryon.Pharos.Timing;
+using Zaldaryon.Pharos.XUnit.Execution;
+
 namespace Zaldaryon.Pharos.XUnit;
 
 /// <summary>
@@ -29,8 +30,10 @@ namespace Zaldaryon.Pharos.XUnit;
 /// static state, so two clients or servers cannot boot side by side in one process.
 /// </para>
 /// </remarks>
-public abstract class ClientScenarioBase : IAsyncLifetime
+public abstract class ClientScenarioBase : IAsyncLifetime, IScenarioLifecycle
 {
+    private readonly ScenarioRun _run = new();
+    private bool _recordingForArtifacts;
     private IDisposable? _classSettings;
     private ClientIsolationManager? _isolationManager;
     private IDisposable? _gate;
@@ -81,6 +84,20 @@ public abstract class ClientScenarioBase : IAsyncLifetime
     protected virtual IEnumerable<string> AllowedLoggedErrors => [];
 
     /// <summary>
+    /// What the test saves when it fails or times out; see <see cref="Reporting.FailureArtifacts"/>
+    /// and <c>docs/failure-artifacts.md</c>.
+    /// </summary>
+    protected virtual FailureArtifacts Artifacts => FailureArtifacts.Default;
+
+    /// <summary>
+    /// Called when the test fails, while the client is still up, to add files of the test's own
+    /// to <paramref name="directory"/>, the folder of its failure artifacts.
+    /// </summary>
+    protected virtual void OnFailure(string directory)
+    {
+    }
+
+    /// <summary>
     /// Gets the isolation manager, creating it lazily with the current IsolationMode.
     /// </summary>
     /// <returns>The ClientIsolationManager for this scenario.</returns>
@@ -124,20 +141,107 @@ public abstract class ClientScenarioBase : IAsyncLifetime
                 _classSettings = Client.Settings.Apply(settings);
             }
         }
-        catch
+        catch (Exception ex)
         {
+            Exception failure = ScenarioRun.SetupFailed(ex, (error, test) => Describe(test, error, timedOut: false, _pooled?.Client));
+
+            // xUnit does not call DisposeAsync after a failed InitializeAsync: the client goes
+            // now, or the next scenario boots a second one beside it.
+            try
+            {
+                _classSettings?.Dispose();
+            }
+            catch
+            {
+                // The client is disposed below anyway.
+            }
+
+            _classSettings = null;
+            if (_pooled != null)
+            {
+                try
+                {
+                    _pooled.Dispose();
+                }
+                catch
+                {
+                    // A client that fails to shut down must not hide why it failed to start.
+                }
+
+                _pooled = null;
+                ScenarioHostPool.HostDisposed();
+            }
+
+            Client = null;
+
             _gate.Dispose();
             _gate = null;
-            throw;
+            if (ReferenceEquals(failure, ex)) throw;
+            throw failure;
         }
     }
+
+    void IScenarioLifecycle.BeforeBody()
+    {
+        _run.BodyStarting(Client?.FrameController.TotalFrames, ticks: null);
+        if (Artifacts.HasFlag(FailureArtifacts.Packets) && Client is { PacketRecorder.IsRecording: false } client)
+        {
+            client.PacketRecorder.Start();
+            _recordingForArtifacts = true;
+        }
+    }
+
+    void IScenarioLifecycle.CheckLoggedErrors() =>
+        LoggedErrorGate.ThrowIfAny(LoggedErrorGate.Collect(FailOnLoggedErrors, AllowedLoggedErrors, Client?.Logs));
+
+    void IScenarioLifecycle.BodyTimedOut(bool stillRunning) => _run.BodyTimedOut(stillRunning);
+
+    string? IScenarioLifecycle.CaptureFailure(ScenarioTestInfo test, Exception exception, bool timedOut) =>
+        FailureArtifactWriter.Write(Describe(test, exception, timedOut, Client)).Summary();
+
+    private ScenarioFailure Describe(ScenarioTestInfo test, Exception exception, bool timedOut, HeadlessClient? client) => new()
+    {
+        DisplayName = test.DisplayName,
+        TestClass = test.TestClass,
+        MethodName = test.MethodName,
+        TimedOut = timedOut,
+        Exception = exception,
+        Client = client,
+        // A fixture-mode client renders on the test's own thread: after a timeout the body may
+        // still hold its GL context. An engine-mode client's capture queues on its own thread.
+        ClientReachable = !_run.Abandoned && !(timedOut && client?.BootMode == ClientBootMode.Fixture),
+        Isolation = IsolationMode.ToString(),
+        Frames = ScenarioRun.Since(_run.FramesAtStart, client?.FrameController.TotalFrames),
+        Artifacts = Artifacts,
+        AddFiles = OnFailure,
+    };
 
     /// <summary>
     /// Disposes the client, or pools it for the next test of this class.
     /// </summary>
     public virtual Task DisposeAsync()
     {
-        IReadOnlyList<LogEntry> loggedErrors = LoggedErrorGate.Collect(FailOnLoggedErrors, AllowedLoggedErrors, Client?.Logs);
+        IReadOnlyList<LogEntry> loggedErrors = _run.PipelineChecksLoggedErrors
+            ? []
+            : LoggedErrorGate.Collect(FailOnLoggedErrors, AllowedLoggedErrors, Client?.Logs);
+
+        if (_run.Abandoned)
+        {
+            // The timed-out body still drives the client: it is left as it is.
+            _classSettings = null;
+            _pooled = null;
+            Client = null;
+            _gate?.Dispose();
+            _gate = null;
+            return Task.CompletedTask;
+        }
+
+        // The recording started for the failure artifacts must not run on into the next test.
+        if (_recordingForArtifacts && Client is { IsDisposed: false } recorded)
+        {
+            recorded.PacketRecorder.Stop();
+            recorded.PacketRecorder.Clear();
+        }
 
         // Settings are process-wide, and a pooled client serves the next test as it is left.
         try
@@ -153,7 +257,7 @@ public abstract class ClientScenarioBase : IAsyncLifetime
         {
             if (_pooled != null)
             {
-                if (IsolationMode != IsolationMode.FreshClient && !_pooled.Client.IsDisposed)
+                if (IsolationMode != IsolationMode.FreshClient && !_pooled.Client.IsDisposed && !_run.TimedOut && !_pooled.Client.IsDataPathRetained)
                 {
                     // The next test judges only what it logs itself.
                     _pooled.Client.Logs.Clear();

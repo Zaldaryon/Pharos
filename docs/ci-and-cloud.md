@@ -61,6 +61,13 @@ mkdir -p /opt/vs && wget -q https://cdn.vintagestory.at/gamefiles/stable/vs_clie
 
 Then set `VINTAGE_STORY=/opt/vs` and run the suite with `scripts/run-headless-linux.sh`. The environment's network policy must allow `cdn.vintagestory.at` for the download, and `auth3.vintagestory.at` only if you run the online auth tests.
 
+## When a test fails on CI
+
+A failing scenario saves a screenshot, the client and server logs, `run.json` and, when asked,
+the traffic, under `PHAROS_ARTIFACTS`. This repository's workflow uploads that folder as the
+`pharos-failures-*` artifact of a failed or cancelled job. See
+[Failure artifacts](failure-artifacts.md).
+
 ## Slow runners
 
 Shared CI runners render in software and are often busy. Pharos tests wait in frames or server ticks for a condition, bounded by a generous limit, rather than for a fixed time or a fixed number of steps, so a slow runner only makes them slower. Write new scenarios the same way: step until the outcome is visible, with a limit, and assert after.

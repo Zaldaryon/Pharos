@@ -3,9 +3,10 @@ using Xunit;
 using Zaldaryon.Pharos.Bootstrap;
 using Zaldaryon.Pharos.Core;
 using Zaldaryon.Pharos.Player;
-using Zaldaryon.Pharos.Server;
-
 using Zaldaryon.Pharos.Reporting;
+using Zaldaryon.Pharos.Server;
+using Zaldaryon.Pharos.XUnit.Execution;
+
 namespace Zaldaryon.Pharos.XUnit;
 
 /// <summary>
@@ -40,8 +41,9 @@ namespace Zaldaryon.Pharos.XUnit;
 /// client and server compete for shared resources.
 /// </para>
 /// </remarks>
-public abstract class ClientServerScenarioBase : IAsyncLifetime
+public abstract class ClientServerScenarioBase : IAsyncLifetime, IScenarioLifecycle
 {
+    private readonly ScenarioRun _run = new();
     private ServerSandbox? _sandbox;
     private EmbeddedServerHost? _serverHost;
     private HeadlessClient? _client;
@@ -110,10 +112,11 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime
     protected virtual HeadlessClientOptions ClientOptions => new() { BootMode = ClientBootMode.Engine };
 
     /// <summary>
-    /// Gets the timeout for waiting for the player to join.
-    /// Default is 60 seconds.
+    /// Gets the timeout for waiting for the player to join. Default is 60 seconds, scaled by
+    /// <c>PHAROS_TIMEOUT_SCALE</c>: a client composing its texture atlases in software on a busy
+    /// runner can take most of a minute.
     /// </summary>
-    protected virtual TimeSpan PlayerJoinTimeout => TimeSpan.FromSeconds(60);
+    protected virtual TimeSpan PlayerJoinTimeout => TimeSpan.FromSeconds(60 * ScenarioTimeouts.Scale);
 
     /// <summary>
     /// Gets whether to wait for the player to fully join during initialization.
@@ -144,6 +147,20 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime
     /// without regard to case.
     /// </summary>
     protected virtual IEnumerable<string> AllowedLoggedErrors => [];
+
+    /// <summary>
+    /// What the test saves when it fails or times out; see <see cref="Reporting.FailureArtifacts"/>
+    /// and <c>docs/failure-artifacts.md</c>.
+    /// </summary>
+    protected virtual FailureArtifacts Artifacts => FailureArtifacts.Default;
+
+    /// <summary>
+    /// Called when the test fails, while the client and the server are still up, to add files of
+    /// the test's own to <paramref name="directory"/>, the folder of its failure artifacts.
+    /// </summary>
+    protected virtual void OnFailure(string directory)
+    {
+    }
 
     /// <summary>
     /// Initializes the client-server scenario: boots server, connects client, waits for player join.
@@ -183,14 +200,65 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime
                 _baselineTracking = _serverHost.RunOnGameThread(() => _baseline.TrackChunksLoadedLater(_serverHost));
             }
         }
-        catch
+        catch (Exception ex)
         {
+            // Saved before the teardown below takes the client and the server down.
+            Exception failure = ScenarioRun.SetupFailed(ex, (error, test) => Describe(test, error, timedOut: false));
+
             // xUnit does not always reach DisposeAsync after a failed InitializeAsync, and the
-            // gate must be released either way or every later scenario waits for it.
-            await DisposeAsync().ConfigureAwait(false);
-            throw;
+            // gate must be released either way or every later scenario waits for it. Nothing it
+            // throws may replace the setup's own failure.
+            _run.SetupFailing();
+            try
+            {
+                await DisposeAsync().ConfigureAwait(false);
+            }
+            catch (Exception teardown)
+            {
+                ServerMain.Logger?.Warning("Pharos could not tear down a scenario that failed to start: {0}", teardown);
+            }
+
+            if (ReferenceEquals(failure, ex)) throw;
+            throw failure;
         }
     }
+
+    void IScenarioLifecycle.BeforeBody()
+    {
+        _run.BodyStarting(_session?.FrameCount, _session?.ServerTickCount);
+        if (Artifacts.HasFlag(FailureArtifacts.Packets) && _client is { PacketRecorder.IsRecording: false } client)
+        {
+            client.PacketRecorder.Start();
+        }
+    }
+
+    void IScenarioLifecycle.CheckLoggedErrors() =>
+        LoggedErrorGate.ThrowIfAny(LoggedErrorGate.Collect(FailOnLoggedErrors, AllowedLoggedErrors, _client?.Logs, _serverHost?.Logs));
+
+    void IScenarioLifecycle.BodyTimedOut(bool stillRunning) => _run.BodyTimedOut(stillRunning);
+
+    string? IScenarioLifecycle.CaptureFailure(ScenarioTestInfo test, Exception exception, bool timedOut) =>
+        FailureArtifactWriter.Write(Describe(test, exception, timedOut)).Summary();
+
+    private ScenarioFailure Describe(ScenarioTestInfo test, Exception exception, bool timedOut) => new()
+    {
+        DisplayName = test.DisplayName,
+        TestClass = test.TestClass,
+        MethodName = test.MethodName,
+        TimedOut = timedOut,
+        Exception = exception,
+        Client = _client,
+        ClientReachable = !_run.Abandoned,
+        Server = _serverHost,
+        ServerDataPath = _sandbox?.RootPath,
+        Sandbox = _sandbox,
+        World = WorldOptions,
+        Isolation = WorldIsolation.ToString(),
+        Frames = ScenarioRun.Since(_run.FramesAtStart, _session?.FrameCount),
+        ServerTicks = ScenarioRun.Since(_run.TicksAtStart, _session?.ServerTickCount),
+        Artifacts = Artifacts,
+        AddFiles = OnFailure,
+    };
 
     private async Task StartAsync()
     {
@@ -278,7 +346,23 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime
         if (_disposed) return;
         _disposed = true;
 
-        IReadOnlyList<LogEntry> loggedErrors = LoggedErrorGate.Collect(FailOnLoggedErrors, AllowedLoggedErrors, _client?.Logs, _serverHost?.Logs);
+        IReadOnlyList<LogEntry> loggedErrors = _run.PipelineChecksLoggedErrors
+            ? []
+            : LoggedErrorGate.Collect(FailOnLoggedErrors, AllowedLoggedErrors, _client?.Logs, _serverHost?.Logs);
+
+        if (_run.Abandoned)
+        {
+            // The timed-out body still drives the client and the server: they are left as they are.
+            _classSettings = null;
+            _testPlayers.Clear();
+            _session = null;
+            _client = null;
+            _serverHost = null;
+            _sandbox = null;
+            _gate?.Dispose();
+            _gate = null;
+            return;
+        }
 
         // Settings are process-wide: the next scenario's client must not inherit them.
         try
@@ -305,7 +389,8 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime
 
         _testPlayers.Clear();
 
-        if (_poolKey != null && await TryRollbackAsync().ConfigureAwait(false))
+        bool reusable = !_run.TimedOut && _sandbox is { IsRetained: false } && _client is { IsDataPathRetained: false };
+        if (_poolKey != null && reusable && await TryRollbackAsync().ConfigureAwait(false))
         {
             ScenarioHostPool.Return(GetType(), _poolKey, Detach());
             _gate?.Dispose();

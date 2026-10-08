@@ -1,5 +1,7 @@
 using System.Collections.Concurrent;
+using System.Globalization;
 using System.Runtime.ExceptionServices;
+using Zaldaryon.Pharos.XUnit.Execution;
 
 namespace Zaldaryon.Pharos.Platform;
 
@@ -34,12 +36,33 @@ internal sealed class EngineThread : IDisposable
 
     public EngineThread(string name)
     {
-        _thread = new Thread(Run)
+        // The thread outlives whatever started it, a scenario body included: it must not carry
+        // that body's abort token or other async-locals. It keeps the starter's culture, which
+        // tests set to the invariant one on machines whose own culture the game misreads.
+        CultureInfo culture = CultureInfo.CurrentCulture;
+        CultureInfo uiCulture = CultureInfo.CurrentUICulture;
+        _thread = new Thread(() =>
+        {
+            CultureInfo.CurrentCulture = culture;
+            CultureInfo.CurrentUICulture = uiCulture;
+            Run();
+        })
         {
             IsBackground = true,
             Name = name,
         };
-        _thread.Start();
+
+        if (ExecutionContext.IsFlowSuppressed())
+        {
+            _thread.Start();
+        }
+        else
+        {
+            using (ExecutionContext.SuppressFlow())
+            {
+                _thread.Start();
+            }
+        }
     }
 
     /// <summary>Whether the caller is already on this thread.</summary>
@@ -55,12 +78,14 @@ internal sealed class EngineThread : IDisposable
     /// <summary>Runs <paramref name="func"/> on this thread and returns its result.</summary>
     public T Invoke<T>(Func<T> func)
     {
+        // A scenario body that ran out of time may not queue any more work.
+        ScenarioAbort.ThrowIfAborted();
         if (IsCurrent) return func();
         if (Volatile.Read(ref _disposed) != 0) throw new ObjectDisposedException(nameof(EngineThread));
 
         T result = default!;
         ExceptionDispatchInfo? error = null;
-        using ManualResetEventSlim done = new();
+        ManualResetEventSlim done = new();
 
         _work.Add(() =>
         {
@@ -78,7 +103,34 @@ internal sealed class EngineThread : IDisposable
             }
         });
 
-        done.Wait();
+        if (ScenarioAbort.Current is { } scope)
+        {
+            try
+            {
+                done.Wait(scope.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                // The body ran out of time while its work ran here. The work gets a grace period:
+                // the teardown would queue behind it. If it is still running after that, the game
+                // is stuck: the body is let go and its host given up, and the event, which the
+                // work still sets, is left to the garbage collector.
+                if (!done.Wait(ScenarioTimeouts.Grace))
+                {
+                    scope.MarkWedged();
+                    throw new ScenarioAbortedException();
+                }
+
+                done.Dispose();
+                throw new ScenarioAbortedException();
+            }
+        }
+        else
+        {
+            done.Wait();
+        }
+
+        done.Dispose();
         error?.Throw();
         return result;
     }

@@ -38,6 +38,7 @@ public sealed class ServerSandbox : IDisposable
 {
     private bool _disposed;
     private readonly bool _deleteOnDispose;
+    private bool _retained;
 
     /// <summary>
     /// The root path of the sandbox directory.
@@ -310,6 +311,14 @@ public sealed class ServerSandbox : IDisposable
     }
 
     /// <summary>
+    /// Keeps the directory when the sandbox is disposed, so it can be inspected after a failure.
+    /// </summary>
+    internal void Retain() => _retained = true;
+
+    /// <summary>Whether <see cref="Retain"/> was called.</summary>
+    internal bool IsRetained => _retained;
+
+    /// <summary>
     /// Disposes the sandbox and optionally deletes the directory.
     /// </summary>
     public void Dispose()
@@ -321,7 +330,7 @@ public sealed class ServerSandbox : IDisposable
 
         _disposed = true;
 
-        if (_deleteOnDispose)
+        if (_deleteOnDispose && !_retained)
         {
             // Best-effort cleanup with retries
             Cleanup(maxRetries: 3, initialDelayMs: 50);
