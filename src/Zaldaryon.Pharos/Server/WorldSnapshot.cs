@@ -38,8 +38,13 @@ namespace Zaldaryon.Pharos.Server;
 /// the inventories they had.
 /// </para>
 /// <para>
-/// Not restored: chunks first loaded after the snapshot, the calendar and weather, world-level
-/// mod data, and tick listeners or event handlers a test registered.
+/// The calendar and the weather are restored too: the time, its speed and a freeze; each loaded
+/// region's cloud pattern, wind, weather event and snow accumulation; the precipitation override
+/// and whether the weather changes on its own. Clients are sent the restored calendar and weather.
+/// </para>
+/// <para>
+/// Not restored: chunks and map regions first loaded after the snapshot, world-level mod data,
+/// and tick listeners or event handlers a test registered.
 /// </para>
 /// </remarks>
 public sealed record WorldSnapshot : IWorldSnapshot
@@ -73,6 +78,10 @@ public sealed record WorldSnapshot : IWorldSnapshot
     private IReadOnlyDictionary<string, string> ServerPlayerData { get; }
 
     private IReadOnlyDictionary<string, OnlinePlayerState> OnlinePlayers { get; }
+
+    private CalendarDriver.Saved? Calendar { get; init; }
+
+    private WeatherDriver.Saved? Weather { get; init; }
 
     private WorldSnapshot(
         ServerWorldOptions options,
@@ -145,7 +154,11 @@ public sealed record WorldSnapshot : IWorldSnapshot
             }
         }
 
-        return new WorldSnapshot(host.Options, chunks, mapChunks, worldPlayerData, serverPlayerData, online);
+        return new WorldSnapshot(host.Options, chunks, mapChunks, worldPlayerData, serverPlayerData, online)
+        {
+            Calendar = host.Calendar.Capture(),
+            Weather = host.Weather.Capture(),
+        };
     }
 
     /// <summary>
@@ -237,6 +250,10 @@ public sealed record WorldSnapshot : IWorldSnapshot
 
         ServerMain server = host.Server;
         AdoptChunksLoadedLater(server);
+
+        // The calendar first: restored weather and block entities read the time.
+        if (Calendar != null) host.Calendar.Restore(Calendar);
+        if (Weather != null) host.Weather.Restore(Weather);
         RestorePlayerData(server);
 
         int restored = 0;

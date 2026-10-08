@@ -111,14 +111,17 @@ What the snapshot holds:
 
 - **Chunks:** every loaded chunk, in the game's own save format (blocks, fluids, light, decor, block entities, the entities stored with the chunk, and mod data), plus the height maps of their map chunks. Chunks that load later are recorded as they were when they loaded.
 - **Players:** the world data of every known player.
+- **Calendar:** the time, its speed, and a freeze.
+- **Weather:** each loaded region's cloud pattern, wind, weather event and snow accumulation, the precipitation override, and whether the weather changes on its own.
 
 What a restore does:
 
 - **Unchanged chunks:** left alone.
 - **Changed chunks:** swapped for their saved copy the way the game reloads a chunk from disk. Their entities are despawned, the saved ones are loaded with their original ids, and their block entities are initialized.
 - **Players:** any player who joined after the snapshot is forgotten, so a later player of the same name starts fresh.
+- **Calendar and weather:** put back first, then sent to connected clients. Time can go backwards: a mod that keeps the time in memory resets on `pharos:rollback:restored`.
 
-Not restored: the calendar and weather, world-level mod data, and C# event handlers a test added (such as `Api.Event.PlayerJoin += ...`). A chunk that unloads during a test is saved with its changes. A restore that fails leaves the next test a freshly booted server.
+Not restored: map regions first loaded after the snapshot, world-level mod data (including what mods keep in the save game), and C# event handlers a test added (such as `Api.Event.PlayerJoin += ...`). A chunk that unloads during a test is saved with its changes. A restore that fails leaves the next test a freshly booted server.
 
 ### Listeners a test leaves
 
@@ -274,6 +277,38 @@ public async Task EntityMovesToTarget()
     Assert.True(entity.Pos.DistanceTo(new Vec3d(10, 64, 10)) < 1.0);
 }
 ```
+
+## Calendar and Weather
+
+`Host.Calendar` reads and sets the world's calendar. The game's clock follows the wall clock: while players are connected it moves 30 game seconds per real second, and with nobody connected it stands still. A test that needs exact times freezes it first:
+
+```csharp
+Host!.Calendar.Freeze();
+Host.Calendar.SetTime(hourOfDay: 22);           // the next 22:00
+Host.Calendar.SetDate(year: 1, month: 7, day: 4); // keeps the time of day
+Host.Calendar.Advance(TimeSpan.FromHours(30));  // at once, as /time add does
+EnumSeason season = Host.Calendar.Season;          // at the spawn point
+```
+
+- Every change lands on a whole second and is sent to clients at once.
+- `Freeze()` stops time on the server and its clients, as `/time stop` does in effect: hunger and health regeneration stop with it, weather transitions do not. `Unfreeze()` lets it run again; it does not undo `/time stop`, which stops time another way. `IsFrozen` is also true after `/time stop`.
+- `Advance` jumps. Game systems that work from the time passed, such as crops and snow, catch up on their next update.
+- `Month` runs from 1 to 12, `Year` from 0. `Season` is the season at the spawn point; `GetSeason(pos)` depends on latitude.
+
+`Host.Weather` sets the weather, through the game's essentials mod, which every world loads:
+
+```csharp
+Host!.Weather.SetPattern("overcast");               // every loaded region
+Host.Weather.SetWind("still", at: player.Entity!.Pos.AsBlockPos);
+Host.Weather.SetPrecipitation(1);                  // world-wide, -1 to 1; null hands it back
+Host.Weather.StopChanges();                        // no new patterns, winds or events
+```
+
+- The game simulates weather per map region and blends the four regions around a position, so `at` sets those four. Without it, every loaded region is set. Regions that load later start with weather of their own.
+- `PatternAt(pos)` and `WindSpeedAt(pos)` read it back at once. `Patterns` and `Winds` list the codes; an unknown code throws, listing them.
+- `StopChanges()` finishes any change under way and stops patterns, winds and weather events from changing on their own. Precipitation still follows the calendar: freeze the calendar or override precipitation to hold it too.
+
+A rollback puts the calendar and the weather back as they were after boot.
 
 ## Staging Server Mods
 

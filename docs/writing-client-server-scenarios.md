@@ -178,6 +178,17 @@ public class ExpensiveSetupTests : ClientServerScenarioBase
 }
 ```
 
+A client counts the time from the server's calendar packets. `Session.WaitForCalendarSyncAsync()` steps until the client's calendar matches the server's: to the second when frozen, within 60 game seconds while time runs. It throws a `TimeoutException` naming both times when they do not meet within its frame budget:
+
+```csharp
+ServerHost!.Calendar.Freeze();               // first, or time runs on between the calls
+ServerHost.Calendar.SetTime(hourOfDay: 22);
+await Session!.WaitForCalendarSyncAsync();
+Assert.Equal(22f, Client!.RunOnClientThread(() => Client.Client.Calendar.HourOfDay));
+```
+
+A rollback waits for the same before the next test. Of the weather, a headless client takes the precipitation override at once; cloud patterns and wind reach a client as it renders them, so assert those on the server (see [Calendar and Weather](writing-server-scenarios.md#calendar-and-weather)).
+
 `Isolation` and `StrictIsolation` work as for server scenarios (see [Isolation report](writing-server-scenarios.md#isolation-report)). A test that disconnects the client on purpose cannot be rolled back, so under `StrictIsolation` it fails.
 
 ```csharp
