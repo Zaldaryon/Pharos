@@ -40,7 +40,13 @@ internal sealed class EngineThread : IDisposable
             IsBackground = true,
             Name = name,
         };
-        _thread.Start();
+
+        // The thread outlives whatever started it, a scenario body included: it must not carry
+        // that body's abort token or other async-locals.
+        using (ExecutionContext.SuppressFlow())
+        {
+            _thread.Start();
+        }
     }
 
     /// <summary>Whether the caller is already on this thread.</summary>
@@ -63,7 +69,7 @@ internal sealed class EngineThread : IDisposable
 
         T result = default!;
         ExceptionDispatchInfo? error = null;
-        ManualResetEventSlim done = new();
+        using ManualResetEventSlim done = new();
 
         _work.Add(() =>
         {
@@ -81,17 +87,10 @@ internal sealed class EngineThread : IDisposable
             }
         });
 
-        try
-        {
-            done.Wait(ScenarioAbort.Token);
-        }
-        catch (OperationCanceledException)
-        {
-            // The work still runs and sets the event later, so it is not disposed here.
-            throw new ScenarioAbortedException();
-        }
-
-        done.Dispose();
+        // Work already queued is waited for even after an abort: a body that returned while its
+        // work still ran would let the teardown queue behind it. If the game thread is stuck, the
+        // body stays stuck too, and the pipeline gives its host up instead of tearing it down.
+        done.Wait();
         error?.Throw();
         return result;
     }

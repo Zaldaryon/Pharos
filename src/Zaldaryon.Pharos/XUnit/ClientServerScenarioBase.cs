@@ -205,8 +205,18 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime, IScenarioLifecy
             Exception failure = ScenarioRun.SetupFailed(ex, (error, test) => Describe(test, error, timedOut: false));
 
             // xUnit does not always reach DisposeAsync after a failed InitializeAsync, and the
-            // gate must be released either way or every later scenario waits for it.
-            await DisposeAsync().ConfigureAwait(false);
+            // gate must be released either way or every later scenario waits for it. Nothing it
+            // throws may replace the setup's own failure.
+            _run.SetupFailing();
+            try
+            {
+                await DisposeAsync().ConfigureAwait(false);
+            }
+            catch (Exception teardown)
+            {
+                ServerMain.Logger?.Warning("Pharos could not tear down a scenario that failed to start: {0}", teardown);
+            }
+
             if (ReferenceEquals(failure, ex)) throw;
             throw failure;
         }

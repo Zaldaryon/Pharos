@@ -192,25 +192,94 @@ public class ScenarioPipelineTests
     }
 
     [Fact]
-    public void EngineThread_StopsWaitingForWorkWhenTheBodyIsAborted()
+    public void EngineThread_FinishesQueuedWorkOfAnAbortedBody_ThenRefusesMore()
     {
         using EngineThread thread = new("pharos-abort-wait-test");
         using CancellationTokenSource abort = new();
+        using ManualResetEventSlim started = new();
         using ManualResetEventSlim release = new();
 
-        Task<Exception?> waiting = Task.Run(() =>
+        Task<Exception?> body = Task.Run(() =>
         {
             ScenarioAbort.Enter(abort.Token);
-            return Record.Exception(() => thread.Invoke(() => release.Wait()));
+            thread.Invoke(() =>
+            {
+                started.Set();
+                release.Wait();
+            });
+            return Record.Exception(() => thread.Invoke(() => 1));
         });
 
-        Thread.Sleep(100);
+        Assert.True(started.Wait(TimeSpan.FromSeconds(5)));
         abort.Cancel();
-        Assert.IsType<ScenarioAbortedException>(waiting.Result);
 
-        // The work that was running finishes, and the thread goes on.
+        // Work already on the game thread is waited for: the teardown must not queue behind it.
+        Assert.False(body.Wait(200), "The aborted body returned while its work still ran on the game thread");
+
         release.Set();
+        Assert.IsType<ScenarioAbortedException>(body.Result);
         Assert.Equal(3, thread.Invoke(() => 3));
+    }
+
+    [Fact]
+    public void EngineThread_DoesNotCarryTheAbortOfTheBodyThatStartedIt()
+    {
+        using CancellationTokenSource abort = new();
+
+        EngineThread thread = Task.Run(() =>
+        {
+            ScenarioAbort.Enter(abort.Token);
+            return new EngineThread("pharos-started-in-body");
+        }).Result;
+
+        using (thread)
+        {
+            abort.Cancel();
+
+            // Work the thread runs for itself, nested invokes included, is not aborted.
+            Assert.Equal(4, thread.Invoke(() => thread.Invoke(() => 4)));
+        }
+    }
+
+    [Fact]
+    public void ScenarioTestCases_SurviveSerialization()
+    {
+        foreach (string method in new[] { nameof(Sample.Passes), nameof(Sample.Rows), nameof(Sample.ObjectRows) })
+        {
+            foreach (IXunitTestCase testCase in ScenarioRunnerHarness.Discover(typeof(Sample), method))
+            {
+                IXunitTestCase copy = SerializationHelper.Deserialize<IXunitTestCase>(SerializationHelper.Serialize(testCase));
+
+                Assert.Equal(testCase.GetType(), copy.GetType());
+                Assert.Equal(testCase.DisplayName, copy.DisplayName);
+                Assert.Equal(0, copy.Timeout);
+            }
+        }
+    }
+
+    [Fact]
+    public void ScenarioFailedException_KeepsEveryFailureOfAnAggregate()
+    {
+        Exception first = Thrown(new InvalidOperationException("first"));
+        Exception second = Thrown(new ArgumentException("second"));
+
+        ScenarioFailedException failure = new(new AggregateException(first, second), "details");
+
+        Assert.Contains("System.InvalidOperationException: first", failure.Message);
+        Assert.Contains("System.ArgumentException: second", failure.Message);
+        Assert.Contains(nameof(Thrown), failure.StackTrace);
+    }
+
+    private static Exception Thrown(Exception exception)
+    {
+        try
+        {
+            throw exception;
+        }
+        catch (Exception caught)
+        {
+            return caught;
+        }
     }
 
     /// <summary>What the samples record. Static: xUnit creates the sample class itself.</summary>

@@ -17,7 +17,9 @@ public sealed class ScenarioFailedException : Exception
         : base(Describe(failure) + Environment.NewLine + Environment.NewLine + details)
     {
         Failure = failure;
-        _stackTrace = failure.StackTrace;
+        _stackTrace = failure is AggregateException { InnerExceptions.Count: > 0 } aggregate
+            ? string.Join(Environment.NewLine + "----- next failure -----" + Environment.NewLine, aggregate.InnerExceptions.Select(e => e.StackTrace))
+            : failure.StackTrace;
     }
 
     /// <summary>The failure as the test or the setup raised it.</summary>
@@ -26,5 +28,9 @@ public sealed class ScenarioFailedException : Exception
     /// <inheritdoc />
     public override string? StackTrace => _stackTrace;
 
-    private static string Describe(Exception failure) => failure.GetType().FullName + ": " + failure.Message;
+    private static string Describe(Exception failure) => failure is AggregateException { InnerExceptions.Count: > 1 } aggregate
+        ? string.Join(Environment.NewLine, aggregate.InnerExceptions.Select(Describe))
+        : failure is AggregateException { InnerExceptions.Count: 1 } single
+            ? Describe(single.InnerExceptions[0])
+            : failure.GetType().FullName + ": " + failure.Message;
 }

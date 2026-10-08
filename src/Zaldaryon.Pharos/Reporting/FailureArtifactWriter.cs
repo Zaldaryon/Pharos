@@ -345,7 +345,10 @@ internal static class FailureArtifactWriter
             IsBackground = true,
             Name = "Pharos failure artifacts",
         };
-        thread.Start();
+        using (ExecutionContext.SuppressFlow())
+        {
+            thread.Start();
+        }
 
         if (!thread.Join(StepTimeout))
         {

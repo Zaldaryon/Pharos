@@ -33,6 +33,7 @@ namespace Zaldaryon.Pharos.XUnit;
 public abstract class ClientScenarioBase : IAsyncLifetime, IScenarioLifecycle
 {
     private readonly ScenarioRun _run = new();
+    private bool _recordingForArtifacts;
     private IDisposable? _classSettings;
     private ClientIsolationManager? _isolationManager;
     private IDisposable? _gate;
@@ -143,12 +144,35 @@ public abstract class ClientScenarioBase : IAsyncLifetime, IScenarioLifecycle
         catch (Exception ex)
         {
             Exception failure = ScenarioRun.SetupFailed(ex, (error, test) => Describe(test, error, timedOut: false, _pooled?.Client));
-            if (_pooled != null && Client == null)
+
+            // xUnit does not call DisposeAsync after a failed InitializeAsync: the client goes
+            // now, or the next scenario boots a second one beside it.
+            try
             {
-                _pooled.Dispose();
+                _classSettings?.Dispose();
+            }
+            catch
+            {
+                // The client is disposed below anyway.
+            }
+
+            _classSettings = null;
+            if (_pooled != null)
+            {
+                try
+                {
+                    _pooled.Dispose();
+                }
+                catch
+                {
+                    // A client that fails to shut down must not hide why it failed to start.
+                }
+
                 _pooled = null;
                 ScenarioHostPool.HostDisposed();
             }
+
+            Client = null;
 
             _gate.Dispose();
             _gate = null;
@@ -163,6 +187,7 @@ public abstract class ClientScenarioBase : IAsyncLifetime, IScenarioLifecycle
         if (Artifacts.HasFlag(FailureArtifacts.Packets) && Client is { PacketRecorder.IsRecording: false } client)
         {
             client.PacketRecorder.Start();
+            _recordingForArtifacts = true;
         }
     }
 
@@ -209,6 +234,13 @@ public abstract class ClientScenarioBase : IAsyncLifetime, IScenarioLifecycle
             _gate?.Dispose();
             _gate = null;
             return Task.CompletedTask;
+        }
+
+        // The recording started for the failure artifacts must not run on into the next test.
+        if (_recordingForArtifacts && Client is { IsDisposed: false } recorded)
+        {
+            recorded.PacketRecorder.Stop();
+            recorded.PacketRecorder.Clear();
         }
 
         // Settings are process-wide, and a pooled client serves the next test as it is left.

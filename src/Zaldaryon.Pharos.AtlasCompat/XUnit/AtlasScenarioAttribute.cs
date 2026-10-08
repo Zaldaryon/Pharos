@@ -32,8 +32,8 @@ public sealed class AtlasScenarioAttribute : Xunit.FactAttribute
     public WorldIsolation Isolation { get; set; } = WorldIsolation.Rollback;
 
     /// <summary>
-    /// Gets or sets the watchdog timeout in milliseconds.
-    /// When not set, uses <see cref="DefaultTimeoutMs"/> (120 seconds).
+    /// Kept for source compatibility: not enforced. Move to the Pharos scenario attributes, whose
+    /// <c>TimeoutMs</c> is, for a watchdog and failure artifacts.
     /// </summary>
     public int TimeoutMs { get; set; } = DefaultTimeoutMs;
 

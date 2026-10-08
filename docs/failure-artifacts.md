@@ -93,14 +93,25 @@ machines rather than tightening the limits.
 When a body runs out of time:
 
 1. It is asked to stop. From then on, every call it makes that steps the client or the server, or
-   runs work on their game threads, throws `ScenarioAbortedException`.
-2. If it stops within 15 seconds, the failure artifacts are saved, the test fails with a
-   `TestTimeoutException`, and the client and server are torn down rather than reused.
-3. If it does not stop, for example because it blocks without calling into Pharos, or because the
-   game's own thread is stuck, its client and server are left alone, never disposed or reused. The
-   artifacts that do not need the game (logs, `run.json`) are still saved. Every later scenario in
-   the same test process then fails at once, saying which scenario got stuck, instead of waiting
+   runs work on their game threads, throws `ScenarioAbortedException`. Work it already handed to a
+   game thread is waited for first.
+2. If it stops within 15 seconds, the failure artifacts are saved and the test fails; its message
+   starts with `Xunit.Sdk.TestTimeoutException`. The client and server are torn down rather than
+   reused.
+3. If it does not stop within those 15 seconds, its client and server are left alone, never
+   disposed or reused. That happens when an async body waits on something that never completes
+   without calling into Pharos, or when the game's own thread is stuck on work the body gave it.
+   The artifacts that do not need the game (logs, `run.json`) are still saved. Every later scenario
+   in the same test process then fails at once, saying which scenario got stuck, instead of waiting
    for it.
+
+A synchronous body, or the synchronous start of an async one, that blocks without ever calling
+into Pharos (a `Thread.Sleep`, a `.Wait()` on something that never finishes) cannot be stopped:
+it runs on the thread xUnit gave it, which a fixture-mode client's GL context needs, and holds
+the test until it returns. Use the job's own timeout for that case.
+
+A `DisposeAsync` override of your own that steps the game before calling the base class runs
+after a timeout too. Check that the client and server are still there, and keep the work short.
 
 ## What is not covered
 
@@ -108,6 +119,8 @@ When a body runs out of time:
   no watchdog. That includes the `[Theory, ClientSettingsMatrix(...)]` pattern: use
   `[ClientTheory, ClientSettingsMatrix(...)]` instead. Their `FailOnLoggedErrors` check still runs
   in `DisposeAsync`, as before.
+- `[AtlasScenario]` and `[AtlasTheory]` from `Zaldaryon.Pharos.AtlasCompat` keep their old
+  behaviour: no artifacts and no watchdog.
 - In a scenario that the pipeline runs, `FailOnLoggedErrors` is checked when the body ends, before
   teardown, so its failure gets artifacts too. Errors logged by a `BeforeAfterTestAttribute.After`
   or during teardown do not count.

@@ -37,6 +37,12 @@ internal sealed class ScenarioRun
         TicksAtStart = ticks;
     }
 
+    /// <summary>
+    /// Records that the scenario failed before its body ran: the teardown that follows must not
+    /// fail on the errors the failed setup logged, which would replace the setup's own failure.
+    /// </summary>
+    public void SetupFailing() => PipelineChecksLoggedErrors = true;
+
     /// <summary>Records a timeout, and gives up the process when the body did not stop.</summary>
     public void BodyTimedOut(bool stillRunning)
     {

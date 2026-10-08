@@ -269,7 +269,10 @@ internal sealed class ScenarioTestInvoker(
         {
             elapsed = await run.ConfigureAwait(false);
             watchdog?.Dispose();
-            timedOut = abort.IsCancellationRequested;
+
+            // A timeout only when the body was stopped by the abort, not when the timer fired as
+            // it finished on its own.
+            timedOut = abort.IsCancellationRequested && bodyAggregator.HasExceptions && WasAborted(bodyAggregator.ToException());
             if (timedOut)
             {
                 // The body ran out of time and stopped at its next step: a timeout, not whatever
@@ -282,6 +285,9 @@ internal sealed class ScenarioTestInvoker(
                 Aggregator.Add(bodyAggregator.ToException());
             }
         }
+
+        // The body ran on an invoker of its own: its time is this test's time.
+        Timer.Aggregate(TimeSpan.FromSeconds((double)elapsed));
 
         if (lifecycle == null) return elapsed;
 
@@ -312,6 +318,13 @@ internal sealed class ScenarioTestInvoker(
 
         return elapsed;
     }
+
+    private static bool WasAborted(Exception exception) => exception switch
+    {
+        ScenarioAbortedException => true,
+        AggregateException aggregate => aggregate.InnerExceptions.Any(WasAborted),
+        _ => exception.InnerException is { } inner && WasAborted(inner),
+    };
 
     /// <summary>Gives the pipeline the stock invocation of the test method.</summary>
     private sealed class BodyInvoker(
