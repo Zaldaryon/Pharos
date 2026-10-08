@@ -6,6 +6,7 @@ using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using Vintagestory.API.Config;
+using Zaldaryon.Pharos.Bootstrap;
 using Zaldaryon.Pharos.Core;
 using Zaldaryon.Pharos.Server;
 
@@ -202,7 +203,7 @@ internal static class FailureArtifactWriter
 
         if (artifacts.HasFlag(FailureArtifacts.Screenshot) && failure.ClientReachable && failure.Client is { IsDisposed: false } client)
         {
-            Step("screenshot.png", files, problems, () => client.CaptureFrame().SaveToPng(Path.Combine(directory, "screenshot.png")));
+            SaveScreenshot(client, Path.Combine(directory, "screenshot.png"), files, problems);
         }
 
         if (artifacts.HasFlag(FailureArtifacts.Logs))
@@ -290,6 +291,38 @@ internal static class FailureArtifactWriter
         string result = safe.ToString().Trim('.', '_');
         if (result.Length == 0) result = "test";
         return result.Length > MaxNameLength ? result[..MaxNameLength] : result;
+    }
+
+    /// <summary>
+    /// An engine-mode client renders on its own thread, where the capture is queued, with a time
+    /// limit. A fixture-mode client's GL context is current on the thread that renders it, and
+    /// making it current on another one aborts the process (X BadAccess), so it is read only on
+    /// that thread.
+    /// </summary>
+    private static void SaveScreenshot(HeadlessClient client, string path, List<string> files, List<string> problems)
+    {
+        const string name = "screenshot.png";
+        if (client.BootMode == ClientBootMode.Engine)
+        {
+            Step(name, files, problems, () => client.CaptureFrame().SaveToPng(path));
+            return;
+        }
+
+        try
+        {
+            if (!client.Window.NativeWindow.Context.IsCurrent)
+            {
+                problems.Add($"{name} (the fixture-mode client renders on another thread)");
+                return;
+            }
+
+            client.CaptureFrame().SaveToPng(path);
+            files.Add(name);
+        }
+        catch (Exception ex)
+        {
+            problems.Add($"{name} ({ex.GetType().Name}: {ex.Message})");
+        }
     }
 
     /// <summary>Runs one step with a time limit; a step that fails or hangs is listed, not thrown.</summary>

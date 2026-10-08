@@ -228,20 +228,39 @@ internal sealed class ScenarioTestInvoker(
         // must not write into this test's results after they are reported.
         ExceptionAggregator bodyAggregator = new();
         BodyInvoker body = new(Test, MessageBus, TestClass, ConstructorArguments, TestMethod, TestMethodArguments, BeforeAfterAttributes, bodyAggregator, CancellationTokenSource);
-        CancellationTokenSource abort = new();
-        Task<decimal> run = Task.Run(() =>
-        {
-            ScenarioAbort.Enter(abort.Token);
-            return body.InvokeBody(testClassInstance);
-        });
 
-        bool timedOut = false;
-        decimal elapsed;
-        if (timeoutMs > 0 && await Task.WhenAny(run, Task.Delay(timeoutMs)).ConfigureAwait(false) != run)
+        // The body runs inline, on the thread xUnit gives it, as it always has: a fixture-mode
+        // client's GL context is current on the thread that booted it. The watchdog is a timer
+        // that aborts the body, which throws at its next step into the game, whether it is
+        // synchronous or not.
+        CancellationTokenSource abort = new();
+        Timer? watchdog = timeoutMs > 0 ? new Timer(_ => abort.Cancel(), null, timeoutMs, Timeout.Infinite) : null;
+        Task<decimal> run;
+        ScenarioAbort.Enter(abort.Token);
+        try
         {
-            timedOut = true;
-            abort.Cancel();
+            run = body.InvokeBody(testClassInstance);
+        }
+        finally
+        {
+            // The body's continuations keep the token; what runs here next must not.
+            ScenarioAbort.Enter(default);
+        }
+
+        if (!run.IsCompleted && watchdog != null)
+        {
+            Task aborted = Task.Delay(Timeout.Infinite, abort.Token);
+            await Task.WhenAny(run, aborted).ConfigureAwait(false);
+        }
+
+        bool timedOut;
+        decimal elapsed;
+        if (!run.IsCompleted && abort.IsCancellationRequested)
+        {
+            // Aborted while still running: it gets a grace period to reach its next step.
             bool stopped = await Task.WhenAny(run, Task.Delay(ScenarioTimeouts.Grace)).ConfigureAwait(false) == run;
+            timedOut = true;
+            watchdog?.Dispose();
             lifecycle?.BodyTimedOut(stillRunning: !stopped);
             Aggregator.Add(new TestTimeoutException(timeoutMs));
             elapsed = timeoutMs / 1000m;
@@ -249,7 +268,19 @@ internal sealed class ScenarioTestInvoker(
         else
         {
             elapsed = await run.ConfigureAwait(false);
-            if (bodyAggregator.HasExceptions) Aggregator.Add(bodyAggregator.ToException());
+            watchdog?.Dispose();
+            timedOut = abort.IsCancellationRequested;
+            if (timedOut)
+            {
+                // The body ran out of time and stopped at its next step: a timeout, not whatever
+                // the abort made it throw.
+                lifecycle?.BodyTimedOut(stillRunning: false);
+                Aggregator.Add(new TestTimeoutException(timeoutMs));
+            }
+            else if (bodyAggregator.HasExceptions)
+            {
+                Aggregator.Add(bodyAggregator.ToException());
+            }
         }
 
         if (lifecycle == null) return elapsed;

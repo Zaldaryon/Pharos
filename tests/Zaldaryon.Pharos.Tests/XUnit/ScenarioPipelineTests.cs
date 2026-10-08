@@ -94,14 +94,25 @@ public class ScenarioPipelineTests
     public async Task XunitTimeoutOnASyncBody_IsEnforcedByThePipeline_AndTheClassIsStillDisposed()
     {
         Recorder.Reset();
+
+        ScenarioRunnerHarness.RunResult result = await ScenarioRunnerHarness.RunAsync(typeof(Sample), nameof(Sample.StepsSynchronously));
+
+        // xUnit's own timeout would have skipped DisposeAsync, which releases the scenario host.
+        Assert.Equal(["init", "before", "body", "timedOut:stopped", "capture:timedOut", "dispose"], Recorder.Events);
+        Assert.StartsWith(typeof(TestTimeoutException).FullName, result.FailureMessage);
+    }
+
+    [Fact]
+    public async Task BodyThatNeverStepsAgain_IsGivenUp()
+    {
+        Recorder.Reset();
         TimeSpan grace = ScenarioTimeouts.Grace;
         ScenarioTimeouts.Grace = TimeSpan.FromMilliseconds(200);
 
         try
         {
-            ScenarioRunnerHarness.RunResult result = await ScenarioRunnerHarness.RunAsync(typeof(Sample), nameof(Sample.BlocksSynchronously));
+            ScenarioRunnerHarness.RunResult result = await ScenarioRunnerHarness.RunAsync(typeof(Sample), nameof(Sample.AwaitsForever));
 
-            // The body never reaches a step, so it is still running: its host must be given up.
             Assert.Equal(["init", "before", "body", "timedOut:stillRunning", "capture:timedOut", "dispose"], Recorder.Events);
             Assert.StartsWith(typeof(TestTimeoutException).FullName, result.FailureMessage);
         }
@@ -287,10 +298,21 @@ public class ScenarioPipelineTests
         }
 
         [ClientScenario(Timeout = 200)]
-        public void BlocksSynchronously()
+        public void StepsSynchronously()
         {
             Recorder.Add("body");
-            Recorder.Release.Wait(TimeSpan.FromSeconds(30));
+            using EngineThread thread = new("pharos-sample-sync-steps");
+            while (true)
+            {
+                thread.Invoke(() => Thread.Sleep(10));
+            }
+        }
+
+        [ServerScenario(TimeoutMs = 200)]
+        public async Task AwaitsForever()
+        {
+            Recorder.Add("body");
+            await Task.Run(() => Recorder.Release.Wait(TimeSpan.FromSeconds(30)));
         }
 
         [ClientScenario(TimeoutMs = 0)]
