@@ -88,7 +88,8 @@ Each scenario attribute has a `TimeoutMs`: 120 seconds for client and server sce
 seconds for client-server ones, and 0 turns it off. It limits the test body only, not the boot
 before it or the teardown after it. xUnit's own `Timeout`, when set, takes its place. The
 watchdog is for hangs, not for performance: set `PHAROS_TIMEOUT_SCALE` (for example `2`) on slow
-machines rather than tightening the limits.
+machines rather than tightening the limits. It also scales how long a client-server scenario
+waits for its player to join (`PlayerJoinTimeout`, 60 seconds by default).
 
 When a body runs out of time:
 

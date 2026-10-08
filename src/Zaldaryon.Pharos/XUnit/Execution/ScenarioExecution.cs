@@ -72,7 +72,8 @@ internal static class ScenarioTimeouts
         return (int)Math.Clamp(timeout * Scale, 1, int.MaxValue);
     }
 
-    private static double Scale =>
+    /// <summary>The factor <c>PHAROS_TIMEOUT_SCALE</c> sets, 1 when unset.</summary>
+    internal static double Scale =>
         double.TryParse(Environment.GetEnvironmentVariable(ScaleVariable), NumberStyles.Float, CultureInfo.InvariantCulture, out double scale) && scale > 0
             ? scale
             : 1;

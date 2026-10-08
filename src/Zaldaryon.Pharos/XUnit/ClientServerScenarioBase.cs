@@ -112,10 +112,11 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime, IScenarioLifecy
     protected virtual HeadlessClientOptions ClientOptions => new() { BootMode = ClientBootMode.Engine };
 
     /// <summary>
-    /// Gets the timeout for waiting for the player to join.
-    /// Default is 60 seconds.
+    /// Gets the timeout for waiting for the player to join. Default is 60 seconds, scaled by
+    /// <c>PHAROS_TIMEOUT_SCALE</c>: a client composing its texture atlases in software on a busy
+    /// runner can take most of a minute.
     /// </summary>
-    protected virtual TimeSpan PlayerJoinTimeout => TimeSpan.FromSeconds(60);
+    protected virtual TimeSpan PlayerJoinTimeout => TimeSpan.FromSeconds(60 * ScenarioTimeouts.Scale);
 
     /// <summary>
     /// Gets whether to wait for the player to fully join during initialization.
