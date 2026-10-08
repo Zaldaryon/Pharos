@@ -65,6 +65,12 @@ public sealed class EmbeddedServerHost : IDisposable, IAsyncDisposable
     /// <summary>What the server has logged since it booted. See <see cref="LogCapture"/>.</summary>
     public LogCapture Logs { get; private init; } = new(EnumAppSide.Server);
 
+    /// <summary>
+    /// The warnings, errors and fatal errors the server logged while it booted, until
+    /// <see cref="Boot(ServerWorldOptions?, string?)"/> returned. See <c>docs/boot-diagnostics.md</c>.
+    /// </summary>
+    public BootDiagnostics BootDiagnostics => Logs.BootDiagnostics;
+
     /// <summary>The dummy TCP transport layer used for in-process connections.</summary>
     public DummyNetwork TcpNetwork { get; }
 
@@ -290,6 +296,7 @@ public sealed class EmbeddedServerHost : IDisposable, IAsyncDisposable
             IsNew = true
         };
 
+        ModSafetyCheck.Disable();
         ServerMain server = new(startArgs, new[] { "--dataPath", dataPath }, progArgs, isDedicatedServer: false);
 
         // CRITICAL: Assign exitState BEFORE PreLaunch() to prevent NRE in packet parser threads
@@ -314,6 +321,8 @@ public sealed class EmbeddedServerHost : IDisposable, IAsyncDisposable
             // Best effort wait
         }
 
+        // The server has booted: what it logs from here on is not a boot diagnostic.
+        logs.CompleteBoot();
         return new EmbeddedServerHost(server, tcpNetwork, udpNetwork, options, dataPath, ownsDataPath, sandbox: null, gameThread) { Logs = logs, Port = port };
     }
 
@@ -379,6 +388,7 @@ public sealed class EmbeddedServerHost : IDisposable, IAsyncDisposable
             IsNew = true
         };
 
+        ModSafetyCheck.Disable();
         ServerMain server = new(startArgs, new[] { "--dataPath", dataPath }, progArgs, isDedicatedServer: false);
 
         // CRITICAL: Assign exitState BEFORE PreLaunch() to prevent NRE in packet parser threads
@@ -403,6 +413,8 @@ public sealed class EmbeddedServerHost : IDisposable, IAsyncDisposable
             // Best effort wait
         }
 
+        // The server has booted: what it logs from here on is not a boot diagnostic.
+        logs.CompleteBoot();
         return new EmbeddedServerHost(server, tcpNetwork, udpNetwork, options, dataPath, ownsDataPath: false, sandbox, gameThread) { Logs = logs, Port = port };
     }
 

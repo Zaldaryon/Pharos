@@ -219,6 +219,7 @@ See the [inspection API reference](docs/inspection-api.md) for method signatures
 - [Writing Client Scenarios](docs/writing-scenarios.md): `[ClientScenario]`, `[ClientTheory]`, `[PharosMods]`, and isolation modes
 - [Writing Server Scenarios](docs/writing-server-scenarios.md): `[ServerScenario]`, `ServerScenarioBase`, `IServerTestPlayer`, and world helpers
 - [Engine Mode](docs/engine-mode.md): Booting a client that joins a real server offline, with character creation and the vanilla render pipeline
+- [Boot Diagnostics](docs/boot-diagnostics.md): The warnings a client or server logs while booting, `[StrictBoot]` and `[AllowBootDiagnostic]`
 - [Failure Artifacts and the Watchdog](docs/failure-artifacts.md): The screenshot, logs, traffic and run details a failing scenario saves, and the timeout that stops a hung one
 - [CI and Cloud Environments](docs/ci-and-cloud.md): Running the suite in CI and cloud environments, offline or online auth, and a dedicated server in Docker
 - [Client-Server Testing](docs/writing-client-server-scenarios.md): `[ClientServerScenario]`, lockstep stepping, and packet assertions

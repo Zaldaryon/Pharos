@@ -110,6 +110,7 @@ public abstract class ServerScenarioBase : IAsyncLifetime, IScenarioLifecycle
     /// </summary>
     public virtual async Task InitializeAsync()
     {
+        BootCheck.ThrowIfFailedBefore(GetType());
         _gate = await ScenarioHostPool.EnterAsync(HostWaitTimeout).ConfigureAwait(false);
 
         try
@@ -140,6 +141,12 @@ public abstract class ServerScenarioBase : IAsyncLifetime, IScenarioLifecycle
                     throw failure;
                 }
 
+                // Checked before the host is used or pooled: a host that fails it is disposed.
+                if (BootCheck.Enforce(GetType(), _pooled.Host.BootDiagnostics))
+                {
+                    _pooled.Host.Logs.Clear();
+                }
+
                 if (WorldIsolation == WorldIsolation.Rollback)
                 {
                     _pooled.TakeBaseline();
@@ -164,6 +171,12 @@ public abstract class ServerScenarioBase : IAsyncLifetime, IScenarioLifecycle
             throw failure;
         }
     }
+
+    /// <summary>
+    /// The server's boot diagnostics judged against the class's <see cref="AllowBootDiagnosticAttribute"/>s,
+    /// whether or not the class is <see cref="StrictBootAttribute"/>. See <c>docs/boot-diagnostics.md</c>.
+    /// </summary>
+    protected BootDiagnosticsResult UnexpectedBootDiagnostics => BootCheck.Evaluate(GetType(), _host?.BootDiagnostics);
 
     void IScenarioLifecycle.BeforeBody() => _run.BodyStarting(frames: null, ticks: _host?.TickCount);
 

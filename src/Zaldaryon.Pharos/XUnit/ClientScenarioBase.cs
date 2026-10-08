@@ -111,6 +111,7 @@ public abstract class ClientScenarioBase : IAsyncLifetime, IScenarioLifecycle
     /// </summary>
     public virtual async Task InitializeAsync()
     {
+        BootCheck.ThrowIfFailedBefore(GetType());
         _gate = await ScenarioHostPool.EnterAsync(HostWaitTimeout).ConfigureAwait(false);
 
         try
@@ -127,6 +128,14 @@ public abstract class ClientScenarioBase : IAsyncLifetime, IScenarioLifecycle
             {
                 ScenarioHostPool.Clear();
                 _pooled = PooledClient.Boot(options, mods, key);
+
+                // An engine-mode client here never joins a server, so its mods never start: its
+                // boot ends here, and what its tests log is not part of it.
+                _pooled.Client.Logs.CompleteBoot();
+                if (BootCheck.Enforce(GetType(), _pooled.Client.BootDiagnostics))
+                {
+                    _pooled.Client.Logs.Clear();
+                }
             }
             else if (IsolationMode == IsolationMode.RollbackState && _pooled.Baseline != null)
             {
@@ -180,6 +189,12 @@ public abstract class ClientScenarioBase : IAsyncLifetime, IScenarioLifecycle
             throw failure;
         }
     }
+
+    /// <summary>
+    /// The client's boot diagnostics judged against the class's <see cref="AllowBootDiagnosticAttribute"/>s,
+    /// whether or not the class is <see cref="StrictBootAttribute"/>. See <c>docs/boot-diagnostics.md</c>.
+    /// </summary>
+    protected BootDiagnosticsResult UnexpectedBootDiagnostics => BootCheck.Evaluate(GetType(), Client?.BootDiagnostics);
 
     void IScenarioLifecycle.BeforeBody()
     {

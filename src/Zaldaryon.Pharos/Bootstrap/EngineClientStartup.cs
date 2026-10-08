@@ -127,6 +127,7 @@ internal static class EngineClientStartup
         // their labels before the mods load the full set. A server booted earlier in the process
         // would have loaded them too, so without this a client that boots first fails.
         Lang.PreLoad(logger, GamePaths.AssetsPath, ClientSettings.Language);
+        ModSafetyCheck.Disable();
         StartScreenManager(screenManager, platform);
 
         // Default frame buffers (primary, transparency, post processing) and the minimal GUI

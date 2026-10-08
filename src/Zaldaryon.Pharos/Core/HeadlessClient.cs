@@ -74,7 +74,24 @@ public sealed class HeadlessClient : IDisposable
     /// to play, which is what makes the server start sending chunks. Only an engine-mode client
     /// gets here.
     /// </summary>
-    public bool IsJoined => Client.EntityPlayer?.Pos != null && Client.BlocksReceivedAndLoaded && Client.clientPlayingFired;
+    public bool IsJoined
+    {
+        get
+        {
+            bool joined = Client.EntityPlayer?.Pos != null && Client.BlocksReceivedAndLoaded && Client.clientPlayingFired;
+
+            // An engine-mode client's mods start during the join: its boot ends once it is in.
+            if (joined) Logs.CompleteBoot();
+            return joined;
+        }
+    }
+
+    /// <summary>
+    /// The warnings, errors and fatal errors the client logged while it booted: until it joined a
+    /// server for an engine-mode client, whose mods start during the join, and until it booted for
+    /// a fixture-mode one. See <c>docs/boot-diagnostics.md</c>.
+    /// </summary>
+    public BootDiagnostics BootDiagnostics => Logs.BootDiagnostics;
 
     /// <summary>
     /// Reads back the last rendered frame.
