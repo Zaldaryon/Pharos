@@ -201,6 +201,39 @@ public sealed class HeadlessClient : IDisposable
     private HotkeyDriver? _hotkeys;
 
     /// <summary>
+    /// The renderers the client calls each frame, stage by stage, with their mod, and how often
+    /// they are called. Engine mode only. See <see cref="Inspection.RendererInspector"/>.
+    /// </summary>
+    public Inspection.RendererInspector Renderers => _renderers ??= new Inspection.RendererInspector(this);
+
+    private Inspection.RendererInspector? _renderers;
+
+    /// <summary>
+    /// The client's game tick listeners and callbacks, with their mod, and how often listeners are
+    /// called. Engine mode only. See <see cref="Inspection.TickListenerInspector"/>.
+    /// </summary>
+    public Inspection.TickListenerInspector TickListeners => _tickListeners ??= new Inspection.TickListenerInspector(this);
+
+    private Inspection.TickListenerInspector? _tickListeners;
+
+    /// <summary>
+    /// How many particles the client has alive, and what it spawns. Engine mode only. See
+    /// <see cref="Inspection.ParticleInspector"/>.
+    /// </summary>
+    public Inspection.ParticleInspector Particles => _particles ??= new Inspection.ParticleInspector(this);
+
+    private Inspection.ParticleInspector? _particles;
+
+    /// <summary>
+    /// The blocks the client highlights in <paramref name="slot"/>, or null when nothing has
+    /// highlighted in it yet. A cleared slot has no positions. Engine mode only.
+    /// </summary>
+    public Inspection.ClientHighlight? Highlights(int slot) => Inspection.HighlightInspector.Of(this, slot);
+
+    /// <summary>The slots the client has highlighted in, cleared ones included. Engine mode only.</summary>
+    public IReadOnlyList<int> HighlightSlots() => Inspection.HighlightInspector.SlotsOf(this);
+
+    /// <summary>
     /// Steps one frame for a driver that waits on the game: the whole session's when the client is
     /// in a <see cref="ClientServerLoopbackSession"/>, so the server keeps ticking, and the
     /// client's own frame otherwise.

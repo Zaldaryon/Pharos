@@ -108,6 +108,7 @@ internal static class EngineClientStartup
         CrashReporter.SetLogger(logger);
 
         EngineFocusPatcher.Register(platform);
+        Inspection.ClientInspectionPatches.Install();
         platform.window = window.NativeWindow;
         platform.XPlatInterface.Window = (GameWindow)(object)window.NativeWindow;
         platform.WindowSize.Width = options.Width;

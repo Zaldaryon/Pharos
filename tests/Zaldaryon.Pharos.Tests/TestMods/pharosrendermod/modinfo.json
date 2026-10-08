@@ -1,0 +1,11 @@
+{
+  "type": "code",
+  "modid": "pharosrendermod",
+  "name": "Pharos Render Mod",
+  "version": "1.0.0",
+  "side": "Universal",
+  "requiredOnClient": true,
+  "description": "Source mod the client inspection tests stage: a renderer, a tick listener, a callback, particles and highlights to find.",
+  "authors": ["Pharos"],
+  "dependencies": { "game": "" }
+}
