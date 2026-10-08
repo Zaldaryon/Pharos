@@ -271,9 +271,9 @@ internal sealed class ScenarioTestInvoker(
             elapsed = await run.ConfigureAwait(false);
             watchdog?.Dispose();
 
-            // A timeout only when the body was stopped by the abort, not when the timer fired as
-            // it finished on its own.
-            timedOut = abort.IsCancellationRequested && bodyAggregator.HasExceptions && WasAborted(bodyAggregator.ToException());
+            // A timeout only when the body was stopped by the abort, or left the game stuck even
+            // if it swallowed the abort, not when the timer fired as it finished on its own.
+            timedOut = abort.IsCancellationRequested && (scope.Wedged || (bodyAggregator.HasExceptions && WasAborted(bodyAggregator.ToException())));
             if (timedOut)
             {
                 // The body ran out of time and stopped at its next step: a timeout, not whatever

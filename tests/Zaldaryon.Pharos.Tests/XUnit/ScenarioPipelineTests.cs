@@ -482,8 +482,11 @@ public class ScenarioPipelineTests
 #pragma warning restore xUnit1000
 }
 
-/// <summary>Tests that change the failure-artifact statics run one at a time.</summary>
-[CollectionDefinition(Name)]
+/// <summary>
+/// Tests that change the failure-artifact statics, such as the grace period, run one at a time and
+/// alone: a live scenario running beside them would see the shortened limits.
+/// </summary>
+[CollectionDefinition(Name, DisableParallelization = true)]
 public sealed class FailureArtifactCollection
 {
     public const string Name = "Failure artifacts";
