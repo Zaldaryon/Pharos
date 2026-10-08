@@ -176,6 +176,7 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime, IScenarioLifecy
     /// </remarks>
     public virtual async Task InitializeAsync()
     {
+        BootCheck.ThrowIfFailedBefore(GetType());
         _gate = await ScenarioHostPool.EnterAsync(HostWaitTimeout).ConfigureAwait(false);
 
         try
@@ -192,6 +193,13 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime, IScenarioLifecy
 
             ScenarioHostPool.Clear();
             await StartAsync().ConfigureAwait(false);
+
+            // Checked before the pair is snapshotted or pooled: a pair that fails it is torn down.
+            if (BootCheck.Enforce(GetType(), _serverHost!.BootDiagnostics, _client!.BootDiagnostics))
+            {
+                _serverHost.Logs.Clear();
+                _client.Logs.Clear();
+            }
 
             if (_poolKey != null)
             {
@@ -221,6 +229,13 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime, IScenarioLifecy
             throw failure;
         }
     }
+
+    /// <summary>
+    /// The server's and the client's boot diagnostics judged against the class's
+    /// <see cref="AllowBootDiagnosticAttribute"/>s, whether or not the class is
+    /// <see cref="StrictBootAttribute"/>. See <c>docs/boot-diagnostics.md</c>.
+    /// </summary>
+    protected BootDiagnosticsResult UnexpectedBootDiagnostics => BootCheck.Evaluate(GetType(), _serverHost?.BootDiagnostics, _client?.BootDiagnostics);
 
     void IScenarioLifecycle.BeforeBody()
     {

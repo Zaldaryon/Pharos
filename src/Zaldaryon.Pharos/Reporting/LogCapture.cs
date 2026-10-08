@@ -11,6 +11,35 @@ public sealed record LogEntry(EnumAppSide Side, EnumLogType Type, string Message
     /// <summary>Whether the entry is an error or a fatal error.</summary>
     public bool IsError => Type is EnumLogType.Error or EnumLogType.Fatal;
 
+    /// <summary>Whether the entry is a warning, an error or a fatal error.</summary>
+    public bool IsWarningOrWorse => Type is EnumLogType.Warning or EnumLogType.Error or EnumLogType.Fatal;
+
+    /// <summary>
+    /// The logger that wrote the entry: the mod id a mod's logger puts in front of its messages
+    /// (<c>[mymod] ...</c>), or <c>game</c> for the engine's own loggers. It names who logged
+    /// the entry, not necessarily whose fault it is: the engine reports a mod's missing asset
+    /// under <c>game</c>, naming the mod in the message.
+    /// </summary>
+    public string Source => ParseSource(Message);
+
+    private static string ParseSource(string message)
+    {
+        if (message.Length < 4 || message[0] != '[') return "game";
+
+        int end = message.IndexOf(']', 1);
+        if (end <= 1 || end + 1 >= message.Length || message[end + 1] != ' ') return "game";
+
+        // Mod ids are made of letters, digits, '-', '_' and '.'; the engine's own bracketed
+        // prefixes, such as "[Mod API]", are not mod ids.
+        for (int i = 1; i < end; i++)
+        {
+            char c = message[i];
+            if (!char.IsLetterOrDigit(c) && c is not ('-' or '_' or '.')) return "game";
+        }
+
+        return message[1..end];
+    }
+
     /// <inheritdoc />
     public override string ToString() => $"[{Side} {Type}] {Message}";
 }
@@ -30,9 +59,15 @@ public sealed class LogCapture
     /// <summary>The most entries kept; older ones are dropped first.</summary>
     public const int Capacity = 10_000;
 
+    /// <summary>The most boot diagnostics kept; later ones are counted as truncated.</summary>
+    public const int BootCapacity = 10_000;
+
     private readonly object _lock = new();
     private readonly Queue<LogEntry> _entries = new();
+    private readonly List<LogEntry> _boot = [];
     private readonly EnumAppSide _side;
+    private bool _bootComplete;
+    private bool _bootTruncated;
 
     internal LogCapture(EnumAppSide side)
     {
@@ -61,7 +96,25 @@ public sealed class LogCapture
         return Errors.Where(e => !fragments.Any(f => e.Message.Contains(f, StringComparison.OrdinalIgnoreCase))).ToList();
     }
 
-    /// <summary>Forgets everything collected so far.</summary>
+    /// <summary>
+    /// Every warning, error and fatal error logged from boot until the host finished booting; see
+    /// <see cref="Reporting.BootDiagnostics"/>. <see cref="Clear"/> does not touch it.
+    /// </summary>
+    public BootDiagnostics BootDiagnostics
+    {
+        get
+        {
+            lock (_lock) return new BootDiagnostics(_side, [.. _boot], _bootComplete, _bootTruncated);
+        }
+    }
+
+    /// <summary>Ends the boot: later entries are not boot diagnostics.</summary>
+    internal void CompleteBoot()
+    {
+        lock (_lock) _bootComplete = true;
+    }
+
+    /// <summary>Forgets everything collected so far, except the boot diagnostics.</summary>
     public void Clear()
     {
         lock (_lock) _entries.Clear();
@@ -84,10 +137,17 @@ public sealed class LogCapture
             message = format;
         }
 
+        LogEntry entry = new(_side, type, message);
         lock (_lock)
         {
             if (_entries.Count == Capacity) _entries.Dequeue();
-            _entries.Enqueue(new LogEntry(_side, type, message));
+            _entries.Enqueue(entry);
+
+            if (!_bootComplete && entry.IsWarningOrWorse)
+            {
+                if (_boot.Count < BootCapacity) _boot.Add(entry);
+                else _bootTruncated = true;
+            }
         }
     }
 }

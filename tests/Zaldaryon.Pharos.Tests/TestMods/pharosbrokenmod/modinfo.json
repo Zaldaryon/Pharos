@@ -1,0 +1,11 @@
+{
+  "type": "content",
+  "modid": "pharosbrokenmod",
+  "name": "Pharos Broken Mod",
+  "version": "1.0.0",
+  "side": "Server",
+  "requiredOnClient": false,
+  "description": "Content-only mod the boot diagnostics tests stage: it depends on a mod that does not exist, so the server warns about it while booting.",
+  "authors": ["Pharos"],
+  "dependencies": { "game": "", "pharosmissingdependency": "1.0.0" }
+}

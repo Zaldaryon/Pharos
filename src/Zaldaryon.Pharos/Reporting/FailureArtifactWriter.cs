@@ -241,6 +241,12 @@ internal static class FailureArtifactWriter
             }
         }
 
+        if (failure.Exception is Zaldaryon.Pharos.XUnit.BootDiagnosticsException boot)
+        {
+            Step("boot-diagnostics.txt", files, problems, () =>
+                File.WriteAllText(Path.Combine(directory, "boot-diagnostics.txt"), boot.Result.Describe() + Environment.NewLine, new UTF8Encoding(false)));
+        }
+
         if (failure.AddFiles != null)
         {
             Step("the scenario's own files", [], problems, () => failure.AddFiles(directory));

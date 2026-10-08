@@ -195,11 +195,15 @@ public static class HeadlessClientBootstrap
             client.clientSystems ??= new ClientSystem[] { client.modHandler };
             client.TerrainChunkTesselator ??= new ChunkTesselator(client);
 
-            return new HeadlessClient(client, platform, screenManager, runningGameScreen, window, options, tempDataPath)
+            HeadlessClient headless = new(client, platform, screenManager, runningGameScreen, window, options, tempDataPath)
             {
                 Logs = logs,
                 SettingsWatchersAtBoot = settingsWatchers,
             };
+
+            // A fixture-mode client never joins: it has booted once it is built.
+            logs.CompleteBoot();
+            return headless;
         }
     }
 
