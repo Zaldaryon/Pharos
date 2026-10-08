@@ -84,7 +84,52 @@ public sealed class VirtualInputController
         }
 
         (int x, int y) = GetMousePosition();
-        Sink?.MouseButton(ToEngineButton(button), pressed, x, y);
+        Sink?.MouseButton(ToEngineButton(button), pressed, x, y, Modifiers());
+    }
+
+    /// <summary>
+    /// Injects a press or release of any mouse button the engine knows, the side buttons included.
+    /// Held Shift, Ctrl and Alt keys go with it, as for a real click.
+    /// </summary>
+    /// <param name="button">The engine's mouse button.</param>
+    /// <param name="pressed">True to press, false to release.</param>
+    public void InjectMouseButton(EnumMouseButton button, bool pressed)
+    {
+        VirtualMouseButton? virtualButton = button switch
+        {
+            EnumMouseButton.Left => VirtualMouseButton.Left,
+            EnumMouseButton.Middle => VirtualMouseButton.Middle,
+            EnumMouseButton.Right => VirtualMouseButton.Right,
+            _ => null,
+        };
+
+        if (virtualButton is { } tracked)
+        {
+            InjectMouseButton(tracked, pressed);
+            return;
+        }
+
+        (int x, int y) = GetMousePosition();
+        Sink?.MouseButton(button, pressed, x, y, Modifiers());
+    }
+
+    // The engine's modifier bits on a mouse event: 1 Shift, 2 Ctrl, 4 Alt.
+    private int Modifiers()
+    {
+        (bool shift, bool ctrl, bool alt) = HeldModifiers();
+        return (shift ? 1 : 0) | (ctrl ? 2 : 0) | (alt ? 4 : 0);
+    }
+
+    private (bool Shift, bool Ctrl, bool Alt) HeldModifiers(GlKeys? except = null)
+    {
+        lock (_lock)
+        {
+            bool Held(GlKeys key) => key != except && _pressedGlKeys.Contains(key);
+            return (
+                (_pressedKeys.Contains(VirtualKey.Shift) && except is not (GlKeys.LShift or GlKeys.RShift)) || Held(GlKeys.LShift) || Held(GlKeys.RShift),
+                (_pressedKeys.Contains(VirtualKey.Control) && except is not (GlKeys.LControl or GlKeys.RControl)) || Held(GlKeys.LControl) || Held(GlKeys.RControl),
+                (_pressedKeys.Contains(VirtualKey.Alt) && except is not (GlKeys.LAlt or GlKeys.RAlt)) || Held(GlKeys.LAlt) || Held(GlKeys.RAlt));
+        }
     }
 
     /// <summary>
@@ -174,13 +219,9 @@ public sealed class VirtualInputController
         IVirtualInputSink? sink = Sink;
         if (sink == null) return;
 
-        bool shift, ctrl, alt;
-        lock (_lock)
-        {
-            shift = _pressedKeys.Contains(VirtualKey.Shift) || _pressedGlKeys.Contains(GlKeys.LShift) || _pressedGlKeys.Contains(GlKeys.RShift);
-            ctrl = _pressedKeys.Contains(VirtualKey.Control) || _pressedGlKeys.Contains(GlKeys.LControl) || _pressedGlKeys.Contains(GlKeys.RControl);
-            alt = _pressedKeys.Contains(VirtualKey.Alt) || _pressedGlKeys.Contains(GlKeys.LAlt) || _pressedGlKeys.Contains(GlKeys.RAlt);
-        }
+        // A modifier key's own press does not count as that modifier being held, as on a real
+        // keyboard: Ctrl then LShift is a press of LShift with Ctrl held, not with Shift.
+        (bool shift, bool ctrl, bool alt) = HeldModifiers(except: key);
 
         if (pressed)
         {
@@ -200,7 +241,7 @@ public sealed class VirtualInputController
         }
     }
 
-    private static char? ToCharacter(GlKeys key, bool shift)
+    internal static char? ToCharacter(GlKeys key, bool shift)
     {
         if (key >= GlKeys.A && key <= GlKeys.Z)
         {

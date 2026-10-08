@@ -4,13 +4,34 @@ using Vintagestory.API.Common;
 
 namespace PharosClientMod;
 
-/// <summary>Registers <c>.pharoscmd</c>, a client command with one subcommand per outcome.</summary>
+/// <summary>
+/// Registers <c>.pharoscmd</c>, a client command with one subcommand per outcome, and two hotkeys
+/// that count their presses.
+/// </summary>
 public sealed class PharosClientModSystem : ModSystem
 {
+    private int _pings, _pongs;
+    private bool _pingPasses;
+
     public override bool ShouldLoad(EnumAppSide forSide) => forSide == EnumAppSide.Client;
 
     public override void StartClientSide(ICoreClientAPI api)
     {
+        api.Input.RegisterHotKey("pharosclientmod:ping", "Pharos ping", GlKeys.O, HotkeyType.GUIOrOtherControls, ctrlPressed: true, shiftPressed: true);
+        api.Input.SetHotKeyHandler("pharosclientmod:ping", _ =>
+        {
+            if (_pingPasses) return false;
+            _pings++;
+            return true;
+        });
+
+        api.Input.RegisterHotKey("pharosclientmod:pong", "Pharos pong", GlKeys.L, HotkeyType.GUIOrOtherControls, ctrlPressed: true, shiftPressed: true);
+        api.Input.SetHotKeyHandler("pharosclientmod:pong", _ =>
+        {
+            _pongs++;
+            return true;
+        });
+
         IChatCommand command = api.ChatCommands.Create("pharoscmd").WithDescription("Pharos client command test");
 
         command.BeginSubCommand("status")
@@ -34,6 +55,19 @@ public sealed class PharosClientModSystem : ModSystem
         command.BeginSubCommand("later")
             .WithArgs(new LaterParser(api))
             .HandleWith(args => TextCommandResult.Success("done later: " + args[0]))
+            .EndSubCommand();
+
+        command.BeginSubCommand("presses")
+            .HandleWith(_ => TextCommandResult.Success($"ping={_pings} pong={_pongs}"))
+            .EndSubCommand();
+
+        command.BeginSubCommand("pingpasses")
+            .WithArgs(api.ChatCommands.Parsers.Bool("passes"))
+            .HandleWith(args =>
+            {
+                _pingPasses = (bool)args[0];
+                return TextCommandResult.Success();
+            })
             .EndSubCommand();
 
         command.BeginSubCommand("boom")

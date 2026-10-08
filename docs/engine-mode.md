@@ -230,6 +230,30 @@ public async Task WorldRenders(ClientSettingsProfile profile)
 
 `[ClientSetting("viewDistance", 96)]` on a scenario class applies a setting to each of its tests once the client is up, and restores it when the test ends. Settings are process-wide in the game, so always restore what a test changes.
 
+## Hotkeys
+
+`HeadlessClient.Hotkeys` reads the hotkeys the client has registered, the game's and its mods', and fires them by their code:
+
+```csharp
+HotkeyInfo open = Client!.Hotkeys.Require("mymod:openpanel");
+Assert.Equal(HotkeyBinding.Of(GlKeys.P, ctrl: true), open.Current);
+
+HotkeyTriggerResult result = await Client.Hotkeys.TriggerAsync("mymod:openpanel");
+Assert.True(result.Fired);
+Assert.Null(Client.Hotkeys.ConflictWith("mymod:openpanel"));
+```
+
+- `TriggerAsync` sends the combination the hotkey is bound to as one key event with its modifiers as flags, down and up, through the same entry point as real input, then steps a frame. The real gating applies: a mod's key listener, a dialog that has the keyboard, whether character controls are allowed, the game mode, and which hotkey comes first when two share a combination.
+  - `Fired` is true when the hotkey's own handler took the key.
+  - `FiredCode` names the hotkey that did, another one on a clash.
+  - `Consumed` with no `FiredCode` means something took the key before any hotkey saw it, such as the chat line while it has the keyboard.
+- `PressAsync` presses the keys one by one through `Input`, modifiers first, holds them for `holdFrames` and releases them, even when the test fails. Held modifiers also hold what is bound to them, such as sprint on Ctrl. Double taps, such as the fly toggle's Space Space, and mouse buttons with modifiers work too. Two presses of the same key count as a double tap when the second comes within 200 ms of frame time of the first, at the default 1/60 s per frame twelve frames, however fast the machine steps them.
+- Movement and other controls the game reads as held keys have no handler (`HasHandler` is false), so `TriggerAsync` cannot fire them: use `PressAsync` with enough frames, or `Controls`.
+- `Rebind` binds a hotkey to another combination as the controls menu does, so the systems that watch bindings, such as player movement, follow, and shift-click follows sneak and ctrl-click sprint unless the menu sets them apart. Dispose the result to put the old binding back; it goes back even after the client is gone, since hotkeys are process-wide in the game. Unlike the menu, it does not raise `HotkeysChanged`.
+- `Conflicts()` lists every group of hotkeys bound to exactly the same combination. The game has three on purpose: sneak and shift-click, sprint and ctrl-click, middle click and pick block. It does not list overlaps the game resolves at press time: a binding with no modifiers also fires on Ctrl, Shift or Alt with its key when no exact binding takes it, and a mouse binding with no modifiers matches any.
+- Global hotkeys, such as F11 and F12, fire even while a dialog has the keyboard.
+- For a while after a player joins, the game's intro tip takes the K key for its "hold K" help. A binding on K, even with modifiers, does not reach hotkeys while the tip shows.
+
 ## Client commands
 
 `HeadlessClient.Commands` runs the client's chat commands, the ones that start with a dot, such as a mod's `.mymod status` or the game's `.clientconfig`. A command runs on the client thread with the same lookup, the same privileges and the same result line in chat as when the player types it in the chat dialog. It returns the command's status, message, error code and data, and the chat lines the client showed while it ran:
