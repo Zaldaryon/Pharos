@@ -149,6 +149,49 @@ public class BootDiagnosticsTests
         Assert.Contains("(unclosed", error.Message);
     }
 
+    [Theory]
+    [InlineData(EnumLogType.Debug, -1, false, "Level must be")]
+    [InlineData(EnumLogType.Audit, -1, false, "Level must be")]
+    [InlineData(EnumLogType.Notification, -2, false, "Count must be")]
+    [InlineData(EnumLogType.Notification, 0, true, "contradict")]
+    public void InvalidAllowances_AreRefused(EnumLogType level, int count, bool required, string message)
+    {
+        AllowBootDiagnosticAttribute allowance = new("x") { Level = level, Count = count, Required = required };
+
+        ArgumentException error = Assert.Throws<ArgumentException>(() => Boot().Check([allowance]));
+
+        Assert.Contains(message, error.Message);
+    }
+
+    [Fact]
+    public void CountZero_MeansTheEntryMustNeverBeLogged()
+    {
+        Assert.True(Boot().Check([new AllowBootDiagnosticAttribute("never") { Count = 0 }]).Passed);
+        Assert.Contains(
+            Boot(Warning("never ever")).Check([new AllowBootDiagnosticAttribute("never") { Count = 0 }]).Unmet,
+            u => u.Contains("expected 0, saw 1"));
+    }
+
+    [Fact]
+    public void BootCheck_RefusesAnInvalidAllowance_BeforeAnythingBoots()
+    {
+        ArgumentException error = Assert.Throws<ArgumentException>(() => BootCheck.ThrowIfFailedBefore(typeof(BadPatternSample)));
+
+        Assert.Contains("(unclosed", error.Message);
+    }
+
+    [Fact]
+    public void BootCheck_DoesNotJudgeANonStrictClass()
+    {
+        Assert.False(BootCheck.Enforce(typeof(AllowanceOnlySample), Boot(Warning("[mymod] anything"))));
+    }
+
+    [Fact]
+    public void Check_AppliesTheHarnessAllowances()
+    {
+        Assert.True(Boot(Warning("Server overloaded. A tick took 900ms to complete.")).Check([]).Passed);
+    }
+
     [Fact]
     public void TheHarnessAllowsTheServerOverloadWarning()
     {
@@ -232,4 +275,10 @@ public class BootDiagnosticsTests
 
     [AllowBootDiagnostic("own")]
     private sealed class DerivedStrictSample : StrictSample;
+
+    [AllowBootDiagnostic("(unclosed")]
+    private sealed class BadPatternSample;
+
+    [AllowBootDiagnostic("anything")]
+    private sealed class AllowanceOnlySample;
 }

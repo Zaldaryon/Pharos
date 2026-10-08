@@ -38,26 +38,34 @@ internal static class BootCheck
 
     /// <summary>
     /// Throws when an earlier test of the class failed its strict boot: the class is not booted
-    /// again, and the test fails at once with the same list.
+    /// again, and the test fails at once with the same list. Also throws when one of the class's
+    /// allowances is invalid.
     /// </summary>
+    /// <exception cref="ArgumentException">An allowance is invalid.</exception>
     public static void ThrowIfFailedBefore(Type testClass)
     {
+        // A mistake in an allowance is found before anything boots, on every test of the class.
+        foreach (AllowBootDiagnosticAttribute allowance in Allowances(testClass))
+        {
+            allowance.Validate();
+        }
+
         if (!s_failed.TryGetValue(testClass, out BootDiagnosticsException? first)) return;
 
         throw new ScenarioFailedException(
             new BootDiagnosticsException(first.Result),
-            $"{testClass.Name} failed its strict boot in an earlier test, {first.Test ?? "of this class"}, and is not booted again. That test's failure names its artifacts.");
+            $"{testClass.Name} failed its strict boot in an earlier test, {first.Test ?? "of this class"}, and is not booted again. That test's failure has the details and names its artifacts, if they could be saved.");
     }
 
     /// <summary>
     /// Checks a freshly booted host's diagnostics for a strict class, and throws when they fail.
-    /// Returns whether the class judges boot diagnostics at all, so the caller can start the
-    /// logged-error gate afresh: what was logged at boot is judged here, not by the gate.
+    /// Returns whether the boot was judged, and passed, so the caller can start the logged-error
+    /// gate afresh: what was logged at boot was judged here, not by the gate.
     /// </summary>
     /// <exception cref="BootDiagnosticsException">The boot logged what the class does not allow.</exception>
     public static bool Enforce(Type testClass, params BootDiagnostics?[] boots)
     {
-        if (!IsStrict(testClass)) return Allowances(testClass).Count > HarnessAllowances.Count;
+        if (!IsStrict(testClass)) return false;
 
         BootDiagnosticsResult result = Evaluate(testClass, boots);
         if (result.Passed) return true;

@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using Vintagestory.API.Common;
 using Zaldaryon.Pharos.XUnit;
+using Zaldaryon.Pharos.XUnit.Execution;
 
 namespace Zaldaryon.Pharos.Reporting;
 
@@ -46,11 +47,14 @@ public sealed class BootDiagnostics : IReadOnlyList<LogEntry>
     /// <inheritdoc />
     public LogEntry this[int index] => _entries[index];
 
-    /// <summary>Every entry: none is allowed.</summary>
-    public IReadOnlyList<LogEntry> Unexpected => _entries;
-
-    /// <summary>Judges the entries against <paramref name="allowances"/>.</summary>
-    public BootDiagnosticsResult Check(IEnumerable<AllowBootDiagnosticAttribute> allowances) => BootDiagnosticsResult.Of([this], allowances);
+    /// <summary>
+    /// Judges the entries against <paramref name="allowances"/>, and the entries Pharos itself
+    /// always allows. A scenario class's own allowances are applied by its
+    /// <c>UnexpectedBootDiagnostics</c>.
+    /// </summary>
+    /// <exception cref="ArgumentException">An allowance is invalid.</exception>
+    public BootDiagnosticsResult Check(IEnumerable<AllowBootDiagnosticAttribute> allowances) =>
+        BootDiagnosticsResult.Of([this], [.. allowances, .. BootCheck.HarnessAllowances]);
 
     /// <inheritdoc />
     public IEnumerator<LogEntry> GetEnumerator() => _entries.GetEnumerator();
@@ -116,6 +120,7 @@ public sealed class BootDiagnosticsResult
     internal static BootDiagnosticsResult Of(IEnumerable<BootDiagnostics> boots, IEnumerable<AllowBootDiagnosticAttribute> allowances)
     {
         AllowBootDiagnosticAttribute[] allowed = [.. allowances];
+        foreach (AllowBootDiagnosticAttribute allowance in allowed) allowance.Validate();
         Regex[] patterns = [.. allowed.Select(a => a.Regex)];
         int[] matches = new int[allowed.Length];
         List<LogEntry> unexpected = [];
@@ -140,6 +145,11 @@ public sealed class BootDiagnosticsResult
 
                 if (!matched) unexpected.Add(entry);
             }
+        }
+
+        foreach (AllowBootDiagnosticAttribute allowance in allowed.Where(a => a.TimedOut))
+        {
+            incomplete.Add($"{allowance} took longer than a second to match an entry, which then counted as not matched");
         }
 
         List<string> unmet = [];

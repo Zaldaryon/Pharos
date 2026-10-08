@@ -39,7 +39,8 @@ public sealed class AllowBootDiagnosticAttribute(string pattern) : Attribute
 
     /// <summary>
     /// The level the entry must have: <see cref="EnumLogType.Warning"/>, <see cref="EnumLogType.Error"/>
-    /// or <see cref="EnumLogType.Fatal"/>. Any of them when not set. The engine logs
+    /// or <see cref="EnumLogType.Fatal"/>. Any of them when not set (shown as
+    /// <see cref="EnumLogType.Notification"/>); other levels are refused. The engine logs
     /// <c>Fatal(exception)</c> at the error level.
     /// </summary>
     public EnumLogType Level { get; set; } = EnumLogType.Notification;
@@ -52,12 +53,37 @@ public sealed class AllowBootDiagnosticAttribute(string pattern) : Attribute
 
     /// <summary>
     /// How many times the entry must be logged, exactly; any other number fails the boot. Any
-    /// number when not set (-1). A count above 0 makes the entry required.
+    /// number when not set (-1). A count above 0 makes the entry required; 0 means it must never
+    /// be logged.
     /// </summary>
     public int Count { get; set; } = -1;
 
     /// <summary>Whether the entry must be logged at least once; a fixed warning then shows as a stale allowance.</summary>
     public bool Required { get; set; }
+
+    /// <summary>Whether matching the pattern ran out of time on some entry.</summary>
+    internal bool TimedOut { get; private set; }
+
+    /// <summary>Throws when the allowance cannot work: a bad pattern, level or count.</summary>
+    /// <exception cref="ArgumentException">It cannot.</exception>
+    internal void Validate()
+    {
+        _ = Regex;
+        if (Level is not (EnumLogType.Notification or EnumLogType.Warning or EnumLogType.Error or EnumLogType.Fatal))
+        {
+            throw new ArgumentException($"{this}: Level must be Warning, Error or Fatal; boot diagnostics are nothing else.");
+        }
+
+        if (Count < -1)
+        {
+            throw new ArgumentException($"{this}: Count must be 0 or more, or -1 for any number.");
+        }
+
+        if (Count == 0 && Required)
+        {
+            throw new ArgumentException($"{this}: Count = 0 and Required = true contradict each other.");
+        }
+    }
 
     /// <summary>The compiled pattern.</summary>
     /// <exception cref="ArgumentException">The pattern is not a valid regular expression.</exception>
@@ -74,6 +100,7 @@ public sealed class AllowBootDiagnosticAttribute(string pattern) : Attribute
         }
         catch (RegexMatchTimeoutException)
         {
+            TimedOut = true;
             return false;
         }
     }

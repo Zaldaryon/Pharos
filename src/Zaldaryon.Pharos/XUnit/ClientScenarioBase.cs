@@ -130,7 +130,8 @@ public abstract class ClientScenarioBase : IAsyncLifetime, IScenarioLifecycle
                 _pooled = PooledClient.Boot(options, mods, key);
 
                 // An engine-mode client here never joins a server, so its mods never start: its
-                // boot diagnostics are what it logged up to now, and the check says so.
+                // boot ends here, and what its tests log is not part of it.
+                _pooled.Client.Logs.CompleteBoot();
                 if (BootCheck.Enforce(GetType(), _pooled.Client.BootDiagnostics))
                 {
                     _pooled.Client.Logs.Clear();

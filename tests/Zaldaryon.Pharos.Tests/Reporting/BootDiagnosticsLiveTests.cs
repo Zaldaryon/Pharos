@@ -32,7 +32,8 @@ public sealed class BootDiagnosticsLiveTests : IDisposable
 
         BootDiagnostics boot = host.BootDiagnostics;
         Assert.True(boot.IsComplete);
-        Assert.True(boot.Count == 0, "A vanilla server logged at boot:" + Environment.NewLine + string.Join(Environment.NewLine, boot));
+        BootDiagnosticsResult result = boot.Check([]);
+        Assert.True(result.Passed, "A vanilla server logged at boot:" + Environment.NewLine + result.Describe());
 
         host.RunOnGameThread(() => host.Server.Api.Logger.Warning("after the boot"));
         Assert.Empty(host.BootDiagnostics);
@@ -51,12 +52,12 @@ public sealed class BootDiagnosticsLiveTests : IDisposable
         Assert.Contains("pharosbrokenmod", File.ReadAllText(Path.Combine(dir, "boot-diagnostics.txt")));
         Assert.True(File.Exists(Path.Combine(dir, "server.log")));
 
-        // The class is not booted again: the next test fails at once with the same list.
-        System.Diagnostics.Stopwatch watch = System.Diagnostics.Stopwatch.StartNew();
+        // The class is not booted again: the next test fails before it reaches the host, with
+        // the same list, and has no artifacts of its own.
         ScenarioRunnerHarness.RunResult second = await ScenarioRunnerHarness.RunAsync(typeof(StrictBroken), nameof(StrictBroken.Second));
         Assert.Contains("is not booted again", second.FailureMessage);
         Assert.Contains("pharosbrokenmod", second.FailureMessage);
-        Assert.True(watch.Elapsed < TimeSpan.FromSeconds(5), $"The second test took {watch.Elapsed}: it booted again");
+        Assert.False(Directory.Exists(Path.Combine(_root, nameof(StrictBroken), nameof(StrictBroken.Second))), "The second test booted and failed on its own");
     }
 
     [Fact]

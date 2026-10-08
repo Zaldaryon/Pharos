@@ -16,12 +16,14 @@ The boot ends at a different point for each host:
 | Host | Boot ends | Why |
 |------|-----------|-----|
 | Server | When `EmbeddedServerHost.Boot` returns. | The world is loaded and the mods have started. |
-| Engine-mode client | When it has joined a server, the first time `IsJoined` is true. | Its mods only start during the join. |
+| Engine-mode client | When it has joined a server, the first time `IsJoined` is true. In a `ClientScenarioBase`, which never joins, when the scenario has booted it. | Its mods only start during the join. |
 | Fixture-mode client | When it has booted. | It never joins. |
 
 Until then `IsComplete` is false and the list keeps growing. An engine-mode client in a
 `ClientScenarioBase` never joins a server, so its list only covers what it logged before its mods
-started. What the game logs later does not count, for example a shape it only tessellates when it
+would have started. A `ClientServerScenarioBase` that sets `WaitForPlayerJoinOnInit` to false is
+checked before its client has joined; the check notes it, and what the client logs during the
+later join is not enforced. What the game logs later does not count, for example a shape it only tessellates when it
 first renders, or a warning the server logs when a client joins.
 
 `LogCapture.Clear()`, which runs between pooled tests, leaves the boot list alone. The list holds
@@ -77,8 +79,11 @@ assembly, as many times as needed.
 | `Required` | The entry must appear at least once. A warning that has been fixed then shows up as a stale allowance, so the allowance can be removed. |
 
 An entry is unexpected when no allowance matches it. An entry that matches several allowances
-counts toward each of them. An invalid pattern fails the boot with a message naming the
-allowance.
+counts toward each of them. An allowance that cannot work fails every test of the class before
+anything boots, with a message naming it: an invalid pattern, a level other than `Warning`,
+`Error` or `Fatal`, a negative count other than -1, or `Count = 0` with `Required = true`. A
+pattern that takes more than a second on an entry counts as not matching it, and the result
+says so.
 
 Pharos itself allows one entry wherever it applies: the server's `Server overloaded. A tick took
 ...` warning, which depends on how busy the machine is rather than on the mods under test.
@@ -86,15 +91,20 @@ Pharos itself allows one entry wherever it applies: the server's `Server overloa
 ## Without strict mode
 
 Any scenario class can read `UnexpectedBootDiagnostics`, which judges its hosts' boot diagnostics
-against its allowances, and assert on it. `BootDiagnostics.Check(allowances)` does the same for a
-host booted directly.
+against its allowances, and assert on it:
+
+```csharp
+Assert.Empty(UnexpectedBootDiagnostics.Unexpected);
+```
+
+`BootDiagnostics.Check(allowances)` does the same for a host booted directly, with the allowances
+given and Pharos's own.
 
 ## Interplay with `FailOnLoggedErrors`
 
-A class with `[StrictBoot]` or any `[AllowBootDiagnostic]` judges its boot here. On a fresh boot,
-its hosts' logs are then cleared, so `FailOnLoggedErrors` judges only what each test logs. A class
-with neither keeps the old behaviour: the first test after a fresh boot also sees the boot's
-errors.
+When a `[StrictBoot]` class's fresh boot passes the check, its hosts' logs are cleared, so
+`FailOnLoggedErrors` judges only what each test logs. Any other class keeps the old behaviour: the
+first test after a fresh boot also sees the boot's errors.
 
 ## The mod safety check
 

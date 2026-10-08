@@ -103,6 +103,8 @@ public sealed class AtlasServerHost : IDisposable
             IsNew = true
         };
 
+        ModSafetyCheck.Disable();
+
         ServerMain server = new(startArgs, new[] { "--dataPath", dataPath }, progArgs, isDedicatedServer: false);
         server.exitState = new GameExitState();
         server.MainSockets[0] = dummyTcpServer;
