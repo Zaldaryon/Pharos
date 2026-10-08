@@ -1,0 +1,66 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>Zaldaryon.Pharos.Cli</RootNamespace>
+    <AssemblyName>Zaldaryon.Pharos.Cli</AssemblyName>
+    <VintageStoryPath Condition="'$(VintageStoryPath)' == ''">$(VINTAGE_STORY)</VintageStoryPath>
+
+    <!-- A dotnet tool: `dotnet tool install -g Zaldaryon.Pharos.Cli`, then `pharos`. -->
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>pharos</ToolCommandName>
+    <IsPackable>true</IsPackable>
+    <IsTestProject>false</IsTestProject>
+    <PackageId>Zaldaryon.Pharos.Cli</PackageId>
+    <Version>0.5.0</Version>
+    <Authors>Zaldaryon</Authors>
+    <Description>The pharos command: smoke-test a Vintage Story mod (boot, join, play, fail on errors), run benchmarks, migrate Atlas suites. Uses your own Vintage Story install; ships none of the game's files.</Description>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <RepositoryUrl>https://github.com/Zaldaryon/Pharos</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageTags>vintagestory;testing;headless;smoke-test;cli</PackageTags>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="..\..\README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Zaldaryon.Pharos\Zaldaryon.Pharos.csproj" />
+  </ItemGroup>
+
+  <!--
+    The game's assemblies are referenced here directly, not copied: the tool must never carry
+    them. At run time the launcher builds a folder next to the user's own install (see Launcher.cs).
+  -->
+  <ItemGroup>
+    <Reference Include="VintagestoryAPI"><HintPath>$(VintageStoryPath)/VintagestoryAPI.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="VintagestoryLib"><HintPath>$(VintageStoryPath)/VintagestoryLib.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="OpenTK.Windowing.Desktop"><HintPath>$(VintageStoryPath)/Lib/OpenTK.Windowing.Desktop.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="OpenTK.Windowing.GraphicsLibraryFramework"><HintPath>$(VintageStoryPath)/Lib/OpenTK.Windowing.GraphicsLibraryFramework.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="OpenTK.Windowing.Common"><HintPath>$(VintageStoryPath)/Lib/OpenTK.Windowing.Common.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="OpenTK.Graphics"><HintPath>$(VintageStoryPath)/Lib/OpenTK.Graphics.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="OpenTK.Mathematics"><HintPath>$(VintageStoryPath)/Lib/OpenTK.Mathematics.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="OpenTK.Core"><HintPath>$(VintageStoryPath)/Lib/OpenTK.Core.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="OpenTK.Audio.OpenAL"><HintPath>$(VintageStoryPath)/Lib/OpenTK.Audio.OpenAL.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="0Harmony"><HintPath>$(VintageStoryPath)/Lib/0Harmony.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="cairo-sharp"><HintPath>$(VintageStoryPath)/Lib/cairo-sharp.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="SkiaSharp"><HintPath>$(VintageStoryPath)/Lib/SkiaSharp.dll</HintPath><Private>false</Private></Reference>
+  </ItemGroup>
+
+  <!--
+    The game's native libraries reach this project as content of the core library. The tool runs
+    from the staged folder, which links the install's own, so they are left out of the package.
+  -->
+  <Target Name="DropGameNativePublish" AfterTargets="ComputeResolvedFilesToPublishList">
+    <ItemGroup>
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)" Condition="'%(Extension)' == '.so' Or '%(Extension)' == '.dylib' Or $([System.String]::Copy('%(Filename)%(Extension)').Contains('.so.')) Or '%(Filename)%(Extension)' == 'glfw3.dll' Or '%(Filename)%(Extension)' == 'OpenAL32.dll' Or '%(Filename)%(Extension)' == 'libSkiaSharp.dll'" />
+    </ItemGroup>
+  </Target>
+</Project>

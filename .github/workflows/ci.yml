@@ -144,6 +144,41 @@ jobs:
             xvfb-run -a -s "-screen 0 1280x720x24" dotnet test Pharos.sln -c Release --no-build
           fi
 
+      - name: Check the pharos tool package
+        env:
+          VINTAGE_STORY: ${{ env.VS_CACHE_PATH }}/${{ env.VS_VERSION }}
+        run: |
+          dotnet pack src/Zaldaryon.Pharos.Cli/Zaldaryon.Pharos.Cli.csproj -c Release --no-build -o ./tool-nupkg
+          scripts/check-tool-package.sh ./tool-nupkg/Zaldaryon.Pharos.Cli.*.nupkg "$VINTAGE_STORY"
+
+      - name: Smoke-test mods with the installed pharos tool
+        if: needs.plan.outputs.full == 'true'
+        env:
+          VINTAGE_STORY: ${{ env.VS_CACHE_PATH }}/${{ env.VS_VERSION }}
+          LIBGL_ALWAYS_SOFTWARE: 1
+          GALLIUM_DRIVER: llvmpipe
+          MESA_LOADER_DRIVER_OVERRIDE: llvmpipe
+          MESA_GL_VERSION_OVERRIDE: "4.5"
+          MESA_GLSL_VERSION_OVERRIDE: "450"
+          ALSOFT_DRIVERS: null
+          TEST_MODS: ${{ github.workspace }}/tests/Zaldaryon.Pharos.Tests/TestMods
+        run: |
+          dotnet tool install Zaldaryon.Pharos.Cli --tool-path "$RUNNER_TEMP/pharos-tool" --add-source ./tool-nupkg
+          # From outside the repository, as a mod's own CI would run it.
+          cd "$RUNNER_TEMP"
+          xvfb-run -a "$RUNNER_TEMP/pharos-tool/pharos" smoke --mod "$TEST_MODS/pharostestmod" --frames 300 \
+            --command "/time set day" --strict --artifacts "$GITHUB_WORKSPACE/artifacts/pharos/tool-smoke"
+          set +e
+          xvfb-run -a "$RUNNER_TEMP/pharos-tool/pharos" smoke --mod "$TEST_MODS/pharosbrokenmod" --strict \
+            --artifacts "$RUNNER_TEMP/broken-smoke"
+          code=$?
+          set -e
+          if [ "$code" != "1" ]; then
+            echo "::error::pharos smoke exited $code for a mod with a missing dependency, not 1"
+            exit 1
+          fi
+          test -n "$(find "$RUNNER_TEMP/broken-smoke" -name boot-diagnostics.txt)"
+
       - name: Upload failure artifacts
         if: failure() || cancelled()
         uses: actions/upload-artifact@v4

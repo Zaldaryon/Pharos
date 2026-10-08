@@ -133,6 +133,26 @@ public class BlockInteractionTests : ClientServerScenarioBase
 }
 ```
 
+## Quick Start: Smoke-Test a Mod
+
+Check that a mod loads, joins and plays without errors, with no test project:
+
+```bash
+dotnet tool install -g Zaldaryon.Pharos.Cli
+export VINTAGE_STORY=/path/to/vintagestory
+xvfb-run -a pharos smoke --mod bin/Release/mymod.zip --strict
+```
+
+Or, in a test project, inherit the ready-made scenario:
+
+```csharp
+[ServerMods("../../../../MyMod/bin/Release/mymod.zip")]
+[StrictBoot]
+public class Smoke : ModSmokeTest;
+```
+
+See [Smoke Testing a Mod](docs/smoke-test.md).
+
 ## Quick Start: A Real Client Joining a Server
 
 Boot the client in engine mode to run the vanilla client startup. The client joins the server, goes through character creation, receives chunks and renders the world through the game's own pipeline. It needs no auth server and no outbound network access:
@@ -168,6 +188,7 @@ On Linux without a display:
 | [Zaldaryon.Pharos.Bridge](https://www.nuget.org/packages/Zaldaryon.Pharos.Bridge) | In-client mod exposing inspection hooks to scenario code |
 | [Zaldaryon.Pharos.XUnit](https://www.nuget.org/packages/Zaldaryon.Pharos.XUnit) | xUnit integration: `[ClientScenario]`, `[ServerScenario]`, `[ClientServerScenario]` |
 | [Zaldaryon.Pharos.AtlasCompat](https://www.nuget.org/packages/Zaldaryon.Pharos.AtlasCompat) | Drop-in compatibility shim for `Atlas.Api` and `Atlas.XUnit` |
+| [Zaldaryon.Pharos.Cli](https://www.nuget.org/packages/Zaldaryon.Pharos.Cli) | The `pharos` command: `pharos smoke`, benchmarks, Atlas migration. Uses your own game install |
 
 Install `Zaldaryon.Pharos.XUnit` for client and server testing. Install `Zaldaryon.Pharos.AtlasCompat` to migrate existing Atlas test suites without code changes.
 
@@ -219,6 +240,7 @@ See the [inspection API reference](docs/inspection-api.md) for method signatures
 - [Writing Client Scenarios](docs/writing-scenarios.md): `[ClientScenario]`, `[ClientTheory]`, `[PharosMods]`, and isolation modes
 - [Writing Server Scenarios](docs/writing-server-scenarios.md): `[ServerScenario]`, `ServerScenarioBase`, `IServerTestPlayer`, and world helpers
 - [Engine Mode](docs/engine-mode.md): Booting a client that joins a real server offline, with character creation and the vanilla render pipeline
+- [Smoke Testing a Mod](docs/smoke-test.md): `pharos smoke` and `ModSmokeTest`, in a terminal or in CI
 - [Boot Diagnostics](docs/boot-diagnostics.md): The warnings a client or server logs while booting, `[StrictBoot]` and `[AllowBootDiagnostic]`
 - [Failure Artifacts and the Watchdog](docs/failure-artifacts.md): The screenshot, logs, traffic and run details a failing scenario saves, and the timeout that stops a hung one
 - [CI and Cloud Environments](docs/ci-and-cloud.md): Running the suite in CI and cloud environments, offline or online auth, and a dedicated server in Docker

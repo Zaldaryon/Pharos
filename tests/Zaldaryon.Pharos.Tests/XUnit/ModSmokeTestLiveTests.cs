@@ -55,6 +55,25 @@ public sealed class ModSmokeTestLiveTests : IDisposable
         Assert.Contains("names no mod", result.FailureMessage);
     }
 
+    [Fact]
+    public void TheSmokeCommand_PassesACleanMod_AndFailsABrokenOneStrictly()
+    {
+        StringWriter stdout = new(), stderr = new();
+        string artifacts = Path.Combine(_root, "cli");
+
+        int clean = Zaldaryon.Pharos.Cli.SmokeCommand.Run(
+            ["--mod", "TestMods/pharostestmod", "--frames", "120", "--command", "/time set day", "--artifacts", artifacts], stdout, stderr);
+        Assert.True(clean == 0, stdout + Environment.NewLine + stderr);
+        Assert.Contains("Smoke test passed.", stdout.ToString());
+        Assert.True(File.Exists(Path.Combine(artifacts, "smoke.log")), "The game's output was not written to smoke.log");
+
+        int broken = Zaldaryon.Pharos.Cli.SmokeCommand.Run(
+            ["--mod", "TestMods/pharosbrokenmod", "--strict", "--artifacts", artifacts], stdout, stderr);
+        Assert.Equal(1, broken);
+        Assert.Contains("BootDiagnosticsException", stdout.ToString());
+        Assert.NotEmpty(Directory.GetFiles(artifacts, "boot-diagnostics.txt", SearchOption.AllDirectories));
+    }
+
 #pragma warning disable xUnit1000 // Samples are private so the real test run does not discover them.
     [ServerMods("TestMods/pharostestmod")]
     [StrictBoot]
