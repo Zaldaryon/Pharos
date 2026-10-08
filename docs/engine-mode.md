@@ -230,6 +230,34 @@ public async Task WorldRenders(ClientSettingsProfile profile)
 
 `[ClientSetting("viewDistance", 96)]` on a scenario class applies a setting to each of its tests once the client is up, and restores it when the test ends. Settings are process-wide in the game, so always restore what a test changes.
 
+## Client commands
+
+`HeadlessClient.Commands` runs the client's chat commands, the ones that start with a dot, such as a mod's `.mymod status` or the game's `.clientconfig`. A command runs on the client thread with the same lookup, the same privileges and the same result line in chat as when the player types it in the chat dialog. It returns the command's status, message, error code and data, and the chat lines the client showed while it ran:
+
+```csharp
+ClientCommandResult result = await Client!.Commands.ExecuteAsync(".mymod status");
+Assert.Equal(EnumCommandStatus.Success, result.Status);
+Assert.Equal("ready", result.Message);
+
+await Client.Commands.ExecuteSuccessAsync(".clientconfig viewDistance 64");
+Assert.True(Client.Commands.Exists("mymod"));
+```
+
+- `Message` is the message as the player saw it in chat. A command that succeeds with no message shows no line, and its `Message` is null. So does an unknown command: its "No such command exists" line is in `ChatLines`.
+- Every line the client shows itself is a `Notification`, a client command's result included; only the server's lines carry `CommandSuccess` or `CommandError`.
+- `ExecuteSuccessAsync` throws a `ClientCommandException` unless the result is `Ok`: a success, or a deferred result, as for server commands.
+- A handler that throws fails the test with its own exception.
+- A command whose arguments are looked up later reports `Deferred` first and its real result once the lookup is done. `ExecuteAsync` waits for that by stepping frames, the server's too in a client-server scenario, up to `maxFrames` (600). A handler that returns `TextCommandResult.Deferred` itself never reports again, so the wait runs out and the result is `Deferred`; pass `maxFrames: 0` to take the first result as it comes. The wait steps the server too, so its world time advances. A real result that comes after the wait is still shown, during whatever steps next, and lands in the next command's `ChatLines`.
+- The chat lines are those shown while the command ran. Lines that arrive later, such as the server's answer to a packet the command sent, are not in them.
+- A command a test runs is not undone by a rollback: restore what it changed, as for settings.
+- Server commands start with a slash and run on the server, not here: in a server scenario, `ServerScenarioBase.ExecuteCommand` runs them.
+
+Mods' hooks on chat being sent (`OnSendChatMessage`) do not run. To cover them and the typed path itself, open the chat dialog and type through `Input` and `Ui` instead.
+
+Compared with server commands, `ClientCommandResult.Message` and `Data` are what `CommandResult.StatusMessage` and `ReturnValue` are there, and `ClientCommandException` is the client's `CommandExecutionException`.
+
+The client's delayed callbacks (`RegisterCallback`) run on real time in engine mode, not on frames: a mod that completes a command that way finishes after a number of milliseconds, however many frames that takes.
+
 ## Real network connections and auth
 
 An embedded server can also listen on a real TCP and UDP port, as the game's `/allowlan` command opens it:

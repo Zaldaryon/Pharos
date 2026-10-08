@@ -181,6 +181,7 @@ public sealed class ClientServerLoopbackSession : IDisposable
         Server = server ?? throw new ArgumentNullException(nameof(server));
 #pragma warning restore CS0618
         NativeServer = null;
+        client.SessionStepper = _stepper = ct => StepAsync(ct: ct);
     }
 
     /// <summary>
@@ -211,7 +212,11 @@ public sealed class ClientServerLoopbackSession : IDisposable
 #pragma warning disable CS0618 // Suppress obsolete warning for internal use
         Server = null;
 #pragma warning restore CS0618
+        client.SessionStepper = _stepper = ct => StepAsync(ct: ct);
     }
+
+    // What the client's drivers step while they wait, so the server ticks too.
+    private readonly Func<CancellationToken, Task> _stepper;
 
     /// <summary>
     /// Advances the server and client in coordinated lockstep.
@@ -667,5 +672,6 @@ public sealed class ClientServerLoopbackSession : IDisposable
         if (_disposed) return;
         _disposed = true;
         Disconnect();
+        if (Client.SessionStepper == _stepper) Client.SessionStepper = null;
     }
 }
