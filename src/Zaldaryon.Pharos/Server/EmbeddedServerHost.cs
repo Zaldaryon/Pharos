@@ -71,6 +71,22 @@ public sealed class EmbeddedServerHost : IDisposable, IAsyncDisposable
     /// </summary>
     public BootDiagnostics BootDiagnostics => Logs.BootDiagnostics;
 
+    /// <summary>
+    /// The world's calendar: time of day, date, season, and whether time passes. See
+    /// <see cref="CalendarDriver"/>.
+    /// </summary>
+    public CalendarDriver Calendar => _calendar ??= new CalendarDriver(this);
+
+    private CalendarDriver? _calendar;
+
+    /// <summary>
+    /// The world's weather: cloud patterns, wind, precipitation, and whether it changes on its own.
+    /// See <see cref="WeatherDriver"/>.
+    /// </summary>
+    public WeatherDriver Weather => _weather ??= new WeatherDriver(this);
+
+    private WeatherDriver? _weather;
+
     /// <summary>The dummy TCP transport layer used for in-process connections.</summary>
     public DummyNetwork TcpNetwork { get; }
 

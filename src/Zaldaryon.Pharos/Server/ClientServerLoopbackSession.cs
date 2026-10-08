@@ -304,6 +304,79 @@ public sealed class ClientServerLoopbackSession : IDisposable
     }
 
     /// <summary>
+    /// Steps until the client's calendar matches the server's: the same time, to the second when
+    /// the calendar is frozen and within <paramref name="tolerance"/> while it runs, the same speed
+    /// of time and day length (to the precision the calendar packet carries), and the same month
+    /// length.
+    /// </summary>
+    /// <remarks>
+    /// Clients take the time from the server's calendar packets and count on by themselves in
+    /// between, in whole seconds. Each side's time is read as it would be if its calendar ticked
+    /// now, so a running calendar compares fairly between frames.
+    /// </remarks>
+    /// <param name="tolerance">How far apart a running calendar may be. Defaults to 60 game seconds, two real seconds.</param>
+    /// <param name="maxFrames">How many frames to wait.</param>
+    /// <param name="ct">Cancels the wait.</param>
+    /// <exception cref="NotSupportedException">The session has no embedded server.</exception>
+    /// <exception cref="InvalidOperationException">The client has no calendar, or ignores the server's.</exception>
+    /// <exception cref="TimeoutException">The calendars did not match within <paramref name="maxFrames"/>.</exception>
+    public async Task WaitForCalendarSyncAsync(TimeSpan? tolerance = null, int maxFrames = 600, CancellationToken ct = default)
+    {
+        EmbeddedServerHost server = NativeServer ?? throw new NotSupportedException("Calendar sync needs a session with an embedded server.");
+        Client.RunOnClientThread(() =>
+        {
+            if (Client.Client.Calendar == null) throw new InvalidOperationException("The client has no calendar yet: it has not joined.");
+            if (ClientCalendarInternals.IgnoresServer(Client.Client)) throw new InvalidOperationException("The client ignores the server's calendar.");
+        });
+
+        CalendarReading serverNow = default, clientNow = default;
+        bool InSync()
+        {
+            serverNow = server.RunOnGameThread(() => CalendarReading.Of((Vintagestory.Common.GameCalendar)server.Server.Calendar));
+            clientNow = Client.RunOnClientThread(() => CalendarReading.Of((Vintagestory.Common.GameCalendar)Client.Client.Calendar));
+            double allowed = serverNow.Rate == 0 ? 0 : (tolerance ?? TimeSpan.FromSeconds(60)).TotalSeconds;
+            return Math.Abs(serverNow.Seconds - clientNow.Seconds) <= allowed
+                // The calendar packet carries these as scaled integers, so the client's copies can
+                // fall short of the server's by a little.
+                && Math.Abs(serverNow.Rate - clientNow.Rate) <= 1e-4 + 1e-3 * Math.Abs(serverNow.Rate)
+                && Math.Abs(serverNow.HoursPerDay - clientNow.HoursPerDay) <= 1e-3
+                && serverNow.DaysPerMonth == clientNow.DaysPerMonth;
+        }
+
+        if (!await StepUntilAsync(InSync, maxFrames, ct: ct).ConfigureAwait(false))
+        {
+            throw new TimeoutException(
+                $"The client's calendar did not match the server's within {maxFrames} frames: server {serverNow}, client {clientNow}.");
+        }
+    }
+
+    /// <summary>A calendar's time and speed, read on its own thread.</summary>
+    private readonly record struct CalendarReading(double Seconds, double Rate, float HoursPerDay, int DaysPerMonth)
+    {
+        // A frozen calendar sits on a whole second on both sides; a running one is projected to now.
+        public static CalendarReading Of(Vintagestory.Common.GameCalendar calendar)
+        {
+            double rate = calendar.IsRunning ? calendar.SpeedOfTime * calendar.CalendarSpeedMul : 0;
+            double seconds = rate == 0 ? Math.Floor(CalendarDriver.Internals.Timespan(calendar).TotalSeconds) : CalendarDriver.Internals.ProjectedSeconds(calendar);
+            return new CalendarReading(seconds, rate, calendar.HoursPerDay, calendar.DaysPerMonth);
+        }
+
+        public override string ToString() =>
+            $"{TimeSpan.FromSeconds(Seconds).TotalHours:0.###} h at {Rate:0.##} game s per s ({HoursPerDay} h days, {DaysPerMonth}-day months)";
+    }
+
+    /// <summary>The client's own calendar flags, read where they are.</summary>
+    internal static class ClientCalendarInternals
+    {
+        [System.Runtime.CompilerServices.UnsafeAccessor(System.Runtime.CompilerServices.UnsafeAccessorKind.Field, Name = "ignoreServerCalendarUpdates")]
+        private static extern ref bool IgnoreField(Vintagestory.Client.NoObf.ClientMain client);
+
+        public static bool IgnoresServer(Vintagestory.Client.NoObf.ClientMain client) => IgnoreField(client);
+
+        public static void FollowServer(Vintagestory.Client.NoObf.ClientMain client) => IgnoreField(client) = false;
+    }
+
+    /// <summary>
     /// Asynchronously steps until a condition is satisfied or the maximum frame count is reached.
     /// </summary>
     /// <param name="condition">A function that returns true when the wait condition is satisfied.</param>

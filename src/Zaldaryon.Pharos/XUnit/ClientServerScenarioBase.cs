@@ -629,12 +629,32 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime, IScenarioLifecy
             // judges out of range.
             bool home = await PlayerIsHomeAsync(server, client, session).ConfigureAwait(false);
 
+            // The restored calendar went out with the restore; the client must have it before the
+            // next test, and before mods are told. A client that ignored the server's calendar
+            // dropped that packet, so it is sent again once the client follows.
+            if (client.RunOnClientThread(() => ClientServerLoopbackSession.ClientCalendarInternals.IgnoresServer(client.Client)))
+            {
+                client.RunOnClientThread(() => ClientServerLoopbackSession.ClientCalendarInternals.FollowServer(client.Client));
+                server.RunOnGameThread(server.Calendar.Broadcast);
+            }
+
+            string? calendar = null;
+            try
+            {
+                await session.WaitForCalendarSyncAsync().ConfigureAwait(false);
+            }
+            catch (TimeoutException ex)
+            {
+                calendar = "the client's calendar did not follow the server's: " + ex.Message;
+            }
+
             client.PacketRecorder.Clear();
             client.Sounds.Clear();
             client.Logs.Clear();
             server.Logs.Clear();
 
             if (!sent) return (null, "the server did not send the restored chunks within 600 frames");
+            if (calendar != null) return (null, calendar);
             if (!home) return (null, "the player did not get back to where it stood within 600 frames");
             if (!session.IsConnected || !client.IsJoined) return (null, "the client was disconnected during the rollback");
 
