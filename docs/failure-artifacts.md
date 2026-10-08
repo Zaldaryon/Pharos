@@ -94,13 +94,16 @@ When a body runs out of time:
 
 1. It is asked to stop. From then on, every call it makes that steps the client or the server, or
    runs work on their game threads, throws `ScenarioAbortedException`. Work it already handed to a
-   game thread is waited for first.
+   game thread gets 15 seconds to finish first.
 2. If it stops within 15 seconds, the failure artifacts are saved and the test fails; its message
    starts with `Xunit.Sdk.TestTimeoutException`. The client and server are torn down rather than
    reused.
-3. If it does not stop within those 15 seconds, its client and server are left alone, never
-   disposed or reused. That happens when an async body waits on something that never completes
-   without calling into Pharos, or when the game's own thread is stuck on work the body gave it.
+3. If it does not stop within those 15 seconds, or the game's own thread is still busy with work
+   the body gave it, its client and server are left alone, never disposed or reused. That happens
+   when an async body waits on something that never completes without calling into Pharos, or
+   when the game is stuck. A single game call that legitimately takes longer than 15 seconds
+   (generating a lot of world in one tick, say) counts as stuck too, so give such tests a longer
+   `TimeoutMs` rather than letting them hit it.
    The artifacts that do not need the game (logs, `run.json`) are still saved. Every later scenario
    in the same test process then fails at once, saying which scenario got stuck, instead of waiting
    for it.

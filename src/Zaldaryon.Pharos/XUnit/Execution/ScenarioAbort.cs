@@ -12,20 +12,41 @@ namespace Zaldaryon.Pharos.XUnit.Execution;
 /// </remarks>
 internal static class ScenarioAbort
 {
-    private static readonly AsyncLocal<CancellationToken> s_token = new();
+    private static readonly AsyncLocal<AbortScope?> s_scope = new();
+
+    /// <summary>The scope of the scenario body running on this flow, if any.</summary>
+    public static AbortScope? Current => s_scope.Value;
 
     /// <summary>The token of the scenario body running on this flow, if any.</summary>
-    public static CancellationToken Token => s_token.Value;
+    public static CancellationToken Token => s_scope.Value?.Token ?? default;
 
-    /// <summary>Marks the current flow as a scenario body that <paramref name="token"/> aborts.</summary>
-    public static void Enter(CancellationToken token) => s_token.Value = token;
+    /// <summary>Marks the current flow as the scenario body of <paramref name="scope"/>, or as none.</summary>
+    public static void Enter(AbortScope? scope) => s_scope.Value = scope;
 
     /// <summary>Throws when the scenario body running on this flow was aborted.</summary>
     /// <exception cref="ScenarioAbortedException">It was.</exception>
     public static void ThrowIfAborted()
     {
-        if (s_token.Value.IsCancellationRequested) throw new ScenarioAbortedException();
+        if (s_scope.Value is { Token.IsCancellationRequested: true }) throw new ScenarioAbortedException();
     }
+}
+
+/// <summary>One scenario body's abort: the token that stops it, and whether it left the game stuck.</summary>
+internal sealed class AbortScope(CancellationToken token)
+{
+    private volatile bool _wedged;
+
+    /// <summary>Cancelled when the body runs out of time.</summary>
+    public CancellationToken Token { get; } = token;
+
+    /// <summary>
+    /// Whether the body was let go while work it gave a game thread was still running: the game
+    /// is stuck, and its host must be given up rather than torn down.
+    /// </summary>
+    public bool Wedged => _wedged;
+
+    /// <summary>Records that the game is stuck on this body's work.</summary>
+    public void MarkWedged() => _wedged = true;
 }
 
 /// <summary>

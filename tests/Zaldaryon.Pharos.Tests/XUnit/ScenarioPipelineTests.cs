@@ -182,7 +182,7 @@ public class ScenarioPipelineTests
 
         Task<Exception?> aborted = Task.Run(() =>
         {
-            ScenarioAbort.Enter(abort.Token);
+            ScenarioAbort.Enter(new AbortScope(abort.Token));
             abort.Cancel();
             return Record.Exception(() => thread.Invoke(() => 1));
         });
@@ -192,33 +192,92 @@ public class ScenarioPipelineTests
     }
 
     [Fact]
-    public void EngineThread_FinishesQueuedWorkOfAnAbortedBody_ThenRefusesMore()
+    public void EngineThread_LetsAnAbortedBodyGoOnceItsWorkIsDone()
     {
         using EngineThread thread = new("pharos-abort-wait-test");
         using CancellationTokenSource abort = new();
         using ManualResetEventSlim started = new();
         using ManualResetEventSlim release = new();
+        AbortScope scope = new(abort.Token);
 
         Task<Exception?> body = Task.Run(() =>
         {
-            ScenarioAbort.Enter(abort.Token);
-            thread.Invoke(() =>
+            ScenarioAbort.Enter(scope);
+            return Record.Exception(() => thread.Invoke(() =>
             {
                 started.Set();
                 release.Wait();
-            });
-            return Record.Exception(() => thread.Invoke(() => 1));
+            }));
         });
 
         Assert.True(started.Wait(TimeSpan.FromSeconds(5)));
         abort.Cancel();
 
-        // Work already on the game thread is waited for: the teardown must not queue behind it.
+        // Work already on the game thread is waited for: the teardown would queue behind it.
         Assert.False(body.Wait(200), "The aborted body returned while its work still ran on the game thread");
 
         release.Set();
         Assert.IsType<ScenarioAbortedException>(body.Result);
+        Assert.False(scope.Wedged);
         Assert.Equal(3, thread.Invoke(() => 3));
+    }
+
+    [Fact]
+    public void EngineThread_ReportsAStuckGameThread_AndLetsTheBodyGo()
+    {
+        TimeSpan grace = ScenarioTimeouts.Grace;
+        ScenarioTimeouts.Grace = TimeSpan.FromMilliseconds(200);
+        using EngineThread thread = new("pharos-abort-stuck-test");
+        using CancellationTokenSource abort = new();
+        using ManualResetEventSlim started = new();
+        using ManualResetEventSlim release = new();
+        AbortScope scope = new(abort.Token);
+
+        try
+        {
+            Task<Exception?> body = Task.Run(() =>
+            {
+                ScenarioAbort.Enter(scope);
+                return Record.Exception(() => thread.Invoke(() =>
+                {
+                    started.Set();
+                    release.Wait();
+                }));
+            });
+
+            Assert.True(started.Wait(TimeSpan.FromSeconds(5)));
+            abort.Cancel();
+
+            Assert.True(body.Wait(TimeSpan.FromSeconds(5)), "The body stayed stuck behind the game thread");
+            Assert.IsType<ScenarioAbortedException>(body.Result);
+            Assert.True(scope.Wedged, "The stuck game thread was not reported");
+        }
+        finally
+        {
+            ScenarioTimeouts.Grace = grace;
+            release.Set();
+        }
+    }
+
+    [Fact]
+    public async Task SyncBodyStuckOnTheGameThread_IsGivenUp()
+    {
+        Recorder.Reset();
+        TimeSpan grace = ScenarioTimeouts.Grace;
+        ScenarioTimeouts.Grace = TimeSpan.FromMilliseconds(200);
+
+        try
+        {
+            ScenarioRunnerHarness.RunResult result = await ScenarioRunnerHarness.RunAsync(typeof(Sample), nameof(Sample.HangsOnTheGameThread));
+
+            Assert.Equal(["init", "before", "body", "timedOut:stillRunning", "capture:timedOut", "dispose"], Recorder.Events);
+            Assert.StartsWith(typeof(TestTimeoutException).FullName, result.FailureMessage);
+        }
+        finally
+        {
+            ScenarioTimeouts.Grace = grace;
+            Recorder.Release.Set();
+        }
     }
 
     [Fact]
@@ -228,7 +287,7 @@ public class ScenarioPipelineTests
 
         EngineThread thread = Task.Run(() =>
         {
-            ScenarioAbort.Enter(abort.Token);
+            ScenarioAbort.Enter(new AbortScope(abort.Token));
             return new EngineThread("pharos-started-in-body");
         }).Result;
 
@@ -375,6 +434,14 @@ public class ScenarioPipelineTests
             {
                 thread.Invoke(() => Thread.Sleep(10));
             }
+        }
+
+        [ServerScenario(TimeoutMs = 200)]
+        public void HangsOnTheGameThread()
+        {
+            Recorder.Add("body");
+            EngineThread thread = new("pharos-sample-stuck");
+            thread.Invoke(() => Recorder.Release.Wait(TimeSpan.FromSeconds(30)));
         }
 
         [ServerScenario(TimeoutMs = 200)]

@@ -234,9 +234,10 @@ internal sealed class ScenarioTestInvoker(
         // that aborts the body, which throws at its next step into the game, whether it is
         // synchronous or not.
         CancellationTokenSource abort = new();
+        AbortScope scope = new(abort.Token);
         Timer? watchdog = timeoutMs > 0 ? new Timer(_ => abort.Cancel(), null, timeoutMs, Timeout.Infinite) : null;
         Task<decimal> run;
-        ScenarioAbort.Enter(abort.Token);
+        ScenarioAbort.Enter(scope);
         try
         {
             run = body.InvokeBody(testClassInstance);
@@ -244,7 +245,7 @@ internal sealed class ScenarioTestInvoker(
         finally
         {
             // The body's continuations keep the token; what runs here next must not.
-            ScenarioAbort.Enter(default);
+            ScenarioAbort.Enter(null);
         }
 
         if (!run.IsCompleted && watchdog != null)
@@ -261,7 +262,7 @@ internal sealed class ScenarioTestInvoker(
             bool stopped = await Task.WhenAny(run, Task.Delay(ScenarioTimeouts.Grace)).ConfigureAwait(false) == run;
             timedOut = true;
             watchdog?.Dispose();
-            lifecycle?.BodyTimedOut(stillRunning: !stopped);
+            lifecycle?.BodyTimedOut(stillRunning: !stopped || scope.Wedged);
             Aggregator.Add(new TestTimeoutException(timeoutMs));
             elapsed = timeoutMs / 1000m;
         }
@@ -277,7 +278,7 @@ internal sealed class ScenarioTestInvoker(
             {
                 // The body ran out of time and stopped at its next step: a timeout, not whatever
                 // the abort made it throw.
-                lifecycle?.BodyTimedOut(stillRunning: false);
+                lifecycle?.BodyTimedOut(stillRunning: scope.Wedged);
                 Aggregator.Add(new TestTimeoutException(timeoutMs));
             }
             else if (bodyAggregator.HasExceptions)
