@@ -47,6 +47,12 @@ public sealed class ServerWorldAttribute : Attribute
     public WorldIsolation Isolation { get; set; } = WorldIsolation.Rollback;
 
     /// <summary>
+    /// Gets or sets whether a test whose world cannot be rolled back fails, under
+    /// <see cref="WorldIsolation.Rollback"/>, instead of the next test quietly booting fresh hosts.
+    /// </summary>
+    public bool StrictIsolation { get; set; }
+
+    /// <summary>
     /// Initializes a new instance with the specified world parameters.
     /// </summary>
     /// <param name="seed">The world seed for deterministic world generation.</param>

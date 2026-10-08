@@ -60,6 +60,9 @@ internal sealed record ScenarioFailure
     /// <summary>How the scenario isolates its tests, for run.json.</summary>
     public string? Isolation { get; init; }
 
+    /// <summary>How the test's hosts were made ready, for run.json.</summary>
+    public XUnit.IsolationReport? IsolationReport { get; init; }
+
     /// <summary>What to save.</summary>
     public FailureArtifacts Artifacts { get; init; } = FailureArtifacts.Default;
 
@@ -442,6 +445,14 @@ internal static class FailureArtifactWriter
             ["worldType"] = failure.World?.WorldType,
             ["playStyle"] = failure.World?.PlayStyle,
             ["isolation"] = failure.Isolation,
+            ["isolationReport"] = failure.IsolationReport is { } report ? new Dictionary<string, object?>
+            {
+                ["kind"] = report.Kind.ToString(),
+                ["reason"] = report.Reason,
+                ["chunksRestored"] = report.ChunksRestored,
+                ["listenersRemoved"] = report.ListenersRemoved,
+                ["durationMs"] = Math.Round(report.Duration.TotalMilliseconds),
+            } : null,
             ["clientBootMode"] = failure.Client?.BootMode.ToString(),
             ["frames"] = failure.Frames,
             ["serverTicks"] = failure.ServerTicks,

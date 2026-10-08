@@ -1,6 +1,7 @@
 using System;
 using Vintagestory.API.Client;
 using Vintagestory.API.Common;
+using Vintagestory.API.Server;
 
 namespace PharosClientMod;
 
@@ -12,11 +13,18 @@ public sealed class PharosClientModSystem : ModSystem
 {
     private int _pings, _pongs;
     private bool _pingPasses;
+    private int _captured, _restored;
 
     public override bool ShouldLoad(EnumAppSide forSide) => forSide == EnumAppSide.Client;
 
     public override void StartClientSide(ICoreClientAPI api)
     {
+        api.Event.RegisterEventBusListener((string name, ref EnumHandling _, Vintagestory.API.Datastructures.IAttribute data) =>
+        {
+            if (name == "pharos:rollback:captured") _captured++;
+            if (name == "pharos:rollback:restored") _restored++;
+        });
+
         api.Input.RegisterHotKey("pharosclientmod:ping", "Pharos ping", GlKeys.O, HotkeyType.GUIOrOtherControls, ctrlPressed: true, shiftPressed: true);
         api.Input.SetHotKeyHandler("pharosclientmod:ping", _ =>
         {
@@ -57,6 +65,10 @@ public sealed class PharosClientModSystem : ModSystem
             .HandleWith(args => TextCommandResult.Success("done later: " + args[0]))
             .EndSubCommand();
 
+        command.BeginSubCommand("rollbacks")
+            .HandleWith(_ => TextCommandResult.Success($"captured={_captured} restored={_restored}"))
+            .EndSubCommand();
+
         command.BeginSubCommand("presses")
             .HandleWith(_ => TextCommandResult.Success($"ping={_pings} pong={_pongs}"))
             .EndSubCommand();
@@ -73,6 +85,28 @@ public sealed class PharosClientModSystem : ModSystem
         command.BeginSubCommand("boom")
             .HandleWith(_ => throw new InvalidOperationException("pharoscmd boom"))
             .EndSubCommand();
+    }
+}
+
+/// <summary>Counts the rollback events on the server; <c>/pharosrollbacks</c> tells them.</summary>
+public sealed class PharosServerRollbackSystem : ModSystem
+{
+    private int _captured, _restored;
+
+    public override bool ShouldLoad(EnumAppSide forSide) => forSide == EnumAppSide.Server;
+
+    public override void StartServerSide(ICoreServerAPI api)
+    {
+        api.Event.RegisterEventBusListener((string name, ref EnumHandling _, Vintagestory.API.Datastructures.IAttribute data) =>
+        {
+            if (name == "pharos:rollback:captured") _captured++;
+            if (name == "pharos:rollback:restored") _restored++;
+        });
+
+        api.ChatCommands.Create("pharosrollbacks")
+            .WithDescription("Pharos rollback event counts")
+            .RequiresPrivilege(Privilege.controlserver)
+            .HandleWith(_ => TextCommandResult.Success($"captured={_captured} restored={_restored}"));
     }
 }
 

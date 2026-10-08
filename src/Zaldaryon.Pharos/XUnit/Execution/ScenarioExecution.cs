@@ -206,6 +206,16 @@ internal sealed class ScenarioTestRunner(
     CancellationTokenSource cancellationTokenSource, int timeoutMs)
     : XunitTestRunner(test, messageBus, testClass, constructorArguments, testMethod, testMethodArguments, skipReason, beforeAfterAttributes, aggregator, cancellationTokenSource)
 {
+    // By the time the base returns, the class has torn down: its isolation lines are complete.
+    // They go to the test's output, where test explorers and trx files show it.
+    protected override async Task<Tuple<decimal, string>> InvokeTestAsync(ExceptionAggregator aggregator)
+    {
+        IsolationLog.Notes notes = new();
+        IsolationLog.Current = notes;
+        Tuple<decimal, string> result = await base.InvokeTestAsync(aggregator).ConfigureAwait(false);
+        return Tuple.Create(result.Item1, result.Item2 + notes.Text);
+    }
+
     protected override async Task<decimal> InvokeTestMethodAsync(ExceptionAggregator aggregator)
     {
         // Async, so the test info stays on this test's flow: the class's InitializeAsync reads it

@@ -47,13 +47,16 @@ public abstract class ServerScenarioBase : IAsyncLifetime, IScenarioLifecycle
     /// Gets the embedded server host managing the test server instance.
     /// Null until <see cref="InitializeAsync"/> completes.
     /// </summary>
-    protected EmbeddedServerHost? Host => _host;
+    protected EmbeddedServerHost? Host => _host ?? _capturing;
+
+    // The server while OnRollbackCaptured runs, before the test has it.
+    private EmbeddedServerHost? _capturing;
 
     /// <summary>
     /// Gets the underlying Vintage Story server instance.
     /// Null if the host is not initialized.
     /// </summary>
-    protected ServerMain? Server => _host?.Server;
+    protected ServerMain? Server => Host?.Server;
 
     /// <summary>
     /// Gets the server-side API for game interactions.
@@ -73,6 +76,43 @@ public abstract class ServerScenarioBase : IAsyncLifetime, IScenarioLifecycle
     /// Gets the world to boot. Defaults to the class-level <see cref="ServerWorldAttribute"/>.
     /// </summary>
     protected virtual ServerWorldOptions WorldOptions => ScenarioAttributes.WorldOptions(GetType());
+
+    /// <summary>
+    /// Whether a test whose world cannot be rolled back fails, under <see cref="WorldIsolation.Rollback"/>.
+    /// Defaults to <see cref="ServerWorldAttribute.StrictIsolation"/>.
+    /// </summary>
+    protected virtual bool StrictIsolation => ScenarioAttributes.ServerWorld(GetType())?.StrictIsolation ?? false;
+
+    /// <summary>
+    /// How this test's server was made ready: booted, rolled back from the previous test, or
+    /// recycled, with what it cost and why it was booted again when a rollback was expected.
+    /// Null until <see cref="InitializeAsync"/> completes.
+    /// </summary>
+    protected IsolationReport? Isolation { get; private set; }
+
+    /// <summary>
+    /// Called once the server's world has been captured for rollbacks, after
+    /// <see cref="RollbackEvents.Captured"/> has fired on the server.
+    /// </summary>
+    protected virtual void OnRollbackCaptured()
+    {
+    }
+
+    /// <summary>
+    /// Called once the world has been rolled back after this test, after
+    /// <see cref="RollbackEvents.Restored"/> has fired on the server, so the class can reload
+    /// state of its own before the next test. What it throws fails the rollback.
+    /// </summary>
+    protected virtual void OnRollbackRestored()
+    {
+    }
+
+    /// <summary>
+    /// Whether a tick listener, delayed callback or event-bus listener added during a test is the
+    /// test's own, and so removed by a rollback. By default, a handler compiled into this class's
+    /// assembly or a base class's, other than Pharos's.
+    /// </summary>
+    protected virtual bool IsTestListener(Delegate handler) => ListenerWatermark.DeclaredIn(handler, IsolationLog.TestAssemblies(GetType()));
 
     /// <summary>
     /// Gets how long a test waits for another scenario to release the host before it fails.
@@ -124,6 +164,9 @@ public abstract class ServerScenarioBase : IAsyncLifetime, IScenarioLifecycle
                 ? ScenarioHostPool.Take<PooledServer>(GetType(), key)
                 : null;
 
+            bool reused = _pooled != null;
+            long bootStart = System.Diagnostics.Stopwatch.GetTimestamp();
+            _host = null;
             if (_pooled == null)
             {
                 ScenarioHostPool.Clear();
@@ -151,19 +194,31 @@ public abstract class ServerScenarioBase : IAsyncLifetime, IScenarioLifecycle
                 if (WorldIsolation == WorldIsolation.Rollback)
                 {
                     _pooled.TakeBaseline();
+                    RollbackParticipants.Push(_pooled.Host, RollbackEvents.Captured, ScenarioTestInfo.Current?.DisplayName, chunks: null);
+                    _capturing = _pooled.Host;
+                    OnRollbackCaptured();
+                    _capturing = null;
+
+                    // After the hook: what the class sets up there lives as long as the server.
+                    _pooled.CaptureListeners();
                 }
             }
 
+            Isolation = IsolationLog.Prepared(GetType(), reused, WorldIsolation == WorldIsolation.Recycle, System.Diagnostics.Stopwatch.GetElapsedTime(bootStart));
             _host = _pooled.Host;
         }
         catch (Exception ex)
         {
             Exception failure = ScenarioRun.SetupFailed(ex, (error, test) => Describe(test, error, timedOut: false, _pooled?.Host, _pooled?.Sandbox));
+            // xUnit does not call DisposeAsync after a failed InitializeAsync: a server that did not
+            // reach the test is disposed here, never pooled.
+            _capturing = null;
             if (_pooled != null && _host == null)
             {
                 _pooled.Dispose();
                 _pooled = null;
                 ScenarioHostPool.HostDisposed();
+                IsolationLog.Left(GetType(), null, "the previous test failed to start");
             }
 
             _gate.Dispose();
@@ -201,6 +256,7 @@ public abstract class ServerScenarioBase : IAsyncLifetime, IScenarioLifecycle
         Sandbox = sandbox,
         World = WorldOptions,
         Isolation = WorldIsolation.ToString(),
+        IsolationReport = Isolation,
         ServerTicks = ScenarioRun.Since(_run.TicksAtStart, server?.TickCount),
         Artifacts = Artifacts,
         AddFiles = OnFailure,
@@ -218,6 +274,7 @@ public abstract class ServerScenarioBase : IAsyncLifetime, IScenarioLifecycle
 
         if (_run.Abandoned)
         {
+            IsolationLog.Left(GetType(), null, "the previous test timed out and was left running");
             // The timed-out body still runs on the game thread: the host is left as it is.
             _testPlayers.Clear();
             _pooled = null;
@@ -227,6 +284,7 @@ public abstract class ServerScenarioBase : IAsyncLifetime, IScenarioLifecycle
             return Task.CompletedTask;
         }
 
+        IsolationException? isolationFailure = null;
         try
         {
             foreach (ServerTestPlayer player in _testPlayers)
@@ -238,17 +296,34 @@ public abstract class ServerScenarioBase : IAsyncLifetime, IScenarioLifecycle
 
             if (_pooled != null)
             {
-                if (_pooled.Host.IsRunning && !_run.TimedOut && !_pooled.Sandbox.IsRetained
-                    && (WorldIsolation == WorldIsolation.Recycle || (WorldIsolation == WorldIsolation.Rollback && _pooled.TryRollback())))
+                string? fallback = WhyNotReusable(_pooled);
+                IsolationReport? rolledBack = null;
+                if (fallback == null && WorldIsolation == WorldIsolation.Rollback)
                 {
-                    // The next test judges only what it logs itself.
-                    _pooled.Host.Logs.Clear();
+                    (rolledBack, fallback) = _pooled.TryRollback(IsTestListener, ScenarioTestInfo.Current?.DisplayName);
+                    fallback ??= RollbackParticipants.Try(nameof(OnRollbackRestored), OnRollbackRestored);
+                    if (fallback != null) rolledBack = null;
+                }
+
+                bool expected = WorldIsolation is WorldIsolation.Recycle or WorldIsolation.Rollback;
+                if (fallback == null && expected)
+                {
+                    // The next test judges only what it logs itself. A rollback clears the logs
+                    // before it tells the mods, so what their handlers log counts against it.
+                    if (WorldIsolation == WorldIsolation.Recycle) _pooled.Host.Logs.Clear();
                     ScenarioHostPool.Return(GetType(), _pooled.Key, _pooled);
                 }
                 else
                 {
+                    if (fallback != null && expected) ServerMain.Logger?.Warning("Pharos could not keep the server for the next test, which boots a fresh one: {0}", fallback);
                     _pooled.Dispose();
                     ScenarioHostPool.HostDisposed();
+                }
+
+                IsolationLog.Left(GetType(), rolledBack, expected ? fallback : null, kept: fallback == null && expected);
+                if (fallback != null && WorldIsolation == WorldIsolation.Rollback && StrictIsolation && !_run.TimedOut && !_pooled.Sandbox.IsRetained)
+                {
+                    isolationFailure = new IsolationException($"The world could not be rolled back after this test: {fallback}.");
                 }
             }
         }
@@ -260,9 +335,16 @@ public abstract class ServerScenarioBase : IAsyncLifetime, IScenarioLifecycle
             _gate = null;
         }
 
-        LoggedErrorGate.ThrowIfAny(loggedErrors);
+        ScenarioFailures.ThrowAll(isolationFailure, () => LoggedErrorGate.ThrowIfAny(loggedErrors));
         return Task.CompletedTask;
     }
+
+    // Why the server cannot be kept for the next test, before any rollback is tried.
+    private string? WhyNotReusable(PooledServer pooled) =>
+        !pooled.Host.IsRunning ? "the server stopped"
+        : _run.TimedOut ? "the test timed out"
+        : pooled.Sandbox.IsRetained ? "the sandbox was kept for inspection"
+        : null;
 
     /// <summary>
     /// Joins a headless player into the server and returns it once it is playing. See
@@ -294,6 +376,7 @@ public abstract class ServerScenarioBase : IAsyncLifetime, IScenarioLifecycle
     {
         private WorldSnapshot? _baseline;
         private IDisposable? _tracking;
+        private ListenerWatermark? _listeners;
 
         public ServerSandbox Sandbox { get; } = sandbox;
         public EmbeddedServerHost Host { get; } = host;
@@ -306,21 +389,29 @@ public abstract class ServerScenarioBase : IAsyncLifetime, IScenarioLifecycle
             _tracking = Host.RunOnGameThread(() => _baseline.TrackChunksLoadedLater(Host));
         }
 
-        /// <summary>Puts the world back as booted; false when that failed.</summary>
-        public bool TryRollback()
-        {
-            if (_baseline == null) return false;
+        /// <summary>Notes the listeners that live as long as the server; later ones are the tests'.</summary>
+        public void CaptureListeners() => _listeners = RollbackParticipants.Capture(Host);
 
-            try
+        /// <summary>
+        /// Removes the listeners the test left, puts the world back as booted and tells the
+        /// server's mods. Returns what it did, or why it failed.
+        /// </summary>
+        public (IsolationReport? Report, string? Failure) TryRollback(System.Func<Delegate, bool> ownedByTest, string? test)
+        {
+            if (_baseline == null) return (null, "the world was never captured");
+
+            int listeners = 0, chunks = 0;
+            string? failure = null;
+            TimeSpan took = IsolationLog.Time(() =>
             {
-                Host.RestoreSnapshot(_baseline);
-                return Host.IsRunning;
-            }
-            catch (Exception ex)
-            {
-                ServerMain.Logger?.Warning("Pharos could not roll the world back, the next test boots a fresh server: {0}", ex);
-                return false;
-            }
+                failure = RollbackParticipants.Try("Removing the test's listeners", () => listeners = RollbackParticipants.Remove(Host, _listeners, ownedByTest))
+                    ?? RollbackParticipants.Try("The rollback", () => chunks = Host.RestoreSnapshot(_baseline))
+                    ?? (Host.IsRunning ? null : "the server stopped during the rollback")
+                    ?? RollbackParticipants.Try("Clearing the logs", Host.Logs.Clear)
+                    ?? RollbackParticipants.Try($"A {RollbackEvents.Restored} handler", () => RollbackParticipants.Push(Host, RollbackEvents.Restored, test, chunks));
+            });
+
+            return failure != null ? (null, failure) : (new IsolationReport(IsolationKind.RolledBack, null, chunks, listeners, took), null);
         }
 
         public void Dispose()
