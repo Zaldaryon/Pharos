@@ -61,9 +61,6 @@ public sealed class AllowBootDiagnosticAttribute(string pattern) : Attribute
     /// <summary>Whether the entry must be logged at least once; a fixed warning then shows as a stale allowance.</summary>
     public bool Required { get; set; }
 
-    /// <summary>Whether matching the pattern ran out of time on some entry.</summary>
-    internal bool TimedOut { get; private set; }
-
     /// <summary>Throws when the allowance cannot work: a bad pattern, level or count.</summary>
     /// <exception cref="ArgumentException">It cannot.</exception>
     internal void Validate()
@@ -89,8 +86,9 @@ public sealed class AllowBootDiagnosticAttribute(string pattern) : Attribute
     /// <exception cref="ArgumentException">The pattern is not a valid regular expression.</exception>
     internal Regex Regex => _regex ??= Compile(Pattern);
 
-    internal bool Matches(LogEntry entry, Regex regex)
+    internal bool Matches(LogEntry entry, Regex regex, out bool timedOut)
     {
+        timedOut = false;
         if (Level != EnumLogType.Notification && entry.Type != Level) return false;
         if (Source != null && !string.Equals(entry.Source, Source, StringComparison.OrdinalIgnoreCase)) return false;
 
@@ -100,7 +98,7 @@ public sealed class AllowBootDiagnosticAttribute(string pattern) : Attribute
         }
         catch (RegexMatchTimeoutException)
         {
-            TimedOut = true;
+            timedOut = true;
             return false;
         }
     }

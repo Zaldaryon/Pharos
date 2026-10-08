@@ -16,7 +16,7 @@ The boot ends at a different point for each host:
 | Host | Boot ends | Why |
 |------|-----------|-----|
 | Server | When `EmbeddedServerHost.Boot` returns. | The world is loaded and the mods have started. |
-| Engine-mode client | When it has joined a server, the first time `IsJoined` is true. In a `ClientScenarioBase`, which never joins, when the scenario has booted it. | Its mods only start during the join. |
+| Engine-mode client | When it has joined a server, the first time `IsJoined` is true. In a `ClientScenarioBase`, which does not join it, when the scenario has booted it, even if a test joins it to a server later. | Its mods only start during the join. |
 | Fixture-mode client | When it has booted. | It never joins. |
 
 Until then `IsComplete` is false and the list keeps growing. An engine-mode client in a

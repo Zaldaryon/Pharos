@@ -123,6 +123,7 @@ public sealed class BootDiagnosticsResult
         foreach (AllowBootDiagnosticAttribute allowance in allowed) allowance.Validate();
         Regex[] patterns = [.. allowed.Select(a => a.Regex)];
         int[] matches = new int[allowed.Length];
+        bool[] timedOut = new bool[allowed.Length];
         List<LogEntry> unexpected = [];
         List<string> incomplete = [];
 
@@ -136,18 +137,20 @@ public sealed class BootDiagnosticsResult
                 bool matched = false;
                 for (int i = 0; i < allowed.Length; i++)
                 {
-                    if (allowed[i].Matches(entry, patterns[i]))
+                    if (allowed[i].Matches(entry, patterns[i], out bool slow))
                     {
                         matches[i]++;
                         matched = true;
                     }
+
+                    timedOut[i] |= slow;
                 }
 
                 if (!matched) unexpected.Add(entry);
             }
         }
 
-        foreach (AllowBootDiagnosticAttribute allowance in allowed.Where(a => a.TimedOut))
+        foreach (AllowBootDiagnosticAttribute allowance in allowed.Where((_, i) => timedOut[i]))
         {
             incomplete.Add($"{allowance} took longer than a second to match an entry, which then counted as not matched");
         }
