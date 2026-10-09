@@ -208,6 +208,14 @@ public static class HeadlessPlatformResolver
         Network.ModNetworkPatches.Install();
         Performance.MeasurementHooks.InstallServer();
         Translations.TranslationCapture.Install();
+        try
+        {
+            Graphics.GlResourceHooks.Install();
+        }
+        catch (InvalidOperationException)
+        {
+            // Kept for TrackGlResources to report; nothing else needs these hooks to boot.
+        }
     }
 
     /// <summary>

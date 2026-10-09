@@ -473,6 +473,7 @@ public sealed class HeadlessClient : IDisposable
         // Mod messages are recorded from before the client connects.
         if (bootMode == ClientBootMode.Engine) Network.ModNetworkLog.Register(client, () => FrameController.TotalFrames);
         Gui = new GuiInspector(screenManager);
+        Memory.Owner = this;
         TestPlayer = new ClientTestPlayer(() => Client);
         Culling = new CullingInspector(() => Client);
         Inventory = new InventoryAutomation(TestPlayer.Inventory);

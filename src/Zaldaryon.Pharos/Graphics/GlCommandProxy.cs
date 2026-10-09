@@ -4,6 +4,7 @@ using System.Linq;
 using System.Reflection;
 using HarmonyLib;
 using OpenTK.Graphics.OpenGL4;
+using Zaldaryon.Pharos.Memory;
 
 namespace Zaldaryon.Pharos.Graphics;
 
@@ -29,6 +30,13 @@ public sealed class GlCommandProxy
     private int _bufferAllocations;
     private int _bufferDeletions;
     private int _vertexArrayAllocations;
+    private int _vertexArrayDeletions;
+    private int _textureAllocations;
+    private int _textureDeletions;
+    private int _framebufferAllocations;
+    private int _framebufferDeletions;
+    private int _renderbufferAllocations;
+    private int _renderbufferDeletions;
     private int _errors;
 
     // The active instance receiving increments from static patch delegates.
@@ -90,6 +98,13 @@ public sealed class GlCommandProxy
         Interlocked.Exchange(ref _bufferAllocations, 0);
         Interlocked.Exchange(ref _bufferDeletions, 0);
         Interlocked.Exchange(ref _vertexArrayAllocations, 0);
+        Interlocked.Exchange(ref _vertexArrayDeletions, 0);
+        Interlocked.Exchange(ref _textureAllocations, 0);
+        Interlocked.Exchange(ref _textureDeletions, 0);
+        Interlocked.Exchange(ref _framebufferAllocations, 0);
+        Interlocked.Exchange(ref _framebufferDeletions, 0);
+        Interlocked.Exchange(ref _renderbufferAllocations, 0);
+        Interlocked.Exchange(ref _renderbufferDeletions, 0);
         Interlocked.Exchange(ref _errors, 0);
     }
 
@@ -104,17 +119,47 @@ public sealed class GlCommandProxy
         BufferAllocations = _bufferAllocations,
         BufferDeletions = _bufferDeletions,
         VertexArrayAllocations = _vertexArrayAllocations,
+        VertexArrayDeletions = _vertexArrayDeletions,
+        TextureAllocations = _textureAllocations,
+        TextureDeletions = _textureDeletions,
+        FramebufferAllocations = _framebufferAllocations,
+        FramebufferDeletions = _framebufferDeletions,
+        RenderbufferAllocations = _renderbufferAllocations,
+        RenderbufferDeletions = _renderbufferDeletions,
         Errors = _errors,
     };
 
+    /// <summary>Whether a proxy is recording.</summary>
+    internal static bool IsRecording => Volatile.Read(ref _active) != null;
+
+    // Called by GlResourceHooks for each object created or deleted, once per id.
+    internal static void OnResource(GlResourceKind kind, bool created)
+    {
+        GlCommandProxy? proxy = Volatile.Read(ref _active);
+        if (proxy == null) return;
+        switch (kind, created)
+        {
+            case (GlResourceKind.Buffer, true): Interlocked.Increment(ref proxy._bufferAllocations); break;
+            case (GlResourceKind.Buffer, false): Interlocked.Increment(ref proxy._bufferDeletions); break;
+            case (GlResourceKind.VertexArray, true): Interlocked.Increment(ref proxy._vertexArrayAllocations); break;
+            case (GlResourceKind.VertexArray, false): Interlocked.Increment(ref proxy._vertexArrayDeletions); break;
+            case (GlResourceKind.Texture, true): Interlocked.Increment(ref proxy._textureAllocations); break;
+            case (GlResourceKind.Texture, false): Interlocked.Increment(ref proxy._textureDeletions); break;
+            case (GlResourceKind.Framebuffer, true): Interlocked.Increment(ref proxy._framebufferAllocations); break;
+            case (GlResourceKind.Framebuffer, false): Interlocked.Increment(ref proxy._framebufferDeletions); break;
+            case (GlResourceKind.Renderbuffer, true): Interlocked.Increment(ref proxy._renderbufferAllocations); break;
+            case (GlResourceKind.Renderbuffer, false): Interlocked.Increment(ref proxy._renderbufferDeletions); break;
+        }
+    }
+
     // Counter increment helpers called by static patch methods.
-    internal static void OnDrawCall() => Interlocked.Increment(ref _active!._drawCalls);
-    internal static void OnMultiDrawCall() => Interlocked.Increment(ref _active!._multiDrawCalls);
-    internal static void OnIndirectDrawCall() => Interlocked.Increment(ref _active!._indirectDrawCalls);
-    internal static void OnBufferAllocated() => Interlocked.Increment(ref _active!._bufferAllocations);
-    internal static void OnBufferDeleted() => Interlocked.Increment(ref _active!._bufferDeletions);
-    internal static void OnVertexArrayAllocated() => Interlocked.Increment(ref _active!._vertexArrayAllocations);
-    internal static void OnError() => Interlocked.Increment(ref _active!._errors);
+    internal static void OnDrawCall() { if (Volatile.Read(ref _active) is { } proxy) Interlocked.Increment(ref proxy._drawCalls); }
+    internal static void OnMultiDrawCall() { if (Volatile.Read(ref _active) is { } proxy) Interlocked.Increment(ref proxy._multiDrawCalls); }
+    internal static void OnIndirectDrawCall() { if (Volatile.Read(ref _active) is { } proxy) Interlocked.Increment(ref proxy._indirectDrawCalls); }
+    internal static void OnBufferAllocated() { if (Volatile.Read(ref _active) is { } proxy) Interlocked.Increment(ref proxy._bufferAllocations); }
+    internal static void OnBufferDeleted() { if (Volatile.Read(ref _active) is { } proxy) Interlocked.Increment(ref proxy._bufferDeletions); }
+    internal static void OnVertexArrayAllocated() { if (Volatile.Read(ref _active) is { } proxy) Interlocked.Increment(ref proxy._vertexArrayAllocations); }
+    internal static void OnError() { if (Volatile.Read(ref _active) is { } proxy) Interlocked.Increment(ref proxy._errors); }
 
     /// <summary>
     /// The OpenGL binding types this proxy patches while recording.
@@ -155,24 +200,8 @@ public sealed class GlCommandProxy
         PatchAllOverloads(gl, "MultiDrawArraysIndirect", pub, nameof(Prefix_IndirectDrawCall));
         PatchAllOverloads(gl, "MultiDrawElementsIndirect", pub, nameof(Prefix_IndirectDrawCall));
 
-        PatchFirst(gl, "GenBuffer", pub, nameof(Prefix_BufferAllocated));
-        PatchAllOverloads(gl, "GenBuffers", pub, nameof(Prefix_BufferAllocated));
-
-        PatchFirst(gl, "DeleteBuffer", pub, nameof(Prefix_BufferDeleted));
-        PatchAllOverloads(gl, "DeleteBuffers", pub, nameof(Prefix_BufferDeleted));
-
-        PatchFirst(gl, "GenVertexArray", pub, nameof(Prefix_VertexArrayAllocated));
-        PatchAllOverloads(gl, "GenVertexArrays", pub, nameof(Prefix_VertexArrayAllocated));
-    }
-
-    private void PatchFirst(Type type, string methodName, BindingFlags flags, string prefixName)
-    {
-        MethodInfo? method = type.GetMethods(flags)
-            .FirstOrDefault(m => m.Name == methodName);
-        if (method != null)
-        {
-            _harmony.Patch(method, prefix: new HarmonyMethod(typeof(GlCommandProxy), prefixName));
-        }
+        // Buffers, vertex arrays and the other objects are counted by GlResourceHooks, which is
+        // installed before anything boots and counts each id.
     }
 
     private void PatchAllOverloads(Type type, string methodName, BindingFlags flags, string prefixName)
@@ -216,20 +245,5 @@ public sealed class GlCommandProxy
     private static void Prefix_IndirectDrawCall()
     {
         if (_active != null) OnIndirectDrawCall();
-    }
-
-    private static void Prefix_BufferAllocated()
-    {
-        if (_active != null) OnBufferAllocated();
-    }
-
-    private static void Prefix_BufferDeleted()
-    {
-        if (_active != null) OnBufferDeleted();
-    }
-
-    private static void Prefix_VertexArrayAllocated()
-    {
-        if (_active != null) OnVertexArrayAllocated();
     }
 }

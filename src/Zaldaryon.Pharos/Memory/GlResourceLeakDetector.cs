@@ -114,15 +114,10 @@ public sealed class GlResourceLeakDetector
         int bufferDeleteDelta = current.BufferDeletions - _baseline.BufferDeletions;
         int bufferLeaks = bufferAllocDelta - bufferDeleteDelta;
 
-        // VAO: only allocations tracked, deletions assumed zero in current implementation
-        int vaoAllocDelta = current.VertexArrayAllocations - _baseline.VertexArrayAllocations;
-        // TODO: Add VertexArrayDeletions to GlCommandRecord when available
-        int vaoDeleteDelta = 0;
-        int vaoLeaks = vaoAllocDelta - vaoDeleteDelta;
-
-        // Textures: not currently tracked in GlCommandProxy
-        // TODO: Add texture tracking to GlCommandProxy
-        int textureLeaks = 0;
+        int vaoLeaks = Net(current.VertexArrayAllocations, current.VertexArrayDeletions, _baseline.VertexArrayAllocations, _baseline.VertexArrayDeletions);
+        int textureLeaks = Net(current.TextureAllocations, current.TextureDeletions, _baseline.TextureAllocations, _baseline.TextureDeletions);
+        int framebufferLeaks = Net(current.FramebufferAllocations, current.FramebufferDeletions, _baseline.FramebufferAllocations, _baseline.FramebufferDeletions);
+        int renderbufferLeaks = Net(current.RenderbufferAllocations, current.RenderbufferDeletions, _baseline.RenderbufferAllocations, _baseline.RenderbufferDeletions);
 
         long memoryGrowth = _memoryTracker.GetGrowthBytes(forceFullGC);
 
@@ -131,6 +126,8 @@ public sealed class GlResourceLeakDetector
             BufferLeaks = Math.Max(0, bufferLeaks),  // Negative means more deletions than allocations - not a leak
             TextureLeaks = Math.Max(0, textureLeaks),
             VAOLeaks = Math.Max(0, vaoLeaks),
+            FramebufferLeaks = Math.Max(0, framebufferLeaks),
+            RenderbufferLeaks = Math.Max(0, renderbufferLeaks),
             UnmanagedGrowthBytes = memoryGrowth,
         };
     }
@@ -141,11 +138,10 @@ public sealed class GlResourceLeakDetector
         int bufferDeleteDelta = current.BufferDeletions - _baseline.BufferDeletions;
         int bufferLeaks = bufferAllocDelta - bufferDeleteDelta;
 
-        int vaoAllocDelta = current.VertexArrayAllocations - _baseline.VertexArrayAllocations;
-        int vaoDeleteDelta = 0;
-        int vaoLeaks = vaoAllocDelta - vaoDeleteDelta;
-
-        int textureLeaks = 0;
+        int vaoLeaks = Net(current.VertexArrayAllocations, current.VertexArrayDeletions, _baseline.VertexArrayAllocations, _baseline.VertexArrayDeletions);
+        int textureLeaks = Net(current.TextureAllocations, current.TextureDeletions, _baseline.TextureAllocations, _baseline.TextureDeletions);
+        int framebufferLeaks = Net(current.FramebufferAllocations, current.FramebufferDeletions, _baseline.FramebufferAllocations, _baseline.FramebufferDeletions);
+        int renderbufferLeaks = Net(current.RenderbufferAllocations, current.RenderbufferDeletions, _baseline.RenderbufferAllocations, _baseline.RenderbufferDeletions);
 
         long memoryGrowth = currentMemoryBytes - _memoryTracker.BaselineBytes;
 
@@ -154,9 +150,14 @@ public sealed class GlResourceLeakDetector
             BufferLeaks = Math.Max(0, bufferLeaks),
             TextureLeaks = Math.Max(0, textureLeaks),
             VAOLeaks = Math.Max(0, vaoLeaks),
+            FramebufferLeaks = Math.Max(0, framebufferLeaks),
+            RenderbufferLeaks = Math.Max(0, renderbufferLeaks),
             UnmanagedGrowthBytes = memoryGrowth,
         };
     }
+
+    // What a recording window created and did not delete, net of the baseline.
+    private static int Net(int created, int deleted, int baseCreated, int baseDeleted) => (created - baseCreated) - (deleted - baseDeleted);
 
     private void SetSyntheticMemoryBaseline(long bytes)
     {

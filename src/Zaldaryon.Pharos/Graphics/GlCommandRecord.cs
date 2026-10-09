@@ -14,14 +14,35 @@ public sealed record GlCommandRecord
     /// <summary>Total glMultiDrawElementsIndirect and glMultiDrawArraysIndirect calls recorded.</summary>
     public int IndirectDrawCalls { get; init; }
 
-    /// <summary>Total glGenBuffer and glGenBuffers calls recorded.</summary>
+    /// <summary>Buffers created (each id of a glGenBuffers call counts).</summary>
     public int BufferAllocations { get; init; }
 
-    /// <summary>Total glDeleteBuffer and glDeleteBuffers calls recorded.</summary>
+    /// <summary>Buffers deleted.</summary>
     public int BufferDeletions { get; init; }
 
-    /// <summary>Total glGenVertexArray and glGenVertexArrays calls recorded.</summary>
+    /// <summary>Vertex arrays created.</summary>
     public int VertexArrayAllocations { get; init; }
+
+    /// <summary>Vertex arrays deleted.</summary>
+    public int VertexArrayDeletions { get; init; }
+
+    /// <summary>Textures created.</summary>
+    public int TextureAllocations { get; init; }
+
+    /// <summary>Textures deleted.</summary>
+    public int TextureDeletions { get; init; }
+
+    /// <summary>Framebuffers created.</summary>
+    public int FramebufferAllocations { get; init; }
+
+    /// <summary>Framebuffers deleted.</summary>
+    public int FramebufferDeletions { get; init; }
+
+    /// <summary>Renderbuffers created.</summary>
+    public int RenderbufferAllocations { get; init; }
+
+    /// <summary>Renderbuffers deleted.</summary>
+    public int RenderbufferDeletions { get; init; }
 
     /// <summary>Total GL errors recorded via glGetError calls (populated when ErrorTracking is enabled).</summary>
     public int Errors { get; init; }

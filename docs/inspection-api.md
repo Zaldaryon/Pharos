@@ -208,10 +208,14 @@ Count draw calls, multi-draw calls, indirect draws, buffer allocations, and VAO 
 | `DrawCalls` | glDrawArrays, glDrawElements, and instanced variants |
 | `MultiDrawCalls` | glMultiDrawArrays, glMultiDrawElements |
 | `IndirectDrawCalls` | glMultiDrawArraysIndirect, glMultiDrawElementsIndirect |
-| `BufferAllocations` | glGenBuffer, glGenBuffers |
-| `BufferDeletions` | glDeleteBuffer, glDeleteBuffers |
-| `VertexArrayAllocations` | glGenVertexArray, glGenVertexArrays |
+| `BufferAllocations`, `BufferDeletions` | Buffers created and deleted, one per id |
+| `VertexArrayAllocations`, `VertexArrayDeletions` | Vertex arrays created and deleted |
+| `TextureAllocations`, `TextureDeletions` | Textures created and deleted |
+| `FramebufferAllocations`, `FramebufferDeletions` | Framebuffers created and deleted |
+| `RenderbufferAllocations`, `RenderbufferDeletions` | Renderbuffers created and deleted |
 | `TotalDrawCalls` | Sum of all draw call types |
+
+Objects are counted by hooks installed before anything boots, so a call the runtime compiled early is seen too. `GlResourceLeakDetector` uses these counts for buffers, vertex arrays, textures, framebuffers and renderbuffers.
 
 ### Example
 
@@ -308,6 +312,31 @@ Detect memory leaks and verify that mesh pooling works. Confirm that steady-stat
 | `PoolSnapshot()` | `MeshPoolSnapshot` | Captures pool sizes and hit/miss counts |
 | `AllocationSnapshot()` | `AllocationSnapshot` | Captures type allocation counts |
 | `MeasureAllocations(Action)` | long | Measures bytes allocated by an action |
+
+### OpenGL objects a test leaves behind
+
+`client.Memory.TrackGlResources()` records every buffer, vertex array, texture, framebuffer and renderbuffer the client creates and deletes, by id, until it is disposed. `PharosAssert.NoGlLeaks(scope, kinds)` fails when some of them were created and not deleted:
+
+```csharp
+using GlResourceScope scope = Client!.Memory.TrackGlResources(new() { CaptureStacks = true });
+for (int i = 0; i < 10; i++)
+{
+    await Client.Hotkeys.TriggerAsync("mymod:openpanel");
+    await Session!.StepFramesAsync(5);
+    await Client.Hotkeys.TriggerAsync("mymod:openpanel");
+}
+PharosAssert.NoGlLeaks(scope, GlResourceKind.VertexArray | GlResourceKind.Texture);
+```
+
+- **What the report holds.** `scope.Report(kinds)` lists each object left with its kind, id, the frame it was created in and, with `CaptureStacks` (or `PHAROS_GL_STACKS=1`), the code that created it. A reused id counts as a new object.
+- **What is left out:**
+  - objects the engine keeps for good: the textures of its block, item and entity texture sets, and its framebuffers with their textures;
+  - deletions of objects created before the scope;
+  - calls on other threads than the client's.
+- **What the engine makes lazily.** It also creates objects for good the first time it draws something: an item's icon, a stack-size label, a dialog's textures. Open and close a dialog once before the scope, or create the objects in one call on the client thread with no frame between, so that only the test's own objects are counted.
+- **Forms not tracked.** The `[Out]` array and pointer forms of `GL.Gen*`, such as `GenTextures(n, int[])`, cannot be hooked; neither the game nor its API calls them. `Gen*()`, `Gen*s(n, out id)` and every `Delete*` form are tracked. Deleting an object made through an untracked form counts as deleting one made before the scope.
+- **One client at a time.** One client's objects are tracked at a time.
+- **When the hooks fail.** If OpenGL object creation cannot be hooked, the client still boots and `TrackGlResources` throws with the reason.
 
 ### MeshPoolSnapshot Fields
 
