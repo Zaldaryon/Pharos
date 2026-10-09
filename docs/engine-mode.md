@@ -282,6 +282,67 @@ Compared with server commands, `ClientCommandResult.Message` and `Data` are what
 
 The client's delayed callbacks (`RegisterCallback`) run on real time in engine mode, not on frames: a mod that completes a command that way finishes after a number of milliseconds, however many frames that takes.
 
+## Reloading assets
+
+`client.ReloadAsync(category)` does what the game's `.reload` command does, then runs a frame:
+
+| Category | What happens |
+|---|---|
+| `AssetCategory.shaders` | The engine's shaders are compiled again, and the mods' `ReloadShader` handlers run. |
+| `AssetCategory.shapes` | The shapes are read again, and the `ReloadShapes` listeners re-tessellate. |
+| `AssetCategory.textures` | The textures are loaded again, and the `ReloadTextures` listeners run. |
+| `AssetCategory.lang` | The translations are read again. |
+| any other | Its assets are read again. |
+
+```csharp
+await client.ReloadAsync(AssetCategory.shaders);
+Assert.Equal("ok", (await client.Commands.ExecuteSuccessAsync(".mymod shaderstate")).Message);
+```
+
+- **Failures throw.** A shader reload that reports errors (a shader that does not compile, or a mod
+  handler that returns false) throws, unless `allowErrors: true` is passed. The returned
+  `ReloadResult` says how many assets were read again and whether the reload succeeded.
+- **All at once.** `ReloadAllAsync()` reloads translations, shapes, textures and shaders, in that
+  order.
+- **Other categories.** `ReloadAsync("config")` reloads a category by its code, such as one a mod
+  registers.
+- **Not supported:** sounds and music.
+
+## Translations
+
+`client.Lang` tracks the translation lookups the client makes on its main thread that find no
+entry for their key: the game then shows the key itself, like `mymod:item-foo`. The scenario base
+classes reset it before each test.
+
+```csharp
+using (client.Lang.Use("pt-br"))
+{
+    PharosAssert.AllTranslated(client, domain: "mymod");
+    // ... open the mod's dialogs, look at its items ...
+}
+
+Assert.Empty(client.Lang.MissingKeysOf("mymod"));
+```
+
+- **`MissingKeys`** lists every key with no entry in its language, each once, with how often it
+  was looked up and its domain.
+  - **`MissingKeysOf(domain)`** filters by domain. The game itself looks up some plain English
+    sentences as keys, so filter by your mod's id.
+  - **`MissingKeysIncludingFallbacks`**, or `includeFallbacks: true`, also lists the keys the
+    language lacks but English has; the game shows those in English.
+  - **Not counted:** the game's translation of the status line of a command Pharos runs.
+- **`Use(language)`** shows another language until it is disposed. In a scenario class, the
+  language the client booted with comes back at the end of the test anyway. Dialogs already open
+  keep the text they were composed with. `Use` loads the language again from the client's assets,
+  so translations only a server-side mod supplies are not in it.
+- **`PharosAssert.AllTranslated(client, domain, language)`** checks that every item and block of a
+  domain has a name. It looks for the `item-` or `block-` key the game looks names up by; names a
+  class builds in code are not checked.
+- **`PharosAssert.NoMissingTranslations(client, domain)`** asserts `MissingKeys` is empty.
+
+The game keeps one set of translations and one current language per process: a server booted in
+the same process shares them, so `Use` switches the server's language too.
+
 ## Real network connections and auth
 
 An embedded server can also listen on a real TCP and UDP port, as the game's `/allowlan` command opens it:

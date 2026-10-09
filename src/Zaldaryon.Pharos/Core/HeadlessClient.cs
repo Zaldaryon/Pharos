@@ -193,6 +193,74 @@ public sealed class HeadlessClient : IDisposable
     private ClientCommandDriver? _commands;
 
     /// <summary>
+    /// The client's translations: the lookups that found no entry, and switching the language for a
+    /// test. Engine mode only. See <see cref="Translations.LanguageDriver"/>.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">The client was not booted in engine mode.</exception>
+    public Translations.LanguageDriver Lang => _lang ?? throw new InvalidOperationException("Translations are tracked on an engine-mode client only.");
+
+    private Translations.LanguageDriver? _lang;
+
+    /// <summary>
+    /// Reloads one kind of asset as the game's <c>.reload</c> command does, then runs a frame, so
+    /// what follows sees the frame after the reload:
+    /// <list type="bullet">
+    /// <item><c>shaders</c>: the engine's and the mods' shaders are compiled again;</item>
+    /// <item><c>shapes</c>: the shapes are read again and re-tessellated;</item>
+    /// <item><c>textures</c>: the textures are loaded again;</item>
+    /// <item><c>lang</c>: the translations are read again;</item>
+    /// <item>any other category: its assets are read again.</item>
+    /// </list>
+    /// Engine mode only; sounds and music are not supported.
+    /// </summary>
+    /// <param name="category">The category, such as <see cref="AssetCategory.shaders"/>.</param>
+    /// <param name="allowErrors">Whether a reload that reported errors returns its result instead of throwing.</param>
+    /// <param name="ct">Cancels the frame after the reload.</param>
+    /// <exception cref="InvalidOperationException">The client is not in engine mode, or the reload reported errors.</exception>
+    /// <exception cref="NotSupportedException">The category is sounds or music.</exception>
+    public async Task<ReloadResult> ReloadAsync(AssetCategory category, bool allowErrors = false, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(category);
+        if (!IsEngineMode) throw new InvalidOperationException("Assets are reloaded on an engine-mode client only.");
+
+        ReloadResult result = RunOnClientThread(() => AssetReloader.Reload(Client, category, _lang));
+        await Frame(ct: ct).ConfigureAwait(false);
+        if (!result.Succeeded && !allowErrors)
+        {
+            throw new InvalidOperationException($"Reloading {category.Code} reported errors; see the client log.");
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Reloads the asset category with the code <paramref name="categoryCode"/>, such as one a mod
+    /// registers. See <see cref="ReloadAsync(AssetCategory, bool, CancellationToken)"/>.
+    /// </summary>
+    /// <exception cref="ArgumentException">The game has no such category.</exception>
+    public Task<ReloadResult> ReloadAsync(string categoryCode, bool allowErrors = false, CancellationToken ct = default) =>
+        ReloadAsync(AssetReloader.Resolve(categoryCode), allowErrors, ct);
+
+    /// <summary>
+    /// Reloads translations, shapes, textures and shaders, in that order, as the separate
+    /// <c>.reload</c> commands would, then runs a frame.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">The client is not in engine mode, or a reload reported errors.</exception>
+    public async Task<IReadOnlyList<ReloadResult>> ReloadAllAsync(bool allowErrors = false, CancellationToken ct = default)
+    {
+        if (!IsEngineMode) throw new InvalidOperationException("Assets are reloaded on an engine-mode client only.");
+        ReloadResult[] results = RunOnClientThread(() =>
+            AssetReloader.All.Select(category => AssetReloader.Reload(Client, category, _lang)).ToArray());
+        await Frame(ct: ct).ConfigureAwait(false);
+        if (!allowErrors && results.FirstOrDefault(r => !r.Succeeded) is { } failed)
+        {
+            throw new InvalidOperationException($"Reloading {failed.Category.Code} reported errors; see the client log.");
+        }
+
+        return results;
+    }
+
+    /// <summary>
     /// The client's hotkeys, its own and its mods': what they are bound to, and firing them by code.
     /// See <see cref="HotkeyDriver"/>.
     /// </summary>
@@ -381,6 +449,7 @@ public sealed class HeadlessClient : IDisposable
             Ui = new GuiDriver(this);
             Gui.Driver = Ui;
             Inventory.Live = new LiveInventory(this, Ui);
+            _lang = new Translations.LanguageDriver(this, () => clientThread?.IsCurrent ?? false);
         }
     }
 
@@ -1080,6 +1149,7 @@ public sealed class HeadlessClient : IDisposable
     {
         if (_disposed) return;
         _disposed = true;
+        _lang?.Dispose();
 
         try
         {

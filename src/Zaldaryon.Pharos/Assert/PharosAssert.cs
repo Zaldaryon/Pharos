@@ -984,4 +984,77 @@ public static class PharosAssert
                 Invariant($"({report.ChunksLoaded} chunks, {report.TotalTimeMs}ms total)."));
         }
     }
+
+    /// <summary>
+    /// Asserts that every item and block of <paramref name="domain"/> has a name in
+    /// <paramref name="language"/>: the <c>item-</c> or <c>block-</c> key the game looks a
+    /// collectible's name up by. Names a class builds in code, by overriding
+    /// <c>GetHeldItemName</c>, are not checked.
+    /// </summary>
+    /// <param name="client">An engine-mode client that has joined a world.</param>
+    /// <param name="domain">The domain, such as your mod's id.</param>
+    /// <param name="language">The language code, or null for the language shown now.</param>
+    /// <exception cref="ArgumentException">The game has no such language.</exception>
+    /// <exception cref="PharosAssertException">Some have no name; the message lists them.</exception>
+    public static void AllTranslated(Core.HeadlessClient client, string domain, string? language = null)
+    {
+        ArgumentNullException.ThrowIfNull(client);
+        ArgumentException.ThrowIfNullOrWhiteSpace(domain);
+        (int checkedCount, List<string> missing, string lang) = client.RunOnClientThread(() =>
+        {
+            string code = language ?? Vintagestory.API.Config.Lang.CurrentLocale;
+            if (!Vintagestory.API.Config.Lang.AvailableLanguages.TryGetValue(code, out Vintagestory.API.Config.ITranslationService? service))
+            {
+                throw new ArgumentException($"The game has no language '{code}'.", nameof(language));
+            }
+
+            service.UseAssetManager(client.Client.Platform.AssetManager);
+            List<string> keys = [];
+            foreach (Vintagestory.API.Common.Block block in client.Client.World.Blocks)
+            {
+                if (block?.Code != null && block.Code.Domain == domain) keys.Add($"{domain}:block-{block.Code.Path}");
+            }
+
+            foreach (Vintagestory.API.Common.Item item in client.Client.World.Items)
+            {
+                if (item?.Code != null && item.Code.Domain == domain) keys.Add($"{domain}:item-{item.Code.Path}");
+            }
+
+            return (keys.Count, keys.Where(key => !service.HasTranslation(key, findWildcarded: true, logErrors: false)).ToList(), code);
+        });
+
+        if (checkedCount == 0)
+        {
+            throw new PharosAssertException($"The client has no item or block in the domain '{domain}'.");
+        }
+
+        if (missing.Count > 0)
+        {
+            throw new PharosAssertException(
+                $"{missing.Count} of {checkedCount} items and blocks of '{domain}' have no name in '{lang}':\n  " +
+                string.Join("\n  ", missing.Take(50)) + (missing.Count > 50 ? $"\n  ... and {missing.Count - 50} more" : ""));
+        }
+    }
+
+    /// <summary>
+    /// Asserts that the client looked up no translation key it has no entry for, since its boot or
+    /// the start of the test; see <see cref="Translations.LanguageDriver.MissingKeys"/>.
+    /// </summary>
+    /// <param name="client">An engine-mode client.</param>
+    /// <param name="domain">Only keys of this domain, such as your mod's id, or null for all.</param>
+    /// <param name="includeFallbacks">Whether keys the game showed in English instead count too.</param>
+    /// <exception cref="PharosAssertException">Some were missing; the message lists them.</exception>
+    public static void NoMissingTranslations(Core.HeadlessClient client, string? domain = null, bool includeFallbacks = false)
+    {
+        ArgumentNullException.ThrowIfNull(client);
+        IReadOnlyList<Translations.MissingTranslation> missing = domain == null
+            ? (includeFallbacks ? client.Lang.MissingKeysIncludingFallbacks : client.Lang.MissingKeys)
+            : client.Lang.MissingKeysOf(domain, includeFallbacks);
+        if (missing.Count == 0) return;
+
+        throw new PharosAssertException(
+            $"The client looked up {missing.Count} translation key(s) it has no entry for:\n  " +
+            string.Join("\n  ", missing.Take(50).Select(m => $"{m.Key} ({m.Language}{(m.FellBackToDefault ? ", shown in English" : "")}, {m.Count}x)")) +
+            (missing.Count > 50 ? $"\n  ... and {missing.Count - 50} more" : ""));
+    }
 }

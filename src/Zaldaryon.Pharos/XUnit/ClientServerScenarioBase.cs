@@ -332,6 +332,13 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime, IScenarioLifecy
 
     void IScenarioLifecycle.BeforeBody()
     {
+        // Each test sees its own missing translations, in the language the client booted with.
+        if (_client is { IsEngineMode: true } langClient)
+        {
+            langClient.Lang.RestoreBootLanguage();
+            langClient.Lang.Reset();
+        }
+
         _run.BodyStarting(_session?.FrameCount, _session?.ServerTickCount);
         if (Artifacts.HasFlag(FailureArtifacts.Packets) && _client is { PacketRecorder.IsRecording: false } client)
         {
@@ -480,6 +487,8 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime, IScenarioLifecy
     {
         if (_disposed) return;
         _disposed = true;
+        if (!_run.Abandoned && _client is { IsEngineMode: true } langClient) langClient.Lang.RestoreBootLanguage();
+
 
         IReadOnlyList<LogEntry> loggedErrors = _run.PipelineChecksLoggedErrors
             ? []
