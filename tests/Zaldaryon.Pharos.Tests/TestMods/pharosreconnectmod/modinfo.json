@@ -1,0 +1,11 @@
+{
+  "type": "code",
+  "modid": "pharosreconnectmod",
+  "name": "Pharos Reconnect Mod",
+  "version": "1.0.0",
+  "side": "Universal",
+  "requiredOnClient": true,
+  "description": "Source mod the reconnect tests stage: counts its client side's starts, disposals and handler calls, and greets each joining player.",
+  "authors": ["Pharos"],
+  "dependencies": { "game": "" }
+}

@@ -14,7 +14,10 @@ namespace Zaldaryon.Pharos.Culling;
 /// </summary>
 public sealed class CullingInspector
 {
-    private readonly ClientMain _client;
+    // Read on each use, so the class follows the client into a new game session after a reconnect.
+    private readonly Func<ClientMain> _game;
+
+    private ClientMain _client => _game();
 
     // --- Cached reflection accessors (computed once per type, not per call) ---
     private static readonly FieldInfo? s_frustumCullerField =
@@ -30,9 +33,16 @@ public sealed class CullingInspector
         typeof(ClientWorldMap).GetField("chunksLock", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
 
     public CullingInspector(ClientMain client)
+        : this(Fixed(client))
     {
-        _client = client;
     }
+
+    internal CullingInspector(Func<ClientMain> game)
+    {
+        _game = game ?? throw new ArgumentNullException(nameof(game));
+    }
+
+    private static Func<ClientMain> Fixed(ClientMain client) => () => client;
 
     /// <summary>
     /// Reads current frustum and chunk state and returns an immutable snapshot.

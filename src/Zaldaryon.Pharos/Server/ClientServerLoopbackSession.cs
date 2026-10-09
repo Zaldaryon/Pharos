@@ -187,18 +187,88 @@ public sealed partial class ClientServerLoopbackSession : IDisposable
     /// <summary>
     /// Creates a loopback session with a native embedded server host.
     /// </summary>
-    internal ClientServerLoopbackSession(HeadlessClient client, EmbeddedServerHost server, LoopbackLink link, LinkedTcpNetClient tcp, LinkedUdpNetClient udp)
+    internal ClientServerLoopbackSession(HeadlessClient client, EmbeddedServerHost server, LoopbackLink link, LinkedTcpNetClient tcp, LinkedUdpNetClient udp, string playerName)
         : this(client, server)
     {
         _link = link;
         _linkTcp = tcp;
         _linkUdp = udp;
+        _playerName = playerName;
         client.DisconnectSimulator.Sink = DisconnectForReal;
     }
 
-    private readonly LoopbackLink? _link;
-    private readonly LinkedTcpNetClient? _linkTcp;
-    private readonly LinkedUdpNetClient? _linkUdp;
+    // A reconnect replaces the link and the sockets on it.
+    private LoopbackLink? _link;
+    private LinkedTcpNetClient? _linkTcp;
+    private LinkedUdpNetClient? _linkUdp;
+    private readonly string? _playerName;
+
+    // The server socket the last reconnect installed, or -1.
+    private int _reconnectSlot = -1;
+
+    /// <summary>How many times <see cref="ReconnectAsync"/> has joined the client again.</summary>
+    public int Reconnects { get; private set; }
+
+    /// <summary>The client's disconnect simulator: kicks, lost connections and shutdowns.</summary>
+    public DisconnectSimulator DisconnectSimulator => Client.DisconnectSimulator;
+
+    /// <summary>
+    /// Joins the client to the server again as the same player, the way the game's reconnect
+    /// does: the client's game session ends (its mods are disposed, the world unloads), the server
+    /// drops the player if it still has it, as after a lost connection, and a new game session
+    /// starts and joins over a fresh in-memory connection, with its mods started anew. The window,
+    /// the drivers and the test's network conditions and recording carry over.
+    /// </summary>
+    /// <remarks>
+    /// Works after a kick, a lost connection, a shutdown, <see cref="Disconnect"/>, or while the
+    /// client is still joined. Statics of source mods start from scratch, since the game compiles
+    /// them again for each session; statics of DLL mods carry over, as they do in the game.
+    /// </remarks>
+    /// <param name="maxFrames">How many frames to wait for the new join.</param>
+    /// <param name="ct">Cancels the wait.</param>
+    /// <exception cref="ObjectDisposedException">The session was disposed.</exception>
+    /// <exception cref="InvalidOperationException">The client is in fixture mode, or the server stopped.</exception>
+    /// <exception cref="NotSupportedException">The session has no in-memory link to reconnect over.</exception>
+    /// <exception cref="TimeoutException">The client did not join within <paramref name="maxFrames"/>.</exception>
+    public async Task ReconnectAsync(int maxFrames = 1200, CancellationToken ct = default)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxFrames);
+        if (!Client.IsEngineMode) throw new InvalidOperationException("Only an engine-mode client can reconnect.");
+        EmbeddedServerHost server = NativeServer ?? throw new NotSupportedException("Reconnecting needs a session with an embedded server.");
+        if (_link == null || _playerName == null) throw new NotSupportedException("Only a client joined over the in-memory link can reconnect.");
+        if (!server.IsRunning) throw new InvalidOperationException("The server has stopped.");
+
+        if (!Client.Client.disposed) Client.Controls.ReleaseAll();
+
+        Client.RunOnClientThread(() => Bootstrap.EngineGameSession.End(Client));
+        _link.Detach();
+
+        (Vintagestory.Common.DummyNetwork network, int slot) = server.PrepareReconnect(_playerName, _reconnectSlot);
+        _reconnectSlot = slot;
+
+        (LoopbackLink link, LinkedTcpNetClient tcp, LinkedUdpNetClient udp) = Client.RunOnClientThread(
+            () => Bootstrap.EngineGameSession.Start(Client, _playerName, network, server.UdpNetwork));
+        _link = link;
+        _linkTcp = tcp;
+        _linkUdp = udp;
+        IsConnected = false;
+        _isDisconnected = false;
+
+        // Counted before the join, so a pair whose reconnect failed is not pooled either.
+        Reconnects++;
+
+        if (!await StepUntilAsync(() => HasJoined || Client.Client.disposed, maxFrames, ct: ct).ConfigureAwait(false) || !HasJoined)
+        {
+            string reason = Client.RunOnClientThread(() => Client.Client.disconnectReason) ?? "none";
+            bool known = server.RunOnGameThread(() => server.Server.GetClientByPlayername(_playerName) != null);
+            throw new TimeoutException(
+                $"The client did not join again within {maxFrames} frames. Disconnect reason: {reason}. " +
+                (known ? "The server has the player." : "The server does not have the player."));
+        }
+
+        Client.DisconnectSimulator.SimulateReconnectSuccess();
+    }
 
     /// <summary>
     /// Whether the wire between client and server has been cut by a simulated connection loss.

@@ -11,7 +11,10 @@ namespace Zaldaryon.Pharos.Player;
 /// </summary>
 public sealed class ClientTestPlayer : IClientTestPlayer
 {
-    private readonly ClientMain _client;
+    // Read on each use, so the class follows the client into a new game session after a reconnect.
+    private readonly Func<ClientMain> _game;
+
+    private ClientMain _client => _game();
     private readonly PlayerCameraController _camera;
     private readonly PlayerInventoryAccessor _inventory;
     private readonly PlayerGuiController _gui;
@@ -19,12 +22,19 @@ public sealed class ClientTestPlayer : IClientTestPlayer
     private readonly Vec3d _fallbackMotion = new();
 
     public ClientTestPlayer(ClientMain client)
+        : this(Fixed(client ?? throw new ArgumentNullException(nameof(client))))
     {
-        _client = client ?? throw new ArgumentNullException(nameof(client));
-        _camera = new PlayerCameraController(client);
-        _inventory = new PlayerInventoryAccessor(client);
-        _gui = new PlayerGuiController(client);
     }
+
+    internal ClientTestPlayer(Func<ClientMain> game)
+    {
+        _game = game ?? throw new ArgumentNullException(nameof(game));
+        _camera = new PlayerCameraController(game);
+        _inventory = new PlayerInventoryAccessor(game);
+        _gui = new PlayerGuiController(game);
+    }
+
+    private static Func<ClientMain> Fixed(ClientMain client) => () => client;
 
     public bool IsAvailable => _client.player != null && _client.EntityPlayer != null;
 

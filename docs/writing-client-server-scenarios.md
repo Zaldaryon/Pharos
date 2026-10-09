@@ -196,7 +196,7 @@ Under `Rollback`, after each test:
 - **Listeners:** tick listeners, delayed callbacks and event-bus listeners the test registered, on the server and on the client, are removed, as are block-position callbacks the test's changes scheduled (see [Listeners a test leaves](writing-server-scenarios.md#listeners-a-test-leaves)).
 - **Mods:** once the client has the world back, `pharos:rollback:restored` fires on the server's event bus, then on the client's, and the class's `OnRollbackRestored()` runs. `pharos:rollback:captured` fires on both sides once, when the world is captured after the join (see [Mods and rollbacks](writing-server-scenarios.md#mods-and-rollbacks)).
 
-The next test of the class gets the same client, already joined, with no boot. A test that disconnects the client, cuts its link, or overrides `WaitForPlayerJoinOnInit` to false gets a freshly booted pair, as does the next test after a failed rollback.
+The next test of the class gets the same client, already joined, with no boot. A test that disconnects the client, cuts its link, reconnects it (`Session.ReconnectAsync()`, see "Network conditions and disconnects" in [engine-mode.md](engine-mode.md)), or overrides `WaitForPlayerJoinOnInit` to false gets a freshly booted pair, as does the next test after a failed rollback.
 
 ```csharp
 public class ExpensiveSetupTests : ClientServerScenarioBase

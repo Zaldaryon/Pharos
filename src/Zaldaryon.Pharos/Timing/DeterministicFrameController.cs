@@ -50,10 +50,11 @@ public sealed class DeterministicFrameController
     private static readonly FieldInfo? s_tesselatedChunksField = typeof(ClientMain).GetField("tesselatedChunks", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
     private static readonly FieldInfo? s_enquedForRedrawField = typeof(ClientChunk).GetField("enquedForRedraw", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
 
-    private readonly ClientMain _client;
+    // Read on each use, so the controller follows the client into a new game session after a reconnect.
+    private readonly Func<ClientMain> _game;
+    private readonly Func<GuiScreenRunningGame> _screen;
     private readonly ClientPlatformWindows _platform;
     private readonly ScreenManager _screenManager;
-    private readonly GuiScreenRunningGame _runningGameScreen;
     private readonly HeadlessWindow _window;
     private readonly object _stepLock = new();
 
@@ -68,13 +69,30 @@ public sealed class DeterministicFrameController
         ScreenManager screenManager,
         GuiScreenRunningGame runningGameScreen,
         HeadlessWindow window)
+        : this(Fixed(client ?? throw new ArgumentNullException(nameof(client))), platform, screenManager,
+            Fixed(runningGameScreen ?? throw new ArgumentNullException(nameof(runningGameScreen))), window)
     {
-        _client = client ?? throw new ArgumentNullException(nameof(client));
+    }
+
+    internal DeterministicFrameController(
+        Func<ClientMain> game,
+        ClientPlatformWindows platform,
+        ScreenManager screenManager,
+        Func<GuiScreenRunningGame> runningGameScreen,
+        HeadlessWindow window)
+    {
+        _game = game ?? throw new ArgumentNullException(nameof(game));
         _platform = platform ?? throw new ArgumentNullException(nameof(platform));
         _screenManager = screenManager ?? throw new ArgumentNullException(nameof(screenManager));
-        _runningGameScreen = runningGameScreen ?? throw new ArgumentNullException(nameof(runningGameScreen));
+        _screen = runningGameScreen ?? throw new ArgumentNullException(nameof(runningGameScreen));
         _window = window ?? throw new ArgumentNullException(nameof(window));
     }
+
+    private ClientMain _client => _game();
+
+    private GuiScreenRunningGame _runningGameScreen => _screen();
+
+    private static Func<T> Fixed<T>(T value) => () => value;
 
     /// <summary>
     /// Total count of frames executed deterministically.
@@ -260,6 +278,10 @@ public sealed class DeterministicFrameController
 
     private void StepEngine(float dt)
     {
+        // A game that left its world is done: rendering it again would run the game's exit to the
+        // main menu, which Pharos never builds. A reconnect starts the next game.
+        if (_client.disposed || _client.exitToMainMenu || _client.exitToDisconnectScreen) return;
+
         // The server pushes its asset packet straight into ClientSystemStartup.instance for every
         // player that connects over an in-memory socket, a headless test player included. Once
         // this client has its assets that push must not reach it again: it would reload the whole
