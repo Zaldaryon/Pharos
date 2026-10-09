@@ -986,6 +986,103 @@ public static class PharosAssert
     }
 
     /// <summary>
+    /// Asserts that the dialog fits in the window: each of its composers and each of its elements
+    /// lies inside the screen, to within <paramref name="tolerance"/> pixels. Elements in a
+    /// clipped region, such as the rows of a scrolled list, show only where the region does and
+    /// are not checked; the region itself is.
+    /// </summary>
+    /// <exception cref="PharosAssertException">Something lies off screen; the message says what and by how much.</exception>
+    public static void DialogOnScreen(UI.DialogLayout layout, double tolerance = 1)
+    {
+        ArgumentNullException.ThrowIfNull(layout);
+        List<string> off = [];
+        foreach (UI.ComposerBounds composer in layout.Composers)
+        {
+            if (OffScreen(layout, composer.X, composer.Y, composer.Width, composer.Height, tolerance) is { } how)
+            {
+                off.Add($"composer '{composer.Composer}' {how}");
+            }
+        }
+
+        foreach (UI.GuiElementInfo element in layout.Elements)
+        {
+            if (element.Width <= 0 || element.Height <= 0 || element.IsClipped) continue;
+            if (OffScreen(layout, element.X, element.Y, element.Width, element.Height, tolerance) is { } how)
+            {
+                off.Add($"{element.Type} '{element.Key}' {how}");
+            }
+        }
+
+        if (off.Count > 0)
+        {
+            throw new PharosAssertException($"{layout} does not fit on screen:\n  " + string.Join("\n  ", off.Take(30)) + (off.Count > 30 ? $"\n  ... and {off.Count - 30} more" : ""));
+        }
+    }
+
+    /// <summary>Asserts that the open dialog <paramref name="nameOrType"/> fits in the window. See <see cref="DialogOnScreen(UI.DialogLayout, double)"/>.</summary>
+    public static void DialogOnScreen(Core.HeadlessClient client, string nameOrType, double tolerance = 1)
+    {
+        ArgumentNullException.ThrowIfNull(client);
+        UI.GuiDriver ui = client.Ui ?? throw new InvalidOperationException("The client has no GUI driver: it is not in engine mode.");
+        DialogOnScreen(ui.Layout(nameOrType), tolerance);
+    }
+
+    /// <summary>
+    /// Asserts that no two elements of the same composer overlap by more than
+    /// <paramref name="tolerance"/> pixels each way. By default only the elements a player reads or
+    /// uses are compared: buttons, inputs, switches, drop-downs, slot grids and text with text in
+    /// it (see <see cref="UI.DialogLayout.ChecksOverlap"/>); containers and backgrounds hold
+    /// their children and always overlap them.
+    /// </summary>
+    /// <exception cref="PharosAssertException">Some overlap; the message names each pair.</exception>
+    public static void NoOverlappingElements(UI.DialogLayout layout, double tolerance = 1, Func<UI.GuiElementInfo, bool>? include = null)
+    {
+        ArgumentNullException.ThrowIfNull(layout);
+        include ??= UI.DialogLayout.ChecksOverlap;
+        List<string> overlaps = [];
+        foreach (IGrouping<string, UI.GuiElementInfo> composer in layout.Elements.Where(e => e.Width > 0 && e.Height > 0 && include(e)).GroupBy(e => e.Composer))
+        {
+            UI.GuiElementInfo[] elements = [.. composer];
+            for (int i = 0; i < elements.Length; i++)
+            {
+                for (int j = i + 1; j < elements.Length; j++)
+                {
+                    UI.GuiElementInfo a = elements[i], b = elements[j];
+                    double width = Math.Min(a.X + a.Width, b.X + b.Width) - Math.Max(a.X, b.X);
+                    double height = Math.Min(a.Y + a.Height, b.Y + b.Height) - Math.Max(a.Y, b.Y);
+                    if (width > tolerance && height > tolerance)
+                    {
+                        overlaps.Add(Invariant($"'{a.Key}' ({a.Type}) and '{b.Key}' ({b.Type}) in '{composer.Key}' overlap by {width:0.#}x{height:0.#} px"));
+                    }
+                }
+            }
+        }
+
+        if (overlaps.Count > 0)
+        {
+            throw new PharosAssertException($"{layout} has overlapping elements:\n  " + string.Join("\n  ", overlaps.Take(30)) + (overlaps.Count > 30 ? $"\n  ... and {overlaps.Count - 30} more" : ""));
+        }
+    }
+
+    /// <summary>Asserts that no two elements of the open dialog overlap. See <see cref="NoOverlappingElements(UI.DialogLayout, double, Func{UI.GuiElementInfo, bool})"/>.</summary>
+    public static void NoOverlappingElements(Core.HeadlessClient client, string nameOrType, double tolerance = 1, Func<UI.GuiElementInfo, bool>? include = null)
+    {
+        ArgumentNullException.ThrowIfNull(client);
+        UI.GuiDriver ui = client.Ui ?? throw new InvalidOperationException("The client has no GUI driver: it is not in engine mode.");
+        NoOverlappingElements(ui.Layout(nameOrType), tolerance, include);
+    }
+
+    private static string? OffScreen(UI.DialogLayout layout, double x, double y, double width, double height, double tolerance)
+    {
+        List<string> sides = [];
+        if (x < -tolerance) sides.Add(Invariant($"{-x:0.#} px past the left edge"));
+        if (y < -tolerance) sides.Add(Invariant($"{-y:0.#} px past the top edge"));
+        if (x + width > layout.ScreenWidth + tolerance) sides.Add(Invariant($"{x + width - layout.ScreenWidth:0.#} px past the right edge"));
+        if (y + height > layout.ScreenHeight + tolerance) sides.Add(Invariant($"{y + height - layout.ScreenHeight:0.#} px past the bottom edge"));
+        return sides.Count == 0 ? null : Invariant($"at ({x:0.#}, {y:0.#}) {width:0.#}x{height:0.#} is ") + string.Join(" and ", sides);
+    }
+
+    /// <summary>
     /// Asserts that every item and block of <paramref name="domain"/> has a name in
     /// <paramref name="language"/>: the <c>item-</c> or <c>block-</c> key the game looks a
     /// collectible's name up by. Names a class builds in code, by overriding

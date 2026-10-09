@@ -1,0 +1,11 @@
+{
+  "type": "code",
+  "modid": "pharoslayoutmod",
+  "name": "Pharos Layout Mod",
+  "version": "1.0.0",
+  "side": "Universal",
+  "requiredOnClient": true,
+  "description": "Source mod the GUI layout tests stage: a client command that opens dialogs that fit, overflow or overlap.",
+  "authors": ["Pharos"],
+  "dependencies": { "game": "" }
+}

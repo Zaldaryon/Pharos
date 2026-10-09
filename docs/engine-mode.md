@@ -282,6 +282,57 @@ Compared with server commands, `ClientCommandResult.Message` and `Data` are what
 
 The client's delayed callbacks (`RegisterCallback`) run on real time in engine mode, not on frames: a mod that completes a command that way finishes after a number of milliseconds, however many frames that takes.
 
+## Window size and GUI scale
+
+A dialog that fits at 1920x1080 and GUI scale 1 can be cut off at 1280x720 or GUI scale 1.5.
+`client.Window` resizes an engine-mode client's window the way a player dragging its edge does:
+the game rebuilds its framebuffers, and in the next frame the dialogs lay themselves out again.
+
+```csharp
+await client.Window.ResizeAsync(1280, 720);   // runs the frame after the resize
+Assert.Equal(1280, client.CaptureFrame().Width);
+```
+
+- **Size limits.** The game's smallest window is 600x400.
+- **Restoring the size.** A scenario class puts the window back to the size and GUI scale it
+  booted with after each test. A pooled client that cannot be put back is torn down instead.
+- **The `Window` properties.** `Window.CurrentWidth` and `CurrentHeight` give the size now;
+  `Width` and `Height` stay the boot size.
+
+`Window.UseAsync(layout)` applies a size and a GUI scale together, and puts both back when it is
+disposed. `[WindowSizes]` runs a theory once per size, and per scale in `GuiScales`. Without
+`GuiScales`, a size may carry its own scale, as in `"1280x720@1.5"`:
+
+```csharp
+[ClientTheory]
+[WindowSizes("1280x720", "1920x1080", GuiScales = [1f, 1.5f])]
+public async Task PanelFitsOnScreen(WindowLayout layout)
+{
+    await using IAsyncDisposable _ = await Client!.Window.UseAsync(layout);
+    await Client.Hotkeys.TriggerAsync("mymod:openpanel");
+    await Session!.StepFramesAsync(2);
+
+    DialogLayout panel = Client.Ui!.Layout("GuiDialogMyPanel");
+    PharosAssert.DialogOnScreen(panel);
+    PharosAssert.NoOverlappingElements(panel);
+}
+```
+
+- **`Ui.Layout(nameOrType)`** (or `Ui.Layout<TDialog>()`) reads an open dialog's composers and
+  elements with their bounds in screen pixels, as laid out in the last frame.
+- **`PharosAssert.DialogOnScreen`** fails when a composer, or an element laid out within its
+  composer, reaches past an edge of the window. It names each one and says by how much.
+  Elements inside a clipping area, such as the rows of a scrolled list, are cut off by it, so
+  they are not checked.
+- **`PharosAssert.NoOverlappingElements`** fails when two elements of a composer overlap. By default
+  it compares the elements a player reads or uses: buttons, inputs, switches, drop-downs, slot
+  grids and text. Containers and backgrounds always hold their children.
+- **`[ClientSettingsMatrix]`** also takes single settings written `key:value`, such as
+  `guiScale:1.5`. xUnit does not combine the rows of two data attributes, so `[WindowSizes]`
+  refuses to share a theory with it: give the scales to `[WindowSizes]` instead.
+
+The game remembers the window size in the client's settings, as it does for a player.
+
 ## Reloading assets
 
 `client.ReloadAsync(category)` does what the game's `.reload` command does, then runs a frame:

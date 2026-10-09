@@ -149,6 +149,8 @@ public abstract class ClientScenarioBase : IAsyncLifetime, IScenarioLifecycle
                 GetIsolationManager().RestoreState(_pooled.Client, _pooled.Baseline);
             }
 
+            if (!_pooled.Client.IsDisposed) _pooled.Client.Window.RestoreBootSize();
+
             Client = _pooled.Client;
             GetIsolationManager().PrepareForTest(Client);
 
@@ -290,7 +292,8 @@ public abstract class ClientScenarioBase : IAsyncLifetime, IScenarioLifecycle
         {
             if (_pooled != null)
             {
-                if (IsolationMode != IsolationMode.FreshClient && !_pooled.Client.IsDisposed && !_run.TimedOut && !_pooled.Client.IsDataPathRetained)
+                if (IsolationMode != IsolationMode.FreshClient && !_pooled.Client.IsDisposed && !_run.TimedOut && !_pooled.Client.IsDataPathRetained
+                    && TryRestoreBootWindow(_pooled.Client))
                 {
                     // The next test judges only what it logs itself.
                     _pooled.Client.Logs.Clear();
@@ -407,6 +410,21 @@ public abstract class ClientScenarioBase : IAsyncLifetime, IScenarioLifecycle
             {
                 // Best effort temporary cleanup
             }
+        }
+    }
+
+    // The next test starts with the window it was booted with; a client that cannot be put
+    // back is torn down rather than handed on at the wrong size.
+    private static bool TryRestoreBootWindow(HeadlessClient client)
+    {
+        try
+        {
+            client.Window.RestoreBootSize();
+            return true;
+        }
+        catch
+        {
+            return false;
         }
     }
 }

@@ -264,6 +264,7 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime, IScenarioLifecy
             if (_poolKey != null && ScenarioHostPool.Take<PooledClientServer>(GetType(), _poolKey) is { } pooled)
             {
                 Adopt(pooled);
+                _client?.Window.RestoreBootSize();
                 ApplyClassSettings();
                 Isolation = IsolationLog.Prepared(GetType(), reused: true, recycled: false, TimeSpan.Zero);
                 return;
@@ -551,6 +552,11 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime, IScenarioLifecy
             ? new IsolationException($"The world could not be rolled back after this test: {fallback}.")
             : null;
 
+        if (rolledBack != null && !TryRestoreBootWindow())
+        {
+            rolledBack = null;
+        }
+
         if (rolledBack != null)
         {
             ScenarioHostPool.Return(GetType(), _poolKey!, Detach());
@@ -620,6 +626,21 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime, IScenarioLifecy
         _gate = null;
 
         ScenarioFailures.ThrowAll(isolationFailure, () => LoggedErrorGate.ThrowIfAny(loggedErrors));
+    }
+
+    // The next test starts with the window it was booted with. A client that cannot be put back
+    // is torn down rather than pooled.
+    private bool TryRestoreBootWindow()
+    {
+        try
+        {
+            _client?.Window.RestoreBootSize();
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     /// <summary>

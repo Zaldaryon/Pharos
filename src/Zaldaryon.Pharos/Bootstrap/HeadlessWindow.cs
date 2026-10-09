@@ -22,8 +22,33 @@ public sealed class HeadlessWindow : IDisposable
     public GameWindowNative NativeWindow { get; }
     public HeadlessFramebuffer Framebuffer { get; }
     public GlRendererInfo? RendererInfo { get; }
+    /// <summary>The window's width when the client booted. See <see cref="CurrentWidth"/>.</summary>
     public int Width { get; }
+
+    /// <summary>The window's height when the client booted. See <see cref="CurrentHeight"/>.</summary>
     public int Height { get; }
+
+    /// <summary>The client this window belongs to, set when the client is created.</summary>
+    internal HeadlessClient? Owner
+    {
+        get => _owner;
+        set
+        {
+            _owner = value;
+            _bootGuiScale = ClientSettings.GUIScale;
+            _bootScreenSize = (ClientSettings.ScreenWidth, ClientSettings.ScreenHeight);
+        }
+    }
+
+    private HeadlessClient? _owner;
+    private float _bootGuiScale;
+    private (int Width, int Height) _bootScreenSize;
+
+    /// <summary>The window's width now, as the game sees it, after any <see cref="ResizeAsync"/>.</summary>
+    public int CurrentWidth => Owner?.Platform.WindowSize.Width ?? Width;
+
+    /// <summary>The window's height now, as the game sees it, after any <see cref="ResizeAsync"/>.</summary>
+    public int CurrentHeight => Owner?.Platform.WindowSize.Height ?? Height;
 
     public bool IsVisible => !_disposed && NativeWindow.IsVisible;
     public bool IsFocused => !_disposed && NativeWindow.IsFocused;
@@ -189,6 +214,137 @@ public sealed class HeadlessWindow : IDisposable
         catch
         {
             // Ignore window disposal errors during teardown
+        }
+    }
+
+    /// <summary>
+    /// Resizes the window as a player dragging its edge does: the game rebuilds its framebuffers
+    /// and the next frame lays the dialogs out again. Runs that frame. Engine mode only.
+    /// </summary>
+    /// <remarks>
+    /// The engine-side size is what changes; <see cref="Framebuffer"/>, used by fixture-mode
+    /// clients, keeps the boot size. The game remembers the size in its client settings, as it
+    /// does for a player. A scenario class puts the boot size back after each test.
+    /// </remarks>
+    /// <exception cref="ArgumentOutOfRangeException">The size is below the game's smallest window, 600x400.</exception>
+    /// <exception cref="NotSupportedException">The client is not in engine mode.</exception>
+    public async Task ResizeAsync(int width, int height, CancellationToken ct = default)
+    {
+        UI.WindowLayout.Checked(new UI.WindowLayout(width, height));
+        HeadlessClient client = EngineOwner();
+        client.RunOnClientThread(() =>
+        {
+            client.Platform.SetWindowSize(width, height);
+            if (client.Platform.WindowSize.Width != width || client.Platform.WindowSize.Height != height)
+            {
+                throw new InvalidOperationException(
+                    $"The window was resized to {client.Platform.WindowSize.Width}x{client.Platform.WindowSize.Height}, not {width}x{height}.");
+            }
+        });
+
+        // Dialogs lay themselves out again in the frame after: their bounds follow the window then.
+        await client.Frame(ct: ct).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc cref="ResizeAsync(int, int, CancellationToken)"/>
+    public Task ResizeAsync(UI.WindowLayout size, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(size);
+        return ResizeAsync(size.Width, size.Height, ct);
+    }
+
+    /// <summary>
+    /// Resizes the window and sets the GUI scale of <paramref name="layout"/>, runs a frame, and
+    /// puts the size and the scale back when the result is disposed.
+    /// </summary>
+    public async Task<IAsyncDisposable> UseAsync(UI.WindowLayout layout, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(layout);
+        UI.WindowLayout.Checked(layout);
+        HeadlessClient client = EngineOwner();
+        (int width, int height) previous = (CurrentWidth, CurrentHeight);
+        IDisposable scale = client.Settings.Apply(ClientSettingsProfile.Of(layout.ToString(), ("guiScale", layout.GuiScale)));
+        try
+        {
+            await ResizeAsync(layout.Width, layout.Height, ct).ConfigureAwait(false);
+        }
+        catch
+        {
+            scale.Dispose();
+            throw;
+        }
+
+        return new LayoutRestore(this, client, previous, scale);
+    }
+
+    /// <summary>
+    /// Puts the window back to its boot size, between tests. The boot size may be below the game's
+    /// smallest window, which a player's resize would enlarge, so it is applied as the boot did.
+    /// </summary>
+    internal void RestoreBootSize()
+    {
+        if (Owner is not { IsEngineMode: true, IsDisposed: false } client || _disposed) return;
+        client.RunOnClientThread(() =>
+        {
+            ApplySize(client, Width, Height);
+
+            // What a resize and a scale change left in the client's settings.
+            ClientSettings.ScreenWidth = _bootScreenSize.Width;
+            ClientSettings.ScreenHeight = _bootScreenSize.Height;
+            if (ClientSettings.GUIScale != _bootGuiScale) ClientSettings.GUIScale = _bootGuiScale;
+        });
+    }
+
+    // What SetWindowSize does, without the game's 600x400 floor. Client thread.
+    private void ApplySize(HeadlessClient client, int width, int height)
+    {
+        if (client.Platform.WindowSize.Width == width && client.Platform.WindowSize.Height == height) return;
+        NativeWindow.ClientSize = new Vector2i(width, height);
+        client.Platform.RebuildFrameBuffers();
+        client.Platform.WindowSize.Width = width;
+        client.Platform.WindowSize.Height = height;
+        client.Platform.TriggerWindowResized(width, height);
+    }
+
+    private HeadlessClient EngineOwner()
+    {
+        if (_disposed) throw new ObjectDisposedException(nameof(HeadlessWindow));
+        HeadlessClient client = Owner ?? throw new InvalidOperationException("The window belongs to no client yet.");
+        if (!client.IsEngineMode) throw new NotSupportedException("Only an engine-mode client's window is resized.");
+        return client;
+    }
+
+    private sealed class LayoutRestore(HeadlessWindow window, HeadlessClient client, (int Width, int Height) size, IDisposable scale) : IAsyncDisposable
+    {
+        private bool _disposed;
+
+        public async ValueTask DisposeAsync()
+        {
+            if (_disposed) return;
+            _disposed = true;
+            if (client.IsDisposed) return;
+
+            // The scale is put back even when the size cannot be, and its own failure does not
+            // hide the size's.
+            try
+            {
+                client.RunOnClientThread(() => window.ApplySize(client, size.Width, size.Height));
+            }
+            catch
+            {
+                try
+                {
+                    scale.Dispose();
+                }
+                catch
+                {
+                }
+
+                throw;
+            }
+
+            scale.Dispose();
+            await client.Frame().ConfigureAwait(false);
         }
     }
 }
