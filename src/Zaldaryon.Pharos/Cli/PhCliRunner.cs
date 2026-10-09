@@ -75,6 +75,13 @@ public static class PhCliRunner
                 case "run":
                     return ParallelRuns.RunCommand.Run(args[1..], stdout, stderr);
 
+                case "diff":
+                    return ParallelRuns.DiffCommand.Run(args[1..], stdout, stderr);
+
+                case "help" when args.Length > 1 && args[1] == "diff":
+                    stdout.WriteLine(ParallelRuns.DiffCommand.HelpText);
+                    return ExitCodeSuccess;
+
                 case "fixture":
                     return ParallelRuns.FixtureCommand.Run(args[1..], stdout, stderr);
 
@@ -307,6 +314,7 @@ public static class PhCliRunner
         Commands:
           (default)         Run xUnit tests from a test assembly
           run               Run a test assembly's classes in parallel worker processes
+          diff              Compare two test runs (TRX files) and gate on regressions
           fixture           Run a builder scenario and save the world it leaves
           benchmark         Run performance benchmarks and check for regressions
           smoke             Boot, join and play with a mod, failing on errors
