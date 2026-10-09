@@ -43,7 +43,7 @@ namespace Zaldaryon.Pharos.Server;
 /// </list>
 /// </para>
 /// </remarks>
-public sealed class EmbeddedServerHost : IDisposable, IAsyncDisposable
+public sealed partial class EmbeddedServerHost : IDisposable, IAsyncDisposable
 {
     private bool _disposed;
     private readonly bool _ownsDataPath;
@@ -199,8 +199,11 @@ public sealed class EmbeddedServerHost : IDisposable, IAsyncDisposable
     /// <param name="options">World configuration options. When null, uses default superflat creative settings.</param>
     /// <param name="customDataPath">Optional data directory. When null, creates a temporary scratch directory.</param>
     /// <returns>A running embedded server host.</returns>
-    public static EmbeddedServerHost Boot(ServerWorldOptions? options = null, string? customDataPath = null) =>
-        BootOnGameThread(gameThread => BootCore(options, customDataPath, gameThread));
+    public static EmbeddedServerHost Boot(ServerWorldOptions? options = null, string? customDataPath = null)
+    {
+        CheckSaveFile(options);
+        return BootOnGameThread(gameThread => BootCore(options, customDataPath, gameThread));
+    }
 
     /// <summary>
     /// Applies the network options once the server has loaded its config: player verification,
@@ -297,6 +300,7 @@ public sealed class EmbeddedServerHost : IDisposable, IAsyncDisposable
         dummyUdpServer.SetNetwork(udpNetwork);
 
         string saveLocation = options.SaveFileLocation ?? Path.Combine(dataPath, "Saves", options.WorldName + ".vcdbs");
+        StageSaveFile(options, saveLocation, mayReplace: ownsDataPath);
 
         StartServerArgs startArgs = new()
         {
@@ -355,6 +359,7 @@ public sealed class EmbeddedServerHost : IDisposable, IAsyncDisposable
     public static EmbeddedServerHost Boot(ServerSandbox sandbox, ServerWorldOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(sandbox);
+        CheckSaveFile(options);
         return BootOnGameThread(gameThread => BootCore(sandbox, options, gameThread));
     }
 
@@ -392,6 +397,7 @@ public sealed class EmbeddedServerHost : IDisposable, IAsyncDisposable
         dummyUdpServer.SetNetwork(udpNetwork);
 
         string saveLocation = options.SaveFileLocation ?? Path.Combine(sandbox.SavesPath, options.WorldName + ".vcdbs");
+        StageSaveFile(options, saveLocation, mayReplace: true);
 
         StartServerArgs startArgs = new()
         {

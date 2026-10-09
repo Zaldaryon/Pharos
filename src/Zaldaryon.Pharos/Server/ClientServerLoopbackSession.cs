@@ -34,7 +34,7 @@ namespace Zaldaryon.Pharos.Server;
 /// </list>
 /// </para>
 /// </remarks>
-public sealed class ClientServerLoopbackSession : IDisposable
+public sealed partial class ClientServerLoopbackSession : IDisposable
 {
     private bool _disposed;
     private bool _isDisconnected;

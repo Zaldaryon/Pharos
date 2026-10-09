@@ -41,6 +41,15 @@ public sealed class ServerWorldAttribute : Attribute
     public string? WorldConfigurationJson { get; set; }
 
     /// <summary>
+    /// Gets or sets a save to boot from (a <c>.vcdbs</c> file), relative to the working folder or
+    /// to the test assembly's folder. Each test class boots into a copy of it in its own sandbox,
+    /// so the file never changes. The save keeps its own seed, play style, world type and world
+    /// configuration. Make one with <c>pharos fixture</c> or
+    /// <see cref="Server.EmbeddedServerHost.SaveWorldAsync"/>.
+    /// </summary>
+    public string? SaveFile { get; set; }
+
+    /// <summary>
     /// Gets or sets the world isolation mode for tests using this world configuration.
     /// When not set, uses <see cref="WorldIsolation.Rollback"/>.
     /// </summary>

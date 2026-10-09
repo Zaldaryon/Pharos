@@ -46,6 +46,9 @@ internal interface IScenarioLifecycle
     /// add to the failure message, or null to leave the failure as it is.
     /// </summary>
     string? CaptureFailure(ScenarioTestInfo test, Exception exception, bool timedOut);
+
+    /// <summary>The scenario's embedded server, which <c>pharos fixture</c> saves the world of, or null.</summary>
+    Server.EmbeddedServerHost? FixtureServer { get; }
 }
 
 /// <summary>The watchdog timeouts of scenario attributes.</summary>
@@ -320,13 +323,22 @@ internal sealed class ScenarioTestInvoker(
             Aggregator.Run(lifecycle.CheckLoggedErrors);
         }
 
+        // pharos fixture: the world the test built, saved before the class rolls it back. What mods
+        // log while saving counts as well.
+        ScenarioTestInfo info = new(Test.DisplayName, TestClass, TestMethod.Name);
+        if (!Aggregator.HasExceptions && FixtureExport.Requested(info) is { } destination)
+        {
+            await Aggregator.RunAsync(() => FixtureExport.SaveAsync(lifecycle.FixtureServer, info, destination)).ConfigureAwait(false);
+            if (!Aggregator.HasExceptions) Aggregator.Run(lifecycle.CheckLoggedErrors);
+        }
+
         if (Aggregator.HasExceptions)
         {
             Exception failure = Aggregator.ToException();
             string? details = null;
             try
             {
-                details = lifecycle.CaptureFailure(new ScenarioTestInfo(Test.DisplayName, TestClass, TestMethod.Name), failure, timedOut);
+                details = lifecycle.CaptureFailure(info, failure, timedOut);
             }
             catch (Exception ex)
             {
