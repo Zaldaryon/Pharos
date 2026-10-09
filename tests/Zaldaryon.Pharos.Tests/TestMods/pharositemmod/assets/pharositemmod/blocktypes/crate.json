@@ -1,0 +1,6 @@
+{
+  code: "crate",
+  shape: { base: "game:block/basic/cube" },
+  textures: { all: { base: "game:block/stone/rock/andesite1" } },
+  creativeinventory: { "general": ["*"] }
+}

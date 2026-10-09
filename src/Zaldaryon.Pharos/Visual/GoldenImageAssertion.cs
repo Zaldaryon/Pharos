@@ -174,22 +174,7 @@ public static class GoldenImageAssertion
             throw new FileNotFoundException($"Golden image not found: {path}");
         }
 
-        using SKBitmap src = SKBitmap.Decode(path)
-            ?? throw new InvalidOperationException($"Failed to decode golden image: {path}");
-
-        // Normalize to RGBA8888
-        var info = new SKImageInfo(src.Width, src.Height, SKColorType.Rgba8888, SKAlphaType.Unpremul);
-        SKBitmap? converted = src.Copy(info.ColorType);
-        if (converted is null)
-        {
-            throw new InvalidOperationException($"Failed to convert golden image to RGBA8888: {path}");
-        }
-
-        using SKBitmap bmp = converted;
-        byte[] pixels = new byte[bmp.Width * bmp.Height * 4];
-        System.Runtime.InteropServices.Marshal.Copy(bmp.GetPixels(), pixels, 0, pixels.Length);
-
-        return (pixels, bmp.Width, bmp.Height);
+        return FramebufferSnapshot.DecodeRgba(path);
     }
 
     private static void SaveHeatmapPng(byte[] pixels, int width, int height, string path)
@@ -212,7 +197,7 @@ public static class GoldenImageAssertion
         }
 
         using SKData data = bmp.Encode(SKEncodedImageFormat.Png, 100);
-        using FileStream fs = File.OpenWrite(path);
+        using FileStream fs = File.Create(path);
         data.SaveTo(fs);
     }
 

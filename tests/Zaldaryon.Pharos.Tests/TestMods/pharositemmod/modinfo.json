@@ -1,0 +1,11 @@
+{
+  "type": "content",
+  "modid": "pharositemmod",
+  "name": "Pharos Item Mod",
+  "version": "1.0.0",
+  "side": "Universal",
+  "requiredOnClient": true,
+  "description": "Content mod the item tooltip and icon tests stage: a sword with durability and a block, both in the creative inventory.",
+  "authors": ["Pharos"],
+  "dependencies": { "game": "" }
+}

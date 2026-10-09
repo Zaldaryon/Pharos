@@ -261,6 +261,14 @@ public sealed class HeadlessClient : IDisposable
     }
 
     /// <summary>
+    /// The client's items: stacks by code, their tooltips and their GUI icons. Engine mode only.
+    /// See <see cref="ItemDriver"/>.
+    /// </summary>
+    public ItemDriver Items => _items ??= new ItemDriver(this);
+
+    private ItemDriver? _items;
+
+    /// <summary>
     /// The client's hotkeys, its own and its mods': what they are bound to, and firing them by code.
     /// See <see cref="HotkeyDriver"/>.
     /// </summary>
