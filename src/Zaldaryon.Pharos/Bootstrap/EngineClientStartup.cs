@@ -109,6 +109,7 @@ internal static class EngineClientStartup
 
         EngineFocusPatcher.Register(platform);
         Inspection.ClientInspectionPatches.Install();
+        Network.ModNetworkPatches.Install();
         platform.window = window.NativeWindow;
         platform.XPlatInterface.Window = (GameWindow)(object)window.NativeWindow;
         platform.WindowSize.Width = options.Width;

@@ -270,6 +270,8 @@ internal sealed class LinkedUdpNetClient : DummyUdpNetClient
 
     public override void Send(Packet_UdpPacket packet)
     {
+        // Sent as far as the client can tell, whatever the link then does with it.
+        ModNetworkPatches.LinkedUdpSending(this, packet);
         if (_link.ClientSendsUdp(packet) is { } now) base.Send(now);
     }
 

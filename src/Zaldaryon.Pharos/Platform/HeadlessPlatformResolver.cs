@@ -190,6 +190,21 @@ public static class HeadlessPlatformResolver
 
             _initialized = true;
         }
+
+        InstallGameHooks();
+    }
+
+    /// <summary>
+    /// Installs Pharos's hooks on game methods before anything in the process boots. A method the
+    /// runtime has already compiled into its callers would go on running unpatched there: a client
+    /// in fixture mode, or a server, booted first in the process compiles the methods an engine
+    /// client's inspectors and measurements hook. Each hook does nothing until it is asked to.
+    /// </summary>
+    private static void InstallGameHooks()
+    {
+        Inspection.ClientInspectionPatches.Install();
+        Network.ModNetworkPatches.Install();
+        Performance.MeasurementHooks.InstallServer();
     }
 
     /// <summary>

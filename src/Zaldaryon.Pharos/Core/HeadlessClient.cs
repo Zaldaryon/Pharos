@@ -243,6 +243,15 @@ public sealed class HeadlessClient : IDisposable
     public IReadOnlyList<int> HighlightSlots() => Inspection.HighlightInspector.SlotsOf(this);
 
     /// <summary>
+    /// The messages the client's mods send and receive on their network channels, decoded, and
+    /// messages delivered to its handlers as if the server had sent them. Engine mode only. See
+    /// <see cref="Network.ModNetworkDriver"/>.
+    /// </summary>
+    public Network.ModNetworkDriver ModNetwork => _modNetwork ??= new Network.ModNetworkDriver(this);
+
+    private Network.ModNetworkDriver? _modNetwork;
+
+    /// <summary>
     /// Steps one frame for a driver that waits on the game: the whole session's when the client is
     /// in a <see cref="ClientServerLoopbackSession"/>, so the server keeps ticking, and the
     /// client's own frame otherwise.
@@ -357,6 +366,8 @@ public sealed class HeadlessClient : IDisposable
             ClientThread = clientThread,
             CharacterClass = options.CompleteCharacterSelection ? options.CharacterClass : null,
         };
+        // Mod messages are recorded from before the client connects.
+        if (bootMode == ClientBootMode.Engine) Network.ModNetworkLog.Register(client, () => FrameController.TotalFrames);
         Gui = new GuiInspector(screenManager);
         TestPlayer = new ClientTestPlayer(client);
         Culling = new CullingInspector(client);

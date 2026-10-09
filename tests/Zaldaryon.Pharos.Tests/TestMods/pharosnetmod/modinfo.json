@@ -1,0 +1,11 @@
+{
+  "type": "code",
+  "modid": "pharosnetmod",
+  "name": "Pharos Net Mod",
+  "version": "1.0.0",
+  "side": "Universal",
+  "requiredOnClient": true,
+  "description": "Source mod the mod network tests stage: a TCP and a UDP channel with messages both ways.",
+  "authors": ["Pharos"],
+  "dependencies": { "game": "" }
+}

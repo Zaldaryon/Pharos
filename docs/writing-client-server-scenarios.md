@@ -138,6 +138,30 @@ public async Task ClientReconnects_AfterPacketLoss()
 
 `[DataFiles]` puts files, such as mod configs, into the server's data folder, the client's, or both, before they boot. `{{pharos:port:NAME}}` placeholders get the same free port on both sides, read back with `DataFilePort("NAME")`. Each side's mod API reads its own folder. See [Data files](data-files.md).
 
+## Mod Network Messages
+
+`Client.ModNetwork` records every message the client's mods send and receive on their network channels, TCP and UDP, from the moment the client boots. It decodes them into your types, and hands messages to the client's handlers as if the server had sent them. It works on an engine-mode client only.
+
+```csharp
+// A look-alike of the mod's message: same [ProtoMember] numbers, matched by type name.
+[ProtoContract] public class SyncPacket { [ProtoMember(1)] public int Version { get; set; } }
+[ProtoContract] public class SyncAck { [ProtoMember(1)] public int Version { get; set; } }
+
+ModMessage delivered = await Client!.ModNetwork.DeliverAsync("mymod", new SyncPacket { Version = 1 });
+SyncAck ack = await Client.ModNetwork.WaitForSentAsync<SyncAck>("mymod", since: delivered.Sequence);
+Assert.Equal(1, ack.Version);
+```
+
+- **Reading.**
+  - `Sent<T>(channel)` and `Received<T>(channel)` decode the recorded messages of a type.
+  - `Of<T>(channel, direction)` and `Messages(channel)` give their details: sequence, frame, channel, UDP or not, message id, registered type name, raw bytes, and whether a test injected it.
+- **Matching types.** A test cannot reference a mod's types when the game compiles the mod from source. So `T` is matched to the channel's registered type by itself, then by full name, then by name. Pass `messageType` to name it outright. Protobuf decodes by member number, so a look-alike class with the same `[ProtoMember]` numbers works.
+- **Delivering.** `DeliverAsync<T>(channel, message)` calls the channel's handler on the client thread, the way a server message reaches it, then steps a frame. A handler that throws throws out of it, and it fails when the channel, the type or the handler is missing. `DeliverAsync(channel, messageId, bytes)` sends raw data: an old protocol version, or a malformed message.
+- **Waiting.** `WaitForSentAsync<T>` and `WaitForReceivedAsync<T>` step frames until a matching message comes after `since` (by default, now). A reply a handler sends during `DeliverAsync` is already recorded when it returns, so pass the delivered message's `Sequence` as `since`.
+- **Channels.** `Channels()` lists each channel with its message types and ids. `Mark()` and `Clear()` help bracket a step.
+
+A UDP message counts as sent when the client hands it to its socket: a degraded network may still drop it. The newest 10,000 messages are kept. A class whose pair is reused between tests (the default rollback isolation) starts each test with none; sequence numbers keep growing. Messages that do not decode as `T`, such as a malformed one a test delivered, are left out of `Sent<T>`, `Received<T>` and the waits.
+
 ## Lifecycle
 
 `ClientServerScenarioBase` handles the full lifecycle:
