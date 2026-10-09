@@ -23,7 +23,10 @@ public sealed record GuiDialogInfo(string Type, string? DebugName, string? Toggl
 /// <param name="Y">Top edge in screen pixels.</param>
 /// <param name="Width">Width in screen pixels.</param>
 /// <param name="Height">Height in screen pixels.</param>
-/// <param name="Text">The element's text, for text, button and input elements.</param>
+/// <param name="Text">
+/// The element's text, for text, button, input and rich text elements; a rich text element gives
+/// its components' display texts joined, without markup.
+/// </param>
 /// <param name="IsInteractive">Whether the element receives input.</param>
 /// <param name="IsClipped">Whether the element lies in a clipped region, such as a scrolled list, which shows only part of it.</param>
 public sealed record GuiElementInfo(
@@ -56,6 +59,28 @@ public sealed class GuiDriver
     {
         _client = client;
     }
+
+    /// <summary>
+    /// The survival handbook: open it, search it, open a page by its code and read the page. See
+    /// <see cref="HandbookDriver"/>.
+    /// </summary>
+    public HandbookDriver Handbook => _handbook ??= new HandbookDriver(_client, this);
+
+    private HandbookDriver? _handbook;
+
+    /// <summary>
+    /// The world map and the minimap: their layers, markers and waypoints. See <see cref="WorldMapDriver"/>.
+    /// </summary>
+    public WorldMapDriver WorldMap => _worldMap ??= new WorldMapDriver(_client, this);
+
+    private WorldMapDriver? _worldMap;
+
+    /// <summary>
+    /// The character dialog: its tabs, the stats beside it and the gear slots. See <see cref="CharacterDriver"/>.
+    /// </summary>
+    public CharacterDriver Character => _character ??= new CharacterDriver(_client, this);
+
+    private CharacterDriver? _character;
 
     /// <summary>The dialogs currently open, HUD elements included.</summary>
     public IReadOnlyList<GuiDialogInfo> OpenDialogs() => _client.RunOnClientThread(() =>
@@ -157,6 +182,72 @@ public sealed class GuiDriver
     }
 
     /// <summary>
+    /// Clicks a text field to focus it and empties it as a player does: Ctrl+A selects its text
+    /// and Backspace deletes it, so the field's change handler sees the empty text.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">The dialog is not open or has no such element.</exception>
+    public void ClearInput(string nameOrType, string elementKey)
+    {
+        Click(nameOrType, elementKey);
+        _client.Input.InjectKey(GlKeys.LControl, pressed: true);
+        try
+        {
+            _client.Input.PressKey(GlKeys.A);
+        }
+        finally
+        {
+            _client.Input.InjectKey(GlKeys.LControl, pressed: false);
+        }
+
+        _client.Input.PressKey(GlKeys.BackSpace);
+    }
+
+    /// <summary>
+    /// The tabs of the tab strip <paramref name="tabsKey"/> in the open dialog, vertical or
+    /// horizontal, with their labels and which are active.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">The dialog is not open or has no such tab strip.</exception>
+    public IReadOnlyList<GuiTabInfo> Tabs(string nameOrType, string tabsKey) =>
+        _client.RunOnClientThread(() => GuiTabs.Read(RequireTabStrip(nameOrType, tabsKey)));
+
+    /// <summary>
+    /// Clicks tab <paramref name="index"/> of the tab strip <paramref name="tabsKey"/> with a real
+    /// mouse click, at a point inside the area the strip's own handler tests for that tab.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">
+    /// The dialog is not open, has no such tab strip, or the tab is scrolled out of view.
+    /// </exception>
+    /// <exception cref="ArgumentOutOfRangeException">The strip has no tab <paramref name="index"/>.</exception>
+    public void ClickTab(string nameOrType, string tabsKey, int index)
+    {
+        (int x, int y) = _client.RunOnClientThread(() => GuiTabs.ClickPoint(RequireTabStrip(nameOrType, tabsKey), index));
+        _client.Input.Click(x, y);
+    }
+
+    /// <summary>
+    /// Clicks the tab labelled <paramref name="tabName"/> (ignoring case) of the tab strip
+    /// <paramref name="tabsKey"/>. See <see cref="ClickTab(string, string, int)"/>.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">The dialog is not open, or no tab has that label.</exception>
+    public void ClickTab(string nameOrType, string tabsKey, string tabName)
+    {
+        IReadOnlyList<GuiTabInfo> tabs = Tabs(nameOrType, tabsKey);
+        GuiTabInfo tab = tabs.FirstOrDefault(t => string.Equals(t.Name, tabName, StringComparison.OrdinalIgnoreCase))
+            ?? throw new InvalidOperationException($"Tab strip '{tabsKey}' has no tab '{tabName}'. Tabs: {string.Join(", ", tabs.Select(t => t.Name))}.");
+        ClickTab(nameOrType, tabsKey, tab.Index);
+    }
+
+    // Client thread.
+    private GuiElement RequireTabStrip(string nameOrType, string tabsKey)
+    {
+        GuiDialog dialog = RequireDialog(nameOrType);
+        return ((IEnumerable<KeyValuePair<string, GuiComposer>>)dialog.Composers).ToList()
+            .Select(c => c.Value.GetElement(tabsKey))
+            .FirstOrDefault(e => e != null && GuiTabs.IsTabStrip(e))
+            ?? throw new InvalidOperationException($"Dialog '{nameOrType}' has no tab strip '{tabsKey}'.");
+    }
+
+    /// <summary>
     /// Clicks slot <paramref name="slotIndex"/> of an item slot grid, as a player clicks a slot to
     /// pick up or put down the stack.
     /// </summary>
@@ -188,16 +279,32 @@ public sealed class GuiDriver
         _client.Input.Click(x, y, button);
     }
 
+    /// <summary>
+    /// Steps frames, the whole session's when the client is in one, until <paramref name="condition"/>
+    /// holds on the client thread, for at most <paramref name="maxFrames"/> frames.
+    /// </summary>
+    internal async Task<bool> StepUntilAsync(Func<bool> condition, int maxFrames, CancellationToken ct)
+    {
+        for (int i = 0; ; i++)
+        {
+            if (_client.RunOnClientThread(condition)) return true;
+            if (i >= maxFrames) return false;
+            await _client.StepAsync(ct).ConfigureAwait(false);
+        }
+    }
+
     /// <summary>Closes the dialog the way its own close action does.</summary>
     /// <returns>Whether the dialog was open and closed.</returns>
     public bool Close(string nameOrType) => _client.RunOnClientThread(() => Dialog(nameOrType)?.TryClose() == true);
 
-    private GuiDialog? Dialog(string nameOrType) =>
+    // Client thread.
+    internal GuiDialog? Dialog(string nameOrType) =>
         _client.Client.api.Gui.OpenedGuis.FirstOrDefault(d =>
             string.Equals(d.GetType().Name, nameOrType, StringComparison.OrdinalIgnoreCase)
             || string.Equals(d.DebugName, nameOrType, StringComparison.OrdinalIgnoreCase));
 
-    private GuiDialog RequireDialog(string nameOrType) =>
+    // Client thread.
+    internal GuiDialog RequireDialog(string nameOrType) =>
         Dialog(nameOrType) ?? throw new InvalidOperationException(
             $"No open dialog '{nameOrType}'. Open: {string.Join(", ", _client.Client.api.Gui.OpenedGuis.Select(d => d.GetType().Name))}.");
 
@@ -230,10 +337,18 @@ public sealed class GuiDriver
         return false;
     }
 
-    private static string? TextOf(GuiElement element) => element switch
+    internal static string? TextOf(GuiElement element) => element switch
     {
         GuiElementTextButton button => button.Text,
         GuiElementTextBase text => text.GetText(),
+        GuiElementRichtext rich => RichText(rich.Components),
         _ => null,
     };
+
+    /// <summary>
+    /// The text of rich text components, their display texts joined: links give their label and
+    /// item stacks and images give nothing.
+    /// </summary>
+    internal static string RichText(IEnumerable<RichTextComponentBase>? components) =>
+        components == null ? "" : string.Concat(components.OfType<RichTextComponent>().Select(c => c.DisplayText));
 }

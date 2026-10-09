@@ -1,0 +1,6 @@
+{
+  code: "gizmo",
+  shape: { base: "game:item/resource/beeswax" },
+  texture: { base: "game:item/resource/beeswax" },
+  creativeinventory: { "general": ["*"] }
+}

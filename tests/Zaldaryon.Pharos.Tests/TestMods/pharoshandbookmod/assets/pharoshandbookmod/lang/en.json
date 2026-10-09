@@ -1,0 +1,5 @@
+{
+  "guide-title": "Pharos field guide",
+  "guide-text": "Smelting turns ore into metal in a bloomery.<br>Every lighthouse keeper carries <a href=\"handbook://item-pharoshandbookmod:gizmo\">a Pharos gizmo</a>.",
+  "item-gizmo": "Pharos gizmo"
+}
