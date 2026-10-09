@@ -15,7 +15,7 @@
     <IsPackable>true</IsPackable>
     <IsTestProject>false</IsTestProject>
     <PackageId>Zaldaryon.Pharos.Cli</PackageId>
-    <Version>0.5.0</Version>
+    <Version>0.6.0</Version>
     <Authors>Zaldaryon</Authors>
     <Description>The pharos command: smoke-test a Vintage Story mod (boot, join, play, fail on errors), run benchmarks, migrate Atlas suites. Uses your own Vintage Story install; ships none of the game's files.</Description>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
