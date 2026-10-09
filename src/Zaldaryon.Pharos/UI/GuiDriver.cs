@@ -1,5 +1,6 @@
 using System.Reflection;
 using Vintagestory.API.Client;
+using Vintagestory.API.Config;
 using Zaldaryon.Pharos.Core;
 using Zaldaryon.Pharos.Input;
 
@@ -24,10 +25,11 @@ public sealed record GuiDialogInfo(string Type, string? DebugName, string? Toggl
 /// <param name="Height">Height in screen pixels.</param>
 /// <param name="Text">The element's text, for text, button and input elements.</param>
 /// <param name="IsInteractive">Whether the element receives input.</param>
+/// <param name="IsClipped">Whether the element lies in a clipped region, such as a scrolled list, which shows only part of it.</param>
 public sealed record GuiElementInfo(
     string Dialog, string Composer, string Key, string Type,
     double X, double Y, double Width, double Height,
-    string? Text, bool IsInteractive)
+    string? Text, bool IsInteractive, bool IsClipped = false)
 {
     /// <summary>The element's centre, where a click lands.</summary>
     public (int X, int Y) Center => ((int)(X + Width / 2), (int)(Y + Height / 2));
@@ -69,20 +71,65 @@ public sealed class GuiDriver
     /// composers, with bounds and text.
     /// </summary>
     /// <exception cref="InvalidOperationException">No such dialog is open.</exception>
-    public IReadOnlyList<GuiElementInfo> Elements(string nameOrType) => _client.RunOnClientThread(() =>
-    {
-        GuiDialog dialog = RequireDialog(nameOrType);
-        List<GuiElementInfo> elements = [];
+    public IReadOnlyList<GuiElementInfo> Elements(string nameOrType) => _client.RunOnClientThread(() => ElementsOf(RequireDialog(nameOrType)));
 
+    // Client thread.
+    private static List<GuiElementInfo> ElementsOf(GuiDialog dialog)
+    {
+        List<GuiElementInfo> elements = [];
         foreach (KeyValuePair<string, GuiComposer> entry in ((IEnumerable<KeyValuePair<string, GuiComposer>>)dialog.Composers).ToList())
         {
             (string composerName, GuiComposer composer) = (entry.Key, entry.Value);
-            Add(elements, dialog, composerName, s_interactive?.GetValue(composer) as Dictionary<string, GuiElement>, interactive: true);
-            Add(elements, dialog, composerName, s_static?.GetValue(composer) as Dictionary<string, GuiElement>, interactive: false);
+            Dictionary<string, GuiElement>? interactive = s_interactive?.GetValue(composer) as Dictionary<string, GuiElement>;
+            Dictionary<string, GuiElement>? statics = s_static?.GetValue(composer) as Dictionary<string, GuiElement>;
+            HashSet<ElementBounds> clips = [];
+            foreach (GuiElement element in (statics?.Values ?? Enumerable.Empty<GuiElement>()).Concat(interactive?.Values ?? Enumerable.Empty<GuiElement>()))
+            {
+                if (IsClip(element)) clips.Add(element.Bounds);
+            }
+
+            Add(elements, dialog, composerName, interactive, interactive: true, clips);
+            Add(elements, dialog, composerName, statics, interactive: false, clips);
         }
 
         return elements;
-    });
+    }
+
+    /// <summary>
+    /// How the open dialog matching <paramref name="nameOrType"/> is laid out now, for
+    /// <see cref="Assertions.PharosAssert.DialogOnScreen(DialogLayout, double)"/> and
+    /// <see cref="Assertions.PharosAssert.NoOverlappingElements"/>. Read it after a frame has run
+    /// since the window or the GUI scale changed: dialogs lay themselves out again in a frame.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">No such dialog is open.</exception>
+    public DialogLayout Layout(string nameOrType) =>
+        _client.RunOnClientThread(() =>
+        {
+            GuiDialog dialog = RequireDialog(nameOrType);
+
+            // A composer lists an element that takes input among both its interactive and its
+            // static elements: each once here.
+            List<GuiElementInfo> elements = [];
+            HashSet<(string, string)> seen = [];
+            foreach (GuiElementInfo element in ElementsOf(dialog).OrderByDescending(e => e.IsInteractive))
+            {
+                if (seen.Add((element.Composer, element.Key))) elements.Add(element);
+            }
+
+            List<ComposerBounds> composers = [];
+            foreach (KeyValuePair<string, GuiComposer> entry in ((IEnumerable<KeyValuePair<string, GuiComposer>>)dialog.Composers).ToList())
+            {
+                ElementBounds bounds = entry.Value.Bounds;
+                composers.Add(new ComposerBounds(entry.Key, bounds.absX, bounds.absY, bounds.OuterWidth, bounds.OuterHeight));
+            }
+
+            return new DialogLayout(
+                dialog.GetType().Name, _client.Platform.WindowSize.Width, _client.Platform.WindowSize.Height,
+                RuntimeEnv.GUIScale, composers, elements);
+        });
+
+    /// <summary>How the open dialog of type <typeparamref name="TDialog"/> is laid out now. See <see cref="Layout(string)"/>.</summary>
+    public DialogLayout Layout<TDialog>() where TDialog : GuiDialog => Layout(typeof(TDialog).Name);
 
     /// <summary>The element with key <paramref name="elementKey"/> in the dialog, or null.</summary>
     public GuiElementInfo? Find(string nameOrType, string elementKey) =>
@@ -154,7 +201,7 @@ public sealed class GuiDriver
         Dialog(nameOrType) ?? throw new InvalidOperationException(
             $"No open dialog '{nameOrType}'. Open: {string.Join(", ", _client.Client.api.Gui.OpenedGuis.Select(d => d.GetType().Name))}.");
 
-    private static void Add(List<GuiElementInfo> into, GuiDialog dialog, string composer, Dictionary<string, GuiElement>? elements, bool interactive)
+    private static void Add(List<GuiElementInfo> into, GuiDialog dialog, string composer, Dictionary<string, GuiElement>? elements, bool interactive, HashSet<ElementBounds> clips)
     {
         if (elements == null) return;
 
@@ -164,8 +211,23 @@ public sealed class GuiDriver
             into.Add(new GuiElementInfo(
                 dialog.GetType().Name, composer, key, element.GetType().Name,
                 bounds.absX, bounds.absY, bounds.OuterWidth, bounds.OuterHeight,
-                TextOf(element), interactive));
+                TextOf(element), interactive, !IsClip(element) && InClip(bounds, clips)));
         }
+    }
+
+    // The game's clip region element is internal: matched by name.
+    private static bool IsClip(GuiElement element) => element.GetType().Name == "GuiElementClip";
+
+    // Laid out inside a clip region: the region's bounds are among its parents.
+    private static bool InClip(ElementBounds bounds, HashSet<ElementBounds> clips)
+    {
+        if (clips.Count == 0) return false;
+        for (ElementBounds? parent = bounds.ParentBounds; parent != null && parent != parent.ParentBounds; parent = parent.ParentBounds)
+        {
+            if (clips.Contains(parent)) return true;
+        }
+
+        return false;
     }
 
     private static string? TextOf(GuiElement element) => element switch

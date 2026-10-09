@@ -434,6 +434,7 @@ public sealed class HeadlessClient : IDisposable
         ScreenManager = screenManager;
         RunningGameScreen = runningGameScreen;
         Window = window;
+        window.Owner = this;
         Options = options;
         _tempDataPath = tempDataPath;
         FrameController = new DeterministicFrameController(client, platform, screenManager, runningGameScreen, window)
