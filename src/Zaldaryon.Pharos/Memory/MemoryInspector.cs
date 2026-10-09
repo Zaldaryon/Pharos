@@ -14,6 +14,31 @@ namespace Zaldaryon.Pharos.Memory;
 /// </summary>
 public sealed class MemoryInspector
 {
+    /// <summary>The client this inspector belongs to, for what it reads on the client.</summary>
+    internal Core.HeadlessClient? Owner { get; set; }
+
+    /// <summary>
+    /// Tracks every OpenGL buffer, vertex array, texture, framebuffer and renderbuffer the client
+    /// creates and deletes until the scope is disposed; its <see cref="GlResourceScope.Report"/>
+    /// lists what was created and not deleted. Assert on it with
+    /// <c>PharosAssert.NoGlLeaks(scope, kinds)</c>.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">The inspector has no client, another client's GL objects are tracked, or OpenGL object creation could not be hooked.</exception>
+    public GlResourceScope TrackGlResources(GlResourceTrackingOptions? options = null)
+    {
+        Core.HeadlessClient owner = Owner ?? throw new InvalidOperationException("This memory inspector belongs to no client.");
+        try
+        {
+            Graphics.GlResourceHooks.Install();
+        }
+        catch (InvalidOperationException ex)
+        {
+            throw new InvalidOperationException("OpenGL objects cannot be tracked: " + ex.Message, ex);
+        }
+
+        return new GlResourceScope(owner, options ?? new GlResourceTrackingOptions());
+    }
+
     private const string HarmonyId = "zaldaryon.pharos.memory";
 
     private readonly Harmony _harmony = new(HarmonyId);

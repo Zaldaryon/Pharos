@@ -642,10 +642,25 @@ public static class PharosAssert
         if (report.BufferLeaks > 0) leaks.Add($"Buffers: {report.BufferLeaks}");
         if (report.TextureLeaks > 0) leaks.Add($"Textures: {report.TextureLeaks}");
         if (report.VAOLeaks > 0) leaks.Add($"VAOs: {report.VAOLeaks}");
+        if (report.FramebufferLeaks > 0) leaks.Add($"Framebuffers: {report.FramebufferLeaks}");
+        if (report.RenderbufferLeaks > 0) leaks.Add($"Renderbuffers: {report.RenderbufferLeaks}");
 
         throw new PharosAssertException(
             $"OpenGL resource leaks detected. {string.Join(", ", leaks)}. " +
             $"Total: {report.TotalResourceLeaks} leaked resources.");
+    }
+
+    /// <summary>
+    /// Asserts that the client deleted every OpenGL object of <paramref name="kinds"/> it created
+    /// while <paramref name="scope"/> was open. The message lists each one, with the code that
+    /// created it when the scope captured stacks.
+    /// </summary>
+    /// <exception cref="PharosAssertException">Something leaked.</exception>
+    public static void NoGlLeaks(GlResourceScope scope, GlResourceKind kinds = GlResourceKind.All)
+    {
+        ArgumentNullException.ThrowIfNull(scope);
+        GlResourceReport report = scope.Report(kinds);
+        if (report.HasLeaks) throw new PharosAssertException("OpenGL resource leaks detected: " + report);
     }
 
     /// <summary>
@@ -685,7 +700,22 @@ public static class PharosAssert
     /// <param name="maxTextureLeaks">Maximum allowed texture leaks.</param>
     /// <param name="maxVaoLeaks">Maximum allowed VAO leaks.</param>
     /// <exception cref="PharosAssertException">Thrown when any leak count exceeds its threshold.</exception>
-    public static void GlLeaksBelow(GlLeakReport report, int maxBufferLeaks, int maxTextureLeaks, int maxVaoLeaks)
+    /// <remarks>Framebuffer and renderbuffer leaks are not checked; the overload that takes their limits checks them.</remarks>
+    public static void GlLeaksBelow(GlLeakReport report, int maxBufferLeaks, int maxTextureLeaks, int maxVaoLeaks) =>
+        GlLeaksBelow(report, maxBufferLeaks, maxTextureLeaks, maxVaoLeaks, int.MaxValue, int.MaxValue);
+
+    /// <summary>
+    /// Asserts that GL resource leaks, framebuffers and renderbuffers included, are within the
+    /// specified thresholds.
+    /// </summary>
+    /// <param name="report">The GL leak report to validate.</param>
+    /// <param name="maxBufferLeaks">Maximum allowed buffer leaks.</param>
+    /// <param name="maxTextureLeaks">Maximum allowed texture leaks.</param>
+    /// <param name="maxVaoLeaks">Maximum allowed VAO leaks.</param>
+    /// <param name="maxFramebufferLeaks">Maximum allowed framebuffer leaks.</param>
+    /// <param name="maxRenderbufferLeaks">Maximum allowed renderbuffer leaks.</param>
+    /// <exception cref="PharosAssertException">Thrown when any leak count exceeds its threshold.</exception>
+    public static void GlLeaksBelow(GlLeakReport report, int maxBufferLeaks, int maxTextureLeaks, int maxVaoLeaks, int maxFramebufferLeaks, int maxRenderbufferLeaks)
     {
         ArgumentNullException.ThrowIfNull(report);
 
@@ -697,6 +727,10 @@ public static class PharosAssert
             violations.Add($"Textures: {report.TextureLeaks} > {maxTextureLeaks}");
         if (report.VAOLeaks > maxVaoLeaks)
             violations.Add($"VAOs: {report.VAOLeaks} > {maxVaoLeaks}");
+        if (report.FramebufferLeaks > maxFramebufferLeaks)
+            violations.Add($"Framebuffers: {report.FramebufferLeaks} > {maxFramebufferLeaks}");
+        if (report.RenderbufferLeaks > maxRenderbufferLeaks)
+            violations.Add($"Renderbuffers: {report.RenderbufferLeaks} > {maxRenderbufferLeaks}");
 
         if (violations.Count > 0)
         {

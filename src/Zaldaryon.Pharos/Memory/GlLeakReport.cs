@@ -24,6 +24,12 @@ public sealed record GlLeakReport
     /// </summary>
     public int VAOLeaks { get; init; }
 
+    /// <summary>Framebuffers created and never deleted.</summary>
+    public int FramebufferLeaks { get; init; }
+
+    /// <summary>Renderbuffers created and never deleted.</summary>
+    public int RenderbufferLeaks { get; init; }
+
     /// <summary>
     /// Growth in unmanaged memory (bytes) during the recording window.
     /// Negative values indicate memory was reclaimed.
@@ -31,15 +37,15 @@ public sealed record GlLeakReport
     public long UnmanagedGrowthBytes { get; init; }
 
     /// <summary>
-    /// True if any resource leaks were detected (BufferLeaks > 0 || TextureLeaks > 0 || VAOLeaks > 0).
+    /// True if any resource leaks were detected: buffers, textures, vertex arrays, framebuffers or renderbuffers.
     /// Note: UnmanagedGrowthBytes is not considered a leak for this property.
     /// </summary>
-    public bool HasLeaks => BufferLeaks > 0 || TextureLeaks > 0 || VAOLeaks > 0;
+    public bool HasLeaks => TotalResourceLeaks > 0;
 
     /// <summary>
     /// Total number of leaked GL resources across all categories.
     /// </summary>
-    public int TotalResourceLeaks => BufferLeaks + TextureLeaks + VAOLeaks;
+    public int TotalResourceLeaks => BufferLeaks + TextureLeaks + VAOLeaks + FramebufferLeaks + RenderbufferLeaks;
 
     /// <summary>
     /// Empty report with no leaks and zero memory growth.
