@@ -18,7 +18,7 @@ row adds a short hash of its arguments to the method name, and a folder that alr
 | `client.log`, `server.log` | What the client and the server logged during the test. | `Logs` |
 | `client-logs/`, `server-logs/` | The game's own log files (`client-main.log`, `server-main.log` and the rest), up to their last 20 MB each. | `Logs` |
 | `packets.json` | The client-server traffic of the test, in the `PacketRecorder` format. | `Packets`, which is off by default |
-| `run.json` | The test, the outcome (`failed` or `timedOut`), the exception, the game and Pharos versions, the seed, world type and play style, the isolation and the isolation report (how the hosts were made ready), the client's boot mode, the frames and server ticks the test stepped, the run id, the time, the OS and the files written. | `RunInfo` |
+| `run.json` | The test, the outcome (`failed` or `timedOut`), the exception, the game and Pharos versions, the game install, the seed, world type and play style, the isolation and the isolation report (how the hosts were made ready), the client's boot mode, the frames and server ticks the test stepped, the run id, the time, the OS and the files written. | `RunInfo` |
 
 The failure message itself starts with the original exception's type and message. It then says
 where the artifacts went and lists the first 20 errors the client and the server logged. On a

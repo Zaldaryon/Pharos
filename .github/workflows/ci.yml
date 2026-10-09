@@ -76,8 +76,6 @@ jobs:
     if: needs.plan.outputs.run == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 60
-    env:
-      VS_CACHE_PATH: /home/runner/.vintagestory-cache
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -93,35 +91,27 @@ jobs:
           timeout 600 sudo apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Retries=3 update
           timeout 600 sudo apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Retries=3 install -y mesa-utils libgl1-mesa-dri xvfb libopenal1 libglfw3 libglfw3-dev libcairo2 libcairo2-dev
 
-      - name: Cache Vintage Story
-        id: cache-vs
-        uses: actions/cache@v4
+      # The same action mods use in their own CI, so a change to it is tested here.
+      - name: Set up Vintage Story
+        id: vs
+        uses: ./.github/actions/setup-vintage-story
         with:
-          path: ${{ env.VS_CACHE_PATH }}/${{ env.VS_VERSION }}
-          key: vintagestory-linux-${{ env.VS_VERSION }}-v2
-
-      - name: Download Vintage Story
-        if: steps.cache-vs.outputs.cache-hit != 'true'
-        run: |
-          mkdir -p ${{ env.VS_CACHE_PATH }}/${{ env.VS_VERSION }}
-          wget -q https://cdn.vintagestory.at/gamefiles/stable/vs_client_linux-x64_${{ env.VS_VERSION }}.tar.gz -O /tmp/vs.tar.gz
-          tar xzf /tmp/vs.tar.gz -C ${{ env.VS_CACHE_PATH }}/${{ env.VS_VERSION }} --strip-components=1
-          rm /tmp/vs.tar.gz
+          version: ${{ env.VS_VERSION }}
+          mesa: "false"
+          xvfb: "false"
 
       - name: Build
         env:
-          VINTAGE_STORY: ${{ env.VS_CACHE_PATH }}/${{ env.VS_VERSION }}
+          VINTAGE_STORY: ${{ steps.vs.outputs.path }}
         run: dotnet build Pharos.sln -c Release
 
-      - name: Stage assets and native libraries
-        run: |
-          ln -sf ${{ env.VS_CACHE_PATH }}/${{ env.VS_VERSION }}/assets tests/Zaldaryon.Pharos.Tests/bin/Release/net10.0/assets || true
-          ln -sf ${{ env.VS_CACHE_PATH }}/${{ env.VS_VERSION }}/assets ./assets || true
+      - name: Stage assets
+        run: ln -sfn ${{ steps.vs.outputs.path }}/assets ./assets
 
       - name: Test with Mesa headless
         env:
-          VINTAGE_STORY: ${{ env.VS_CACHE_PATH }}/${{ env.VS_VERSION }}
-          LD_LIBRARY_PATH: ${{ env.VS_CACHE_PATH }}/${{ env.VS_VERSION }}/Lib:${{ env.VS_CACHE_PATH }}/${{ env.VS_VERSION }}:/usr/lib/x86_64-linux-gnu
+          VINTAGE_STORY: ${{ steps.vs.outputs.path }}
+          LD_LIBRARY_PATH: ${{ steps.vs.outputs.path }}/Lib:${{ steps.vs.outputs.path }}:/usr/lib/x86_64-linux-gnu
           LIBGL_ALWAYS_SOFTWARE: 1
           GALLIUM_DRIVER: llvmpipe
           MESA_LOADER_DRIVER_OVERRIDE: llvmpipe
@@ -146,7 +136,7 @@ jobs:
 
       - name: Check the pharos tool package
         env:
-          VINTAGE_STORY: ${{ env.VS_CACHE_PATH }}/${{ env.VS_VERSION }}
+          VINTAGE_STORY: ${{ steps.vs.outputs.path }}
         run: |
           # A version of its own, so the install below can only take this build, never a
           # published package of the same version.
@@ -156,7 +146,7 @@ jobs:
       - name: Smoke-test mods with the installed pharos tool
         if: needs.plan.outputs.full == 'true'
         env:
-          VINTAGE_STORY: ${{ env.VS_CACHE_PATH }}/${{ env.VS_VERSION }}
+          VINTAGE_STORY: ${{ steps.vs.outputs.path }}
           LIBGL_ALWAYS_SOFTWARE: 1
           GALLIUM_DRIVER: llvmpipe
           MESA_LOADER_DRIVER_OVERRIDE: llvmpipe

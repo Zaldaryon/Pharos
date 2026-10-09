@@ -187,6 +187,7 @@ public static class HeadlessPlatformResolver
 
             // Ensure Lib and Mods directories are staged in AppContext.BaseDirectory for mod compilation
             EnsureStagedBinaries(gamePath);
+            CheckGameMatchesBuild(gamePath, AppContext.BaseDirectory);
 
             _initialized = true;
         }
@@ -218,15 +219,70 @@ public static class HeadlessPlatformResolver
         string gamePath = ResolveGamePath(customGamePath);
         string baseDir = AppContext.BaseDirectory;
 
-        LinkOrCopyDirectory(Path.Combine(gamePath, "Lib"), Path.Combine(baseDir, "Lib"));
-        LinkOrCopyDirectory(Path.Combine(gamePath, "Mods"), Path.Combine(baseDir, "Mods"));
-        LinkOrCopyDirectory(Path.Combine(gamePath, "assets"), Path.Combine(baseDir, "assets"));
+        // A copy made from another install, or from this one before it was updated, is staged again.
+        string fingerprint = $"{Path.GetFullPath(gamePath)}|{InstalledGame.ReadVersion(gamePath) ?? "unknown"}";
+        LinkOrCopyDirectory(Path.Combine(gamePath, "Lib"), Path.Combine(baseDir, "Lib"), fingerprint);
+        LinkOrCopyDirectory(Path.Combine(gamePath, "Mods"), Path.Combine(baseDir, "Mods"), fingerprint);
+        LinkOrCopyDirectory(Path.Combine(gamePath, "assets"), Path.Combine(baseDir, "assets"), fingerprint);
         EnsureAssetsPath(Path.Combine(gamePath, "assets"));
+        StageSoftwareGl(Path.Combine(gamePath, "Lib"), baseDir);
     }
 
-    private static void LinkOrCopyDirectory(string sourceDir, string targetDir)
+    /// <summary>
+    /// The game's assemblies sit next to the tests from the build, copied from the install they were
+    /// built against, while the rest of the game comes from <paramref name="gamePath"/>. When the two
+    /// are different versions, the engine fails in ways that are hard to trace, so that stops here;
+    /// <c>PHAROS_ALLOW_GAME_MISMATCH=1</c> turns it into a warning. The same version with a
+    /// different API file, as a patched install has, only warns.
+    /// </summary>
+    internal static void CheckGameMatchesBuild(string gamePath, string baseDir)
     {
-        if (!Directory.Exists(sourceDir) || Directory.Exists(targetDir))
+        string? installed = InstalledGame.ReadVersion(gamePath);
+        string? built = InstalledGame.ReadVersion(baseDir);
+        if (installed == null || built == null) return;
+
+        if (installed != built)
+        {
+            string message = $"The tests were built against Vintage Story {built}, but VINTAGE_STORY is {installed} ({gamePath}). " +
+                "Build the tests again against this install, or set PHAROS_ALLOW_GAME_MISMATCH=1 to run anyway.";
+            if (Environment.GetEnvironmentVariable("PHAROS_ALLOW_GAME_MISMATCH") != "1") throw new InvalidOperationException(message);
+            Console.Error.WriteLine("Pharos: " + message);
+            return;
+        }
+
+        FileInfo installedApi = new(Path.Combine(gamePath, "VintagestoryAPI.dll"));
+        FileInfo builtApi = new(Path.Combine(baseDir, "VintagestoryAPI.dll"));
+        if (installedApi.Length != builtApi.Length)
+        {
+            Console.Error.WriteLine($"Pharos: the VintagestoryAPI.dll the tests were built with differs from the one in {gamePath}, though both are {installed}.");
+        }
+    }
+
+    // Windows finds opengl32.dll next to the test host before anything on PATH, so a software GL
+    // that setup put into the game's Lib folder (see .github/actions/setup-vintage-story) is
+    // copied beside the tests.
+    private static void StageSoftwareGl(string libDir, string baseDir)
+    {
+        if (!OperatingSystem.IsWindows() || !File.Exists(Path.Combine(libDir, "opengl32.dll"))) return;
+        foreach (string name in (string[])["opengl32.dll", "libgallium_wgl.dll", "libglapi.dll", "dxil.dll"])
+        {
+            string source = Path.Combine(libDir, name), target = Path.Combine(baseDir, name);
+            if (!File.Exists(source) || File.Exists(target)) continue;
+            try
+            {
+                File.Copy(source, target);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+            }
+        }
+    }
+
+    internal static void LinkOrCopyDirectory(string sourceDir, string targetDir, string fingerprint)
+    {
+        // With no install found, the game path is the test output itself: nothing to stage.
+        if (!Directory.Exists(sourceDir) || SamePath(sourceDir, targetDir)
+            || (Directory.Exists(targetDir) && !IsStale(sourceDir, targetDir, fingerprint)))
         {
             return;
         }
@@ -234,6 +290,11 @@ public static class HeadlessPlatformResolver
         // Several test processes can start in one output folder at once, as `pharos run
         // --parallel` does: one stages, the others wait and find the folder there.
         using FileStream? gate = LockStaging(Path.GetDirectoryName(targetDir)!);
+        if (IsStale(sourceDir, targetDir, fingerprint) && !Unstage(targetDir))
+        {
+            return;
+        }
+
         if (Directory.Exists(targetDir))
         {
             return;
@@ -257,6 +318,7 @@ public static class HeadlessPlatformResolver
             if (Directory.Exists(staging)) Directory.Delete(staging, recursive: true);
             CopyDirectoryRecursive(sourceDir, staging);
             Directory.Move(staging, targetDir);
+            File.WriteAllText(MarkerOf(targetDir), fingerprint);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
@@ -269,6 +331,74 @@ public static class HeadlessPlatformResolver
             {
             }
         }
+    }
+
+    // Beside a copied folder: what it was copied from.
+    private static string MarkerOf(string targetDir) => targetDir + ".pharos-source";
+
+    /// <summary>
+    /// Whether <paramref name="targetDir"/> holds something other than <paramref name="sourceDir"/>:
+    /// a link to another folder, a link whose folder is gone, or a copy made from another install
+    /// or version. A copy staged before Pharos wrote its marker is left as it is.
+    /// </summary>
+    internal static bool IsStale(string sourceDir, string targetDir, string fingerprint)
+    {
+        DirectoryInfo target = new(targetDir);
+        if (target.LinkTarget is { } link)
+        {
+            string resolved = Path.IsPathRooted(link) ? link : Path.Combine(Path.GetDirectoryName(Path.GetFullPath(targetDir))!, link);
+            return !SamePath(resolved, sourceDir) || !Directory.Exists(targetDir);
+        }
+
+        if (!Directory.Exists(targetDir)) return false;
+        string marker = MarkerOf(targetDir);
+        return File.Exists(marker) && File.ReadAllText(marker) != fingerprint;
+    }
+
+    private static bool SamePath(string a, string b) => string.Equals(
+        Path.TrimEndingDirectorySeparator(Path.GetFullPath(a)),
+        Path.TrimEndingDirectorySeparator(Path.GetFullPath(b)),
+        OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
+
+    // Removes a stale link or copy. A copy another process still holds files of stays, with a
+    // warning: its tests run against what it holds.
+    private static bool Unstage(string targetDir)
+    {
+        if (new DirectoryInfo(targetDir).LinkTarget != null)
+        {
+            try
+            {
+                Directory.Delete(targetDir);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                File.Delete(targetDir);
+            }
+
+            return true;
+        }
+
+        string old = $"{targetDir}.old-{Environment.ProcessId}";
+        try
+        {
+            Directory.Move(targetDir, old);
+            File.Delete(MarkerOf(targetDir));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Console.Error.WriteLine($"Pharos: {targetDir} was copied from another Vintage Story install and could not be replaced ({ex.Message}). Delete it to stage the current one.");
+            return false;
+        }
+
+        try
+        {
+            Directory.Delete(old, recursive: true);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+        }
+
+        return true;
     }
 
     // A lock other processes see too: a file only one of them can hold open. Null when it cannot

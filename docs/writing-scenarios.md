@@ -160,6 +160,27 @@ Mod paths can be:
 
 The staged copy is deleted together with the client.
 
+### Game versions
+
+`[RequireGameVersion]` skips a scenario, or every scenario of a class, on other installs. The skip reason names the range and the installed version:
+
+```csharp
+[ClientScenario]
+[RequireGameVersion(">=1.22.0", Reason = "Uses the 1.22 calendar API.")]
+public void SeasonsFollowTheNewCalendar() { ... }
+```
+
+- **Ranges:** `>=1.22.0`, `>1.21.6`, `<=1.22.7`, `<1.23.0`, `=1.22.7`, or a bare `1.22.7`.
+  - Commas join comparisons that must all hold: `>=1.21.0, <1.23.0`.
+  - `||` joins alternatives.
+  - `1.22.x`, `1.22.*`, a bare `1.22` and `=1.22` mean any 1.22 version. A comparison against `1.22` means `1.22.0`: `<=1.22` leaves out `1.22.7`.
+- **Pre-releases** compare as versions: `>=1.22.0` leaves out `1.22.0-rc.3`, and `>=1.22.0-rc.1` takes it.
+- **Several attributes** must all hold, on the method, its class and the base classes.
+- **A range that cannot be read** fails the test instead of skipping it.
+- **When the version cannot be read**, the test runs.
+- **Plain xUnit tests** use `[GameVersionFact(">=1.22.0")]` and `[GameVersionTheory(...)]`. For them, a range that cannot be read skips the test with the reason, since xUnit drops a test whose attribute throws.
+- **Fixtures still boot.** xUnit still creates the class and collection fixtures of a class whose tests are all skipped.
+
 ## Isolation Modes
 
 By default, tests in a class share a single client instance for performance. Override `IsolationMode` to change this behavior. Scenarios run one at a time across the whole test run, because the game keeps process-wide static state.

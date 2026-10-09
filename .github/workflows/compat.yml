@@ -1,0 +1,144 @@
+name: Compatibility
+
+# Builds Pharos and runs its live suite against several game versions, one job per version, and
+# writes a table of the results to the run's summary and a `compatibility-table` artifact. Each
+# version builds against its own install, so a version whose API moved shows as a failed build.
+# docs/compatibility.md says how the table is kept there.
+
+on:
+  schedule:
+    - cron: "41 4 * * 1"
+  workflow_dispatch:
+    inputs:
+      versions:
+        description: Game versions to test, as a JSON array.
+        required: false
+        default: '["1.22.0","1.22.7"]'
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  plan:
+    name: Plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      versions: ${{ steps.plan.outputs.versions }}
+    steps:
+      - name: Choose the versions
+        id: plan
+        env:
+          VERSIONS: ${{ github.event.inputs.versions || '["1.22.0","1.22.7"]' }}
+        run: |
+          echo "$VERSIONS" | jq -e 'type == "array" and length > 0 and all(type == "string")' > /dev/null \
+            || { echo "::error::versions must be a JSON array of version strings."; exit 1; }
+          echo "versions=$(echo "$VERSIONS" | jq -c .)" >> "$GITHUB_OUTPUT"
+
+  sweep:
+    name: Vintage Story ${{ matrix.vs }}
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        vs: ${{ fromJSON(needs.plan.outputs.versions) }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Set up Vintage Story
+        uses: ./.github/actions/setup-vintage-story
+        with:
+          version: ${{ matrix.vs }}
+
+      - name: Build
+        id: build
+        continue-on-error: true
+        run: dotnet build Pharos.sln -c Release
+
+      - name: Live suite
+        id: test
+        if: steps.build.outcome == 'success'
+        continue-on-error: true
+        run: dotnet test tests/Zaldaryon.Pharos.Tests -c Release --no-build --filter "Category=Live" --logger "trx;LogFileName=live.trx" --results-directory out
+
+      - name: Result
+        if: always()
+        env:
+          VS: ${{ matrix.vs }}
+          BUILD: ${{ steps.build.outcome }}
+          TEST: ${{ steps.test.outcome }}
+        run: |
+          passed=0; failed=0; skipped=0; failures="[]"
+          if [ -f out/live.trx ]; then
+            counters=$(grep -o '<Counters [^>]*>' out/live.trx | head -1 || true)
+            num() { echo "$counters" | grep -o " $1=\"[0-9]*\"" | grep -o '[0-9]*' || echo 0; }
+            passed=$(num passed); failed=$(num failed)
+            skipped=$(( $(num total) - $(num executed) ))
+            failures=$(grep -o '<UnitTestResult [^>]*outcome="Failed"[^>]*>' out/live.trx | grep -o 'testName="[^"]*"' | sed 's/testName="//;s/"$//' | head -20 | jq -R . | jq -s -c . || echo '[]')
+          fi
+          if [ "$BUILD" != "success" ]; then status="build failed"
+          elif [ "$failed" != "0" ] || [ "$TEST" != "success" ]; then status="fail"
+          else status="pass"; fi
+          jq -n --arg version "$VS" --arg build "$BUILD" --arg status "$status" \
+            --argjson passed "$passed" --argjson failed "$failed" --argjson skipped "$skipped" --argjson failures "$failures" \
+            '{version: $version, build: $build, status: $status, passed: $passed, failed: $failed, skipped: $skipped, failures: $failures}' \
+            > "result-$VS.json"
+          cat "result-$VS.json"
+
+      - name: Upload the result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: compat-${{ matrix.vs }}
+          path: |
+            result-${{ matrix.vs }}.json
+            out/live.trx
+          if-no-files-found: ignore
+          retention-days: 30
+
+  table:
+    name: Compatibility table
+    needs: sweep
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Download the results
+        uses: actions/download-artifact@v4
+        with:
+          pattern: compat-*
+          merge-multiple: true
+          path: results
+
+      - name: Write the table
+        run: |
+          if ! ls results/result-*.json > /dev/null 2>&1; then
+            echo "No results: every version failed before writing one." | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          {
+            echo "| Vintage Story | Build | Passed | Failed | Skipped | Status |"
+            echo "|---|---|---|---|---|---|"
+            jq -rs 'sort_by(.version | split("-")[0] | split(".") | map(tonumber)) | .[] | "| \(.version) | \(.build) | \(.passed) | \(.failed) | \(.skipped) | \(.status) |"' results/result-*.json
+            echo
+            jq -rs '.[] | select(.failures | length > 0) | "**\(.version)** failed: \(.failures | join(", "))\n"' results/result-*.json
+            echo "_Run of $(date -u +%Y-%m-%d), commit ${GITHUB_SHA::7}._"
+          } > compatibility-table.md
+          cat compatibility-table.md >> "$GITHUB_STEP_SUMMARY"
+          cat compatibility-table.md
+
+      - name: Upload the table
+        uses: actions/upload-artifact@v4
+        with:
+          name: compatibility-table
+          path: compatibility-table.md
+          retention-days: 90

@@ -207,7 +207,8 @@ public static partial class RunCommand
         double scale = TimeoutScale();
         TimeSpan timeout = options.WorkerTimeout * scale;
         TimeSpan testTimeout = options.TestTimeout * scale;
-        output.Started(groups.Count, parallel, xvfb);
+        string? gamePath = options.GamePath != null ? Path.GetFullPath(options.GamePath) : GamePathOrNull();
+        output.Started(groups.Count, parallel, xvfb, gamePath, gamePath == null ? null : InstalledGame.ReadVersion(gamePath));
 
         DateTimeOffset start = DateTimeOffset.Now;
         Stopwatch watch = Stopwatch.StartNew();
@@ -439,6 +440,20 @@ public static partial class RunCommand
         public int Total => Passed + Failed + Skipped;
     }
 
+    // The install workers will use when no --game is given; nothing is booted to find it.
+    private static string? GamePathOrNull()
+    {
+        try
+        {
+            string path = Platform.HeadlessPlatformResolver.ResolveGamePath();
+            return File.Exists(Path.Combine(path, "VintagestoryAPI.dll")) ? path : null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     /// <summary>Writes what happens as text or as JSON lines, one at a time.</summary>
     private sealed class Output(TextWriter? text, TextWriter? json)
     {
@@ -475,12 +490,13 @@ public static partial class RunCommand
             }
         }
 
-        public void Started(int groups, int parallel, bool xvfb)
+        public void Started(int groups, int parallel, bool xvfb, string? gamePath, string? gameVersion)
         {
             lock (_gate)
             {
+                if (gamePath != null) text?.WriteLine($"Vintage Story {gameVersion ?? "(version unknown)"} at {gamePath}");
                 text?.WriteLine($"Running {groups} groups, {parallel} at a time{(xvfb ? ", each on its own virtual display" : "")}.");
-                Json(new { @event = "started", groups, parallel, xvfb });
+                Json(new { @event = "started", groups, parallel, xvfb, gamePath, gameVersion });
             }
         }
 

@@ -12,6 +12,16 @@ Pharos runs inside a real Vintage Story client, so it depends on the game's runt
 
 Primary support means the CI pipeline tests against that version on every commit. Best effort means it should work but is not continuously verified.
 
+### Checked every week
+
+`.github/workflows/compat.yml` builds Pharos against several game versions and runs its live suite on each, every Monday and on demand (Actions, "Compatibility", "Run workflow", with a JSON array of versions such as `["1.21.6","1.22.0","1.22.7"]`). Each version builds against its own install, so a version whose API moved shows as a failed build rather than as failed tests. The run's summary and its `compatibility-table` artifact hold the table: the build, the passed, failed and skipped tests, and the first failing tests of each version. To update the table below, copy it from the latest run. A pre-release such as `1.22.0-rc.3` is downloaded from the unstable channel.
+
+### Tests that need a version
+
+`[RequireGameVersion(">=1.22.0")]` on a scenario or its class skips it on other installs, saying which range it needs and which version is installed. `[GameVersionFact]` and `[GameVersionTheory]` do the same for plain xUnit tests. See "Game versions" in `writing-scenarios.md`.
+
+Every scenario's output starts with the game and Pharos versions it ran with, `pharos run` prints the install it uses, and a failure's `run.json` names the version and the install.
+
 Pharos follows Vintage Story releases. When VS 1.23 ships, 1.22.x becomes best effort and 1.21.x drops to unsupported.
 
 ## OpenGL Requirements
