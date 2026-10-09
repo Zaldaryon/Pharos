@@ -45,6 +45,7 @@ The game's assemblies are copied next to the tests when they are built, from the
 - A link or copy made from another install, or from this one at another version, is replaced. A copied folder another process still holds files of is kept, with a warning.
 - When the copied assemblies are from another version than `VINTAGE_STORY`, the tests stop with a message saying to build them again against that install. `PHAROS_ALLOW_GAME_MISMATCH=1` turns that into a warning.
 - The same version with a different `VintagestoryAPI.dll`, as a patched install has, only warns.
+- An Optimum build and vanilla Vintage Story are not interchangeable: tests built against one stop on the other, as for another version. See [optimum.md](optimum.md).
 
 ## Auth
 

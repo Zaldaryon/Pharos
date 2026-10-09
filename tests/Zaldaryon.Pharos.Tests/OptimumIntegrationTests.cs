@@ -14,19 +14,6 @@ namespace Zaldaryon.Pharos.Tests;
 
 // Optimum ships a patched VintagestoryAPI, so these checks bind by reflection and stay compilable
 // against the official client that CI downloads. Without an Optimum build they skip by design.
-public sealed class OptimumFactAttribute : FactAttribute
-{
-    internal const string DiagnosticsTypeName = "Vintagestory.API.Config.OptimumDiagnostics, VintagestoryAPI";
-
-    public OptimumFactAttribute()
-    {
-        if (Type.GetType(DiagnosticsTypeName) is null)
-        {
-            Skip = "VINTAGE_STORY does not point at an Optimum build.";
-        }
-    }
-}
-
 [Collection("Sequential")]
 [Trait(PharosTraits.Category, PharosTraits.Live)]
 public sealed class OptimumIntegrationTests
@@ -41,7 +28,7 @@ public sealed class OptimumIntegrationTests
     {
         // VintagestoryAPI.dll is copied from VINTAGE_STORY at build time, so the diagnostics type
         // resolving at all is the proof that the loaded engine is the patched one.
-        Type diagnostics = Type.GetType(OptimumFactAttribute.DiagnosticsTypeName)!;
+        Type diagnostics = Type.GetType(OptimumInstall.DiagnosticsTypeName)!;
 
         HeadlessClientOptions options = new()
         {
@@ -75,7 +62,7 @@ public sealed class OptimumIntegrationTests
     {
         MethodInfo summaryMethod = diagnostics.GetMethod("GetTessellationSummary", BindingFlags.Public | BindingFlags.Static)
             ?? throw new InvalidOperationException(
-                $"{OptimumFactAttribute.DiagnosticsTypeName} must expose a public static GetTessellationSummary() for headless progress reporting.");
+                $"{OptimumInstall.DiagnosticsTypeName} must expose a public static GetTessellationSummary() for headless progress reporting.");
 
         return (string)summaryMethod.Invoke(null, null)!;
     }

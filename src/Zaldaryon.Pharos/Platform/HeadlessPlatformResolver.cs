@@ -258,11 +258,32 @@ public static class HeadlessPlatformResolver
             return;
         }
 
+        // An Optimum build patches the API and the engine library together: built against one and
+        // run on the other, the patched library meets an API without its patches, or the reverse.
+        OptimumInfo? installedOptimum = OptimumInstall.Detect(gamePath);
+        OptimumInfo? builtOptimum = OptimumInstall.Detect(baseDir);
+        if ((installedOptimum == null) != (builtOptimum == null))
+        {
+            string message = installedOptimum != null
+                ? $"VINTAGE_STORY ({gamePath}) is an Optimum build, but the tests were built against vanilla Vintage Story {built}. Build the tests again against this install, or set PHAROS_ALLOW_GAME_MISMATCH=1 to run anyway."
+                : $"The tests were built against an Optimum build, but VINTAGE_STORY ({gamePath}) is vanilla Vintage Story {installed}. Build the tests again against this install, or set PHAROS_ALLOW_GAME_MISMATCH=1 to run anyway.";
+            if (Environment.GetEnvironmentVariable("PHAROS_ALLOW_GAME_MISMATCH") != "1") throw new InvalidOperationException(message);
+            Console.Error.WriteLine("Pharos: " + message);
+            return;
+        }
+
+        if (installedOptimum is { LibPatched: false })
+        {
+            Console.Error.WriteLine($"Pharos: the API in {gamePath} carries Optimum's diagnostics but its engine library has none of Optimum's patches; the install looks half patched.");
+        }
+
         FileInfo installedApi = new(Path.Combine(gamePath, "VintagestoryAPI.dll"));
         FileInfo builtApi = new(Path.Combine(baseDir, "VintagestoryAPI.dll"));
-        if (installedApi.Length != builtApi.Length)
+        if (installedApi.Length != builtApi.Length || installedOptimum?.Version != builtOptimum?.Version)
         {
-            Console.Error.WriteLine($"Pharos: the VintagestoryAPI.dll the tests were built with differs from the one in {gamePath}, though both are {installed}.");
+            Console.Error.WriteLine(installedOptimum != null
+                ? $"Pharos: the tests were built against another Optimum build than the one in {gamePath} ({OptimumInstall.Describe(installedOptimum)})."
+                : $"Pharos: the VintagestoryAPI.dll the tests were built with differs from the one in {gamePath}, though both are {installed}.");
         }
     }
 

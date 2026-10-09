@@ -494,9 +494,10 @@ public static partial class RunCommand
         {
             lock (_gate)
             {
-                if (gamePath != null) text?.WriteLine($"Vintage Story {gameVersion ?? "(version unknown)"} at {gamePath}");
+                OptimumInfo? optimum = gamePath == null ? null : OptimumInstall.Detect(gamePath);
+                if (gamePath != null) text?.WriteLine($"Vintage Story {gameVersion ?? "(version unknown)"}{(optimum == null ? "" : $" ({OptimumInstall.Describe(optimum)})")} at {gamePath}");
                 text?.WriteLine($"Running {groups} groups, {parallel} at a time{(xvfb ? ", each on its own virtual display" : "")}.");
-                Json(new { @event = "started", groups, parallel, xvfb, gamePath, gameVersion });
+                Json(new { @event = "started", groups, parallel, xvfb, gamePath, gameVersion, optimum = optimum?.Version });
             }
         }
 

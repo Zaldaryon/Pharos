@@ -24,6 +24,8 @@ Every scenario's output starts with the game and Pharos versions it ran with, `p
 
 Pharos follows Vintage Story releases. When VS 1.23 ships, 1.22.x becomes best effort and 1.21.x drops to unsupported.
 
+Optimum builds are supported too; see [optimum.md](optimum.md).
+
 ## OpenGL Requirements
 
 | Feature | Minimum | Recommended | Notes |

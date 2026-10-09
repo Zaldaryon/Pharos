@@ -203,36 +203,66 @@ public static class InstalledGame
     /// <c>VintagestoryAPI.dll</c> without loading it, or null. The file version of that DLL says
     /// only the minor version, so the API's own constant is read.
     /// </summary>
-    public static string? ReadVersion(string installDir)
-    {
-        string path = Path.Combine(installDir, "VintagestoryAPI.dll");
-        if (!File.Exists(path)) return null;
+    public static string? ReadVersion(string installDir) =>
+        ApiMetadata.ReadStringConstant(Path.Combine(installDir, "VintagestoryAPI.dll"), "Vintagestory.API.Config", "GameVersion", "ShortGameVersion");
+}
 
+/// <summary>Reads types and constants from an assembly's metadata, without loading it.</summary>
+internal static class ApiMetadata
+{
+    /// <summary>Whether <paramref name="path"/> defines <paramref name="ns"/>.<paramref name="type"/>; false when it cannot be read.</summary>
+    public static bool HasType(string path, string ns, string type) => Read(path, (metadata, _) => FindType(metadata, ns, type) is not null);
+
+    /// <summary>The string constant <paramref name="field"/> of a type, or null.</summary>
+    public static string? ReadStringConstant(string path, string ns, string type, string field) => Read(path, (metadata, _) =>
+    {
+        if (FindType(metadata, ns, type) is not { } definition) return null;
+        foreach (FieldDefinitionHandle handle in definition.GetFields())
+        {
+            FieldDefinition candidate = metadata.GetFieldDefinition(handle);
+            if (metadata.GetString(candidate.Name) != field) continue;
+            ConstantHandle constant = candidate.GetDefaultValue();
+            if (constant.IsNil) return null;
+            Constant value = metadata.GetConstant(constant);
+            if (value.TypeCode != ConstantTypeCode.String) return null;
+            BlobReader blob = metadata.GetBlobReader(value.Value);
+            return blob.ReadUTF16(blob.Length);
+        }
+
+        return null;
+    });
+
+    /// <summary>Whether a type of <paramref name="path"/> has a field or property named <paramref name="member"/>.</summary>
+    public static bool HasMember(string path, string ns, string type, string member) => Read(path, (metadata, _) =>
+    {
+        if (FindType(metadata, ns, type) is not { } definition) return false;
+        return definition.GetFields().Any(h => metadata.GetString(metadata.GetFieldDefinition(h).Name) == member)
+            || definition.GetProperties().Any(h => metadata.GetString(metadata.GetPropertyDefinition(h).Name) == member);
+    });
+
+    private static TypeDefinition? FindType(MetadataReader metadata, string ns, string type)
+    {
+        foreach (TypeDefinitionHandle handle in metadata.TypeDefinitions)
+        {
+            TypeDefinition definition = metadata.GetTypeDefinition(handle);
+            if (metadata.GetString(definition.Name) == type && metadata.GetString(definition.Namespace) == ns) return definition;
+        }
+
+        return null;
+    }
+
+    private static T? Read<T>(string path, Func<MetadataReader, PEReader, T?> read)
+    {
+        if (!File.Exists(path)) return default;
         try
         {
             using FileStream stream = File.OpenRead(path);
             using PEReader pe = new(stream);
-            MetadataReader metadata = pe.GetMetadataReader();
-            foreach (TypeDefinitionHandle handle in metadata.TypeDefinitions)
-            {
-                TypeDefinition type = metadata.GetTypeDefinition(handle);
-                if (metadata.GetString(type.Name) != "GameVersion" || metadata.GetString(type.Namespace) != "Vintagestory.API.Config") continue;
-
-                foreach (FieldDefinitionHandle fieldHandle in type.GetFields())
-                {
-                    FieldDefinition field = metadata.GetFieldDefinition(fieldHandle);
-                    if (metadata.GetString(field.Name) != "ShortGameVersion") continue;
-                    ConstantHandle constant = field.GetDefaultValue();
-                    if (constant.IsNil) return null;
-                    BlobReader blob = metadata.GetBlobReader(metadata.GetConstant(constant).Value);
-                    return blob.ReadUTF16(blob.Length);
-                }
-            }
+            return read(pe.GetMetadataReader(), pe);
         }
         catch (Exception ex) when (ex is IOException or BadImageFormatException or UnauthorizedAccessException or InvalidOperationException)
         {
+            return default;
         }
-
-        return null;
     }
 }
