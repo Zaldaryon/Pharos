@@ -1,0 +1,11 @@
+{
+  "type": "code",
+  "modid": "pharoslangmod",
+  "name": "Pharos Lang Mod",
+  "version": "1.0.0",
+  "side": "Universal",
+  "requiredOnClient": true,
+  "description": "Source mod the reload and translation tests stage: an item with a name, a block without one, translations in two languages, and counters for the reload events.",
+  "authors": ["Pharos"],
+  "dependencies": { "game": "" }
+}

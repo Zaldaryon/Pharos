@@ -225,6 +225,10 @@ public sealed class ClientCommandDriver
 
             commands.Execute(name, game.player, game.currentGroupid, args, result =>
             {
+                // The game looked the status line up as a translation key just now: that is not a
+                // translation the test's code is missing.
+                Translations.TranslationCapture.Forget(result.StatusMessage);
+                if (result.Status == EnumCommandStatus.NoSuchCommand) Translations.TranslationCapture.Forget("No such command exists");
                 lock (_lines)
                 {
                     // The game shows the status message just before it reports back: that line is
