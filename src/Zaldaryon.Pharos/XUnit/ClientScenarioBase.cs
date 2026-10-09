@@ -3,6 +3,7 @@ using Zaldaryon.Pharos.Bootstrap;
 using Zaldaryon.Pharos.Core;
 using Zaldaryon.Pharos.Player;
 using Zaldaryon.Pharos.Reporting;
+using Zaldaryon.Pharos.Server;
 using Zaldaryon.Pharos.Timing;
 using Zaldaryon.Pharos.XUnit.Execution;
 
@@ -216,6 +217,8 @@ public abstract class ClientScenarioBase : IAsyncLifetime, IScenarioLifecycle
         LoggedErrorGate.ThrowIfAny(LoggedErrorGate.Collect(FailOnLoggedErrors, AllowedLoggedErrors, Client?.Logs));
 
     void IScenarioLifecycle.BodyTimedOut(bool stillRunning) => _run.BodyTimedOut(stillRunning);
+
+    EmbeddedServerHost? IScenarioLifecycle.FixtureServer => null;
 
     string? IScenarioLifecycle.CaptureFailure(ScenarioTestInfo test, Exception exception, bool timedOut) =>
         FailureArtifactWriter.Write(Describe(test, exception, timedOut, Client)).Summary();

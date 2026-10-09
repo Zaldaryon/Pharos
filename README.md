@@ -162,6 +162,19 @@ pharos run tests/MyMod.Tests --filter "Category=Live" --parallel 2 --trx results
 
 See [Parallel Runs](docs/parallel-runs.md).
 
+To build a test world, stamp in a WorldEdit schematic, or boot each class from a saved world that
+`pharos fixture` made from a builder test:
+
+```csharp
+await this.PlaceSchematicAsync("Fixtures/furnace-room.json", new BlockPos(512, 4, 512));
+```
+
+```bash
+pharos fixture tests/MyMod.Tests --scenario VillageBuilder.Build --out tests/MyMod.Tests/Fixtures/village.vcdbs
+```
+
+See [Test Worlds](docs/test-worlds.md).
+
 ## Quick Start: A Real Client Joining a Server
 
 Boot the client in engine mode to run the vanilla client startup. The client joins the server, goes through character creation, receives chunks and renders the world through the game's own pipeline. It needs no auth server and no outbound network access:
@@ -252,6 +265,7 @@ See the [inspection API reference](docs/inspection-api.md) for method signatures
 - [Smoke Testing a Mod](docs/smoke-test.md): `pharos smoke` and `ModSmokeTest`, in a terminal or in CI
 - [Boot Diagnostics](docs/boot-diagnostics.md): The warnings a client or server logs while booting, `[StrictBoot]` and `[AllowBootDiagnostic]`
 - [Parallel Runs](docs/parallel-runs.md): `pharos run --parallel`, which runs test classes in worker processes and merges their results
+- [Test Worlds](docs/test-worlds.md): Schematics, saved worlds with `[ServerWorld(SaveFile = ...)]`, and `pharos fixture`
 - [Failure Artifacts and the Watchdog](docs/failure-artifacts.md): The screenshot, logs, traffic and run details a failing scenario saves, and the timeout that stops a hung one
 - [CI and Cloud Environments](docs/ci-and-cloud.md): Running the suite in CI and cloud environments, offline or online auth, and a dedicated server in Docker
 - [Client-Server Testing](docs/writing-client-server-scenarios.md): `[ClientServerScenario]`, lockstep stepping, and packet assertions

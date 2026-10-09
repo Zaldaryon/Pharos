@@ -312,7 +312,7 @@ public static partial class RunCommand
     }
 
     /// <summary>The test assembly: the target itself, or the build output of the project it names.</summary>
-    private static async Task<string> ResolveAssemblyAsync(RunOptions options, string dotnet, TextWriter stderr, CancellationToken ct)
+    internal static async Task<string> ResolveAssemblyAsync(RunOptions options, string dotnet, TextWriter stderr, CancellationToken ct)
     {
         string target = Path.GetFullPath(options.Target);
         if (target.EndsWith(".dll", StringComparison.OrdinalIgnoreCase))
@@ -354,7 +354,7 @@ public static partial class RunCommand
     }
 
     /// <summary>The fully qualified names of the tests <paramref name="filter"/> matches; nothing runs.</summary>
-    private static async Task<IReadOnlyList<string>> ListAsync(string dotnet, string assembly, string? filter, string results, CancellationToken ct)
+    internal static async Task<IReadOnlyList<string>> ListAsync(string dotnet, string assembly, string? filter, string results, CancellationToken ct)
     {
         Directory.CreateDirectory(results);
         string list = Path.Combine(results, "tests.txt");
@@ -425,7 +425,7 @@ public static partial class RunCommand
         return new ProcessResult(process.ExitCode, await stdout.ConfigureAwait(false) + await stderr.ConfigureAwait(false));
     }
 
-    private sealed class RunSetupException(string message) : Exception(message);
+    internal sealed class RunSetupException(string message) : Exception(message);
 
     /// <summary>What a run did, for the summary.</summary>
     private sealed record Summary(IReadOnlyList<WorkerOutcome> Outcomes, IReadOnlyList<TrxResult> NotStarted, TimeSpan Duration, string TrxPath, string WorkersDirectory)

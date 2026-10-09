@@ -124,7 +124,14 @@ internal sealed partial class DataFileSet
     }
 
     // Relative to the working folder, as [ServerMods] is, or else to the test assembly's folder.
-    private static string ResolveSource(string source)
+    private static string ResolveSource(string source) => ResolveFixture(source, "data file");
+
+    /// <summary>
+    /// The full path of a fixture file: relative to the working folder, as <c>[ServerMods]</c> is,
+    /// or else to the test assembly's folder.
+    /// </summary>
+    /// <exception cref="FileNotFoundException">Neither exists.</exception>
+    internal static string ResolveFixture(string source, string what)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(source);
         string full = Path.GetFullPath(source);
@@ -134,7 +141,7 @@ internal sealed partial class DataFileSet
         if (File.Exists(beside)) return beside;
 
         throw new FileNotFoundException(
-            $"The data file '{source}' does not exist: looked at {full} and {beside}. Copy fixtures to the test output with " +
+            $"The {what} '{source}' does not exist: looked at {full} and {beside}. Copy fixtures to the test output with " +
             "<None Include=\"Fixtures\\**\" CopyToOutputDirectory=\"PreserveNewest\" />.", source);
     }
 

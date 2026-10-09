@@ -396,6 +396,8 @@ public class ScenarioPipelineTests
             return Recorder.Details;
         }
 
+        Zaldaryon.Pharos.Server.EmbeddedServerHost? IScenarioLifecycle.FixtureServer => null;
+
         [ServerScenario]
         public void Passes() => Recorder.Add("body");
 

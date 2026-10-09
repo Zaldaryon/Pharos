@@ -75,6 +75,13 @@ public static class PhCliRunner
                 case "run":
                     return ParallelRuns.RunCommand.Run(args[1..], stdout, stderr);
 
+                case "fixture":
+                    return ParallelRuns.FixtureCommand.Run(args[1..], stdout, stderr);
+
+                case "help" when args.Length > 1 && args[1] == "fixture":
+                    stdout.WriteLine(ParallelRuns.FixtureCommand.HelpText);
+                    return ExitCodeSuccess;
+
                 case "help" when args.Length > 1 && args[1] == "run":
                     stdout.WriteLine(ParallelRuns.RunCommand.HelpText);
                     return ExitCodeSuccess;
@@ -300,6 +307,7 @@ public static class PhCliRunner
         Commands:
           (default)         Run xUnit tests from a test assembly
           run               Run a test assembly's classes in parallel worker processes
+          fixture           Run a builder scenario and save the world it leaves
           benchmark         Run performance benchmarks and check for regressions
           smoke             Boot, join and play with a mod, failing on errors
           migrate-atlas     Migrate Atlas test suites to Pharos

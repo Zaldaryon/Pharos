@@ -35,6 +35,15 @@ public sealed record ServerWorldOptions
     public string? SaveFileLocation { get; init; }
 
     /// <summary>
+    /// A save to start from (a <c>.vcdbs</c> file), relative to the working folder or to the test
+    /// assembly's folder, or null for a new world. The server boots into a copy of it, so the file
+    /// itself never changes. The save keeps its own seed, play style, world type and world
+    /// configuration: those options do not apply to it. Cannot be combined with
+    /// <see cref="SaveFileLocation"/>.
+    /// </summary>
+    public string? SaveFile { get; init; }
+
+    /// <summary>
     /// JSON string containing world configuration overrides. Defaults to an empty JSON object.
     /// </summary>
     public string WorldConfigurationJson { get; init; } = "{}";

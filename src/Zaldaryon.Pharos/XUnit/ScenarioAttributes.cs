@@ -42,6 +42,7 @@ internal static class ScenarioAttributes
             PlayStyle = world.PlayStyle,
             WorldType = world.WorldType,
             WorldConfigurationJson = world.WorldConfigurationJson ?? options.WorldConfigurationJson,
+            SaveFile = world.SaveFile,
         };
     }
 

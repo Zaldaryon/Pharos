@@ -170,6 +170,7 @@ public abstract class ServerScenarioBase : IAsyncLifetime, IScenarioLifecycle
             _host = null;
             if (_pooled == null)
             {
+                EmbeddedServerHost.CheckSaveFile(options);
                 ScenarioHostPool.Clear();
 
                 ServerSandbox sandbox = new();
@@ -246,6 +247,15 @@ public abstract class ServerScenarioBase : IAsyncLifetime, IScenarioLifecycle
         LoggedErrorGate.ThrowIfAny(LoggedErrorGate.Collect(FailOnLoggedErrors, AllowedLoggedErrors, _host?.Logs));
 
     void IScenarioLifecycle.BodyTimedOut(bool stillRunning) => _run.BodyTimedOut(stillRunning);
+
+    EmbeddedServerHost? IScenarioLifecycle.FixtureServer => _host;
+
+    /// <summary>
+    /// Stamps a WorldEdit schematic into the world; see <see cref="EmbeddedServerHost.PlaceSchematicAsync"/>.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">The server is not running.</exception>
+    protected Task<World.SchematicPlacement> PlaceSchematicAsync(string path, Vintagestory.API.MathTools.BlockPos origin, World.SchematicOptions? options = null, CancellationToken ct = default) =>
+        (Host ?? throw new InvalidOperationException("The server is not running.")).PlaceSchematicAsync(path, origin, options, ct);
 
     string? IScenarioLifecycle.CaptureFailure(ScenarioTestInfo test, Exception exception, bool timedOut) =>
         FailureArtifactWriter.Write(Describe(test, exception, timedOut, _host, _pooled?.Sandbox)).Summary();

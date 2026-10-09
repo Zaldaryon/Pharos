@@ -344,6 +344,16 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime, IScenarioLifecy
 
     void IScenarioLifecycle.BodyTimedOut(bool stillRunning) => _run.BodyTimedOut(stillRunning);
 
+    EmbeddedServerHost? IScenarioLifecycle.FixtureServer => _serverHost;
+
+    /// <summary>
+    /// Stamps a WorldEdit schematic into the server's world and steps the session until the client
+    /// has it, meshed; see <see cref="ClientServerLoopbackSession.PlaceSchematicAsync"/>.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">The session is not running.</exception>
+    protected Task<World.SchematicPlacement> PlaceSchematicAsync(string path, Vintagestory.API.MathTools.BlockPos origin, World.SchematicOptions? options = null, int maxFrames = 600, CancellationToken ct = default) =>
+        (Session ?? throw new InvalidOperationException("The session is not running.")).PlaceSchematicAsync(path, origin, options, maxFrames, ct);
+
     string? IScenarioLifecycle.CaptureFailure(ScenarioTestInfo test, Exception exception, bool timedOut) =>
         FailureArtifactWriter.Write(Describe(test, exception, timedOut)).Summary();
 
