@@ -2,6 +2,95 @@
 
 Pharos provides several inspection classes that expose the client's rendering internals to test code. Each inspector targets a specific subsystem and uses Harmony patches or reflection to capture state without modifying the game's behavior.
 
+## Client internals: renderers, tick listeners, particles and highlights
+
+These read an engine-mode client's own registries while it plays: what a mod registered, and
+what it does frame by frame. A fixture-mode client runs none of it, and these throw
+`InvalidOperationException` there. Each record names the mod its code belongs to, by the
+assembly the code is in. The game's own content counts as its mods' (`essentials`, `survival`,
+`creative`). `null` means the engine's own systems, or a helper of the game's API that a mod uses,
+such as a block entity's animation renderer.
+
+### Renderers
+
+```csharp
+RendererInfo mine = Assert.Single(Client.Renderers.Of("mymod"));
+Assert.Equal(EnumRenderStage.Opaque, mine.Stage);
+Assert.Equal(30, await Client.Renderers.CountCallsAsync(mine, frames: 30));
+```
+
+- **Listing.** `All()`, `Of(modId)` and `At(stage)` list renderers in the order the game calls
+  them. Each `RendererInfo` gives:
+  - `Stage`, `Index`, `RenderOrder` and `RenderRange`;
+  - `ProfilingName`, the name the mod registered it with;
+  - `TypeName`: for a `DummyRenderer`, the type and method of its action;
+  - `Mod`.
+- **Counting.** `CountCallsAsync(renderer, frames)` and `CountCallsAsync(frames)` (every renderer)
+  step the frames, the whole session's in a client-server test, and count each stage the game
+  runs.
+- **Conditional stages.** Some stages do not run every frame:
+  - `Ortho` stops while the GUI is hidden;
+  - `OIT` needs the transparent pass on;
+  - the shadow stages need shadows on;
+  - nothing renders before the player and the blocks around them have loaded.
+
+### Tick listeners and callbacks
+
+```csharp
+TickListenerInfo listener = Assert.Single(Client.TickListeners.Of("mymod"));
+Assert.Equal(50, listener.IntervalMs);
+int calls = await Client.TickListeners.CountCallsAsync(listener, frames: 120);
+```
+
+- **Listing.** `All()`, `Of(modId)` and `Callbacks()` list plain and block listeners and delayed
+  callbacks. Each gives its id, its interval or time left (`DueInMs`), its block position, its
+  handler (type and method) and its mod.
+- **Timing.** The client runs a listener once its interval has passed on its own clock, which
+  follows real time, not the frames' `dt`: how many calls some frames make depends on how long
+  they take. Assert against what the mod counted over the same frames, or that there was at
+  least one call.
+- **Counting.** `CountCallsAsync(frames)` counts every listener at once. While a count runs, each
+  listener's handler is wrapped and `All()` still shows the original.
+
+### Particles
+
+```csharp
+using (ParticleCapture capture = Client.Particles.Capture())
+{
+    await Client.Commands.ExecuteSuccessAsync(".mymod sparks");
+    await Session.StepFramesAsync(2);
+    SpawnedParticles sparks = Assert.Single(capture.Spawned, p => p.Color == SparkColor);
+    Assert.Equal(EnumParticleModel.Quad, sparks.Model);
+}
+Assert.True(Client.Particles.Alive(EnumParticleModel.Quad) > 0);
+```
+
+- **Alive.** `Alive(model)` counts the particles alive on the main thread and the particle thread
+  together, from the pools' own lists, so it is current whether or not particles render.
+- **Capture.** `Capture()` records each spawn while it is open: from the mod, from the server,
+  block breaking, entities and weather.
+  - Ambient particles spawn all the time: filter `Spawned` by type, color or position, or pass
+    `includeOffThread: false` to leave out the particle thread's.
+  - A spawn is recorded when its pool takes it, with what the pool took (`Spawned`), which can
+    be fewer than asked when the particle setting limits them.
+  - The values are copied then, because the game reuses and changes properties objects.
+  - For `SimpleParticleProperties` they include position, quantity, color, life length and size.
+  - `limit` caps how many spawns are kept; `Truncated` says when it cut some.
+
+### Highlights
+
+```csharp
+ClientHighlight marked = Client.Highlights(slot: 9)!;
+Assert.Equal(expectedBlocks, marked.Positions);
+```
+
+- **Reading.** `Highlights(slot)` gives the blocks a slot highlights, with their colors (empty for
+  the game's default), mode, shape and scale. That covers the server's highlight packets and the
+  client's own `HighlightBlocks`.
+- **Empty and cleared slots.** It returns null for a slot nothing highlighted in. A cleared slot,
+  from either side, has no positions.
+- **Slots.** `HighlightSlots()` lists the slots.
+
 ## GlCommandProxy
 
 Records OpenGL draw and buffer commands executed during a frame.
