@@ -83,6 +83,10 @@
       <HintPath>$(VintageStoryPath)/Lib/0Harmony.dll</HintPath>
       <Private>true</Private>
     </Reference>
+    <Reference Include="protobuf-net">
+      <HintPath>$(VintageStoryPath)/Lib/protobuf-net.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
     <Reference Include="cairo-sharp">
       <HintPath>$(VintageStoryPath)/Lib/cairo-sharp.dll</HintPath>
       <Private>true</Private>

@@ -633,6 +633,8 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime, IScenarioLifecy
                 }
             });
             client.NetworkDegradation.Reset();
+            // Sequence numbers go on growing, so a `since` taken earlier stays valid.
+            Network.ModNetworkLog.Of(client.Client)?.Clear();
             client.PacketRecorder.Stop();
 
             // Taken out before the restore, so the listeners the restore itself sets up for the
