@@ -441,6 +441,7 @@ internal static class FailureArtifactWriter
             ["message"] = failure.Exception.Message,
             ["gameVersion"] = GameVersionLoaded,
             ["gamePath"] = GamePathOrNull(),
+            ["optimum"] = OptimumInstall.Loaded is { } optimum ? new Dictionary<string, object?> { ["version"] = optimum.Version, ["libPatched"] = optimum.LibPatched } : null,
             ["pharosVersion"] = PharosVersion,
             ["seed"] = failure.World?.Seed,
             ["worldType"] = failure.World?.WorldType,

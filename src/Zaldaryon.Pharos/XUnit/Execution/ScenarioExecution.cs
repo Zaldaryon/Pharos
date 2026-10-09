@@ -194,7 +194,8 @@ public sealed class ScenarioTheoryTestCase : XunitTheoryTestCase
         new ScenarioTheoryTestCaseRunner(this, DisplayName, SkipReason, constructorArguments, diagnosticMessageSink, messageBus, aggregator, cancellationTokenSource, ScenarioTimeouts.Of(TestMethod)).RunAsync();
 }
 
-// Reads [RequireGameVersion] where the test runs. A range that cannot be read fails the test.
+// Reads [RequireGameVersion], [RequireOptimum] and [SkipOnOptimum] where the test runs. A range
+// that cannot be read, or attributes that contradict each other, fail the test.
 internal static class GameVersionSkip
 {
     public static string? Of(ITestMethod testMethod, Action<Exception> fail)
@@ -203,11 +204,19 @@ internal static class GameVersionSkip
         {
             Type? type = testMethod.TestClass.Class.ToRuntimeType();
             MethodInfo? method = testMethod.Method.ToRuntimeMethod();
-            return type == null || method == null ? null : RequireGameVersionAttribute.SkipReasonFor(type, method, InstalledGame.ParsedVersion);
+            if (type == null || method == null) return null;
+            // The Optimum gate first, so contradicting attributes fail even on a version that skips.
+            string? optimum = OptimumGate.SkipReasonFor(type, method, OptimumInstall.Loaded);
+            return RequireGameVersionAttribute.SkipReasonFor(type, method, InstalledGame.ParsedVersion) ?? optimum;
         }
         catch (FormatException ex)
         {
             fail(new InvalidOperationException($"Invalid [RequireGameVersion] range: {ex.Message}", ex));
+            return null;
+        }
+        catch (OptimumGateConflictException ex)
+        {
+            fail(ex);
             return null;
         }
     }
@@ -238,7 +247,8 @@ internal sealed class ScenarioTestRunner(
     : XunitTestRunner(test, messageBus, testClass, constructorArguments, testMethod, testMethodArguments, skipReason, beforeAfterAttributes, aggregator, cancellationTokenSource)
 {
     // Which game and which Pharos ran the test, first in its output.
-    private static readonly string s_versions = $"Vintage Story {InstalledGame.Version}, Pharos {Reporting.FailureArtifactWriter.PharosVersion}{Environment.NewLine}";
+    private static readonly string s_versions =
+        $"Vintage Story {InstalledGame.Version}{(OptimumInstall.Loaded is { } optimum ? $" ({OptimumInstall.Describe(optimum)})" : "")}, Pharos {Reporting.FailureArtifactWriter.PharosVersion}{Environment.NewLine}";
 
     // By the time the base returns, the class has torn down: its isolation lines are complete.
     // They go to the test's output, where test explorers and trx files show it.

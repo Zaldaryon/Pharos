@@ -77,6 +77,14 @@ public sealed partial class EmbeddedServerHost : IDisposable, IAsyncDisposable
     /// </summary>
     public CalendarDriver Calendar => _calendar ??= new CalendarDriver(this);
 
+    /// <summary>
+    /// Optimum's counters on an Optimum build. They belong to the whole process, so the client's
+    /// and the server's are the same. See <see cref="OptimumDiagnostics"/>.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">The tests run on vanilla Vintage Story.</exception>
+    public OptimumDiagnostics Optimum => OptimumDiagnostics.Loaded
+        ?? throw new InvalidOperationException(OptimumDriver.NotOptimum(Environment.GetEnvironmentVariable("VINTAGE_STORY")));
+
     private CalendarDriver? _calendar;
 
     /// <summary>

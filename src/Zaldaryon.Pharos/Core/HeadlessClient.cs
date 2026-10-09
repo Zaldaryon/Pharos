@@ -217,6 +217,20 @@ public sealed class HeadlessClient : IDisposable
     /// </summary>
     public ClientCommandDriver Commands => _commands ??= new ClientCommandDriver(this);
 
+    /// <summary>Whether the tests run on an Optimum build. See <see cref="Optimum"/>.</summary>
+    public bool HasOptimum => OptimumDiagnostics.Loaded != null;
+
+    /// <summary>
+    /// Optimum's counters and its <c>.optimum</c> command, on an Optimum build. See
+    /// <see cref="OptimumDriver"/> and <c>docs/optimum.md</c>.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">The tests run on vanilla Vintage Story.</exception>
+    public OptimumDriver Optimum => _optimum ??= OptimumDiagnostics.Loaded is { } diagnostics
+        ? new OptimumDriver(this, diagnostics, OptimumInstall.Loaded!)
+        : throw new InvalidOperationException(OptimumDriver.NotOptimum(Environment.GetEnvironmentVariable("VINTAGE_STORY")));
+
+    private OptimumDriver? _optimum;
+
     private ClientCommandDriver? _commands;
 
     /// <summary>
