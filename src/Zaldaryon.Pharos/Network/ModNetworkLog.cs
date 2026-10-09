@@ -45,6 +45,17 @@ internal sealed class ModNetworkLog
     /// <summary>Starts recording <paramref name="game"/>'s mod messages, stamped with <paramref name="frame"/>.</summary>
     public static void Register(ClientMain game, System.Func<long> frame) => s_logs.AddOrUpdate(game, new ModNetworkLog(frame));
 
+    /// <summary>
+    /// Records <paramref name="next"/>'s mod messages in <paramref name="previous"/>'s log, so the
+    /// sequence goes on across a reconnect and marks taken before it stay valid.
+    /// </summary>
+    public static void Carry(ClientMain previous, ClientMain next)
+    {
+        if (!s_logs.TryGetValue(previous, out ModNetworkLog? log)) return;
+        s_logs.Remove(previous);
+        s_logs.AddOrUpdate(next, log);
+    }
+
     /// <summary>The log of <paramref name="game"/>, or null when it is not recorded.</summary>
     public static ModNetworkLog? Of(ClientMain? game) => game != null && s_logs.TryGetValue(game, out ModNetworkLog? log) ? log : null;
 

@@ -167,7 +167,22 @@ Time on the link is the simulated time of the session's frames, so the same seed
 - `SimulateKick(message)` and `SimulateServerShutdown()`: the server disconnects the player, and the client receives the server's disconnect message.
 - `SimulateNetworkError(message)`, `SimulateTimeout()` and `SimulateServerCrash()`: the link is cut (`session.IsLinkSevered`), the client's own socket error handler runs ("The connection closed unexpectedly: ..."), and the server drops the player.
 
-Reconnecting is still bookkeeping only. A disconnected engine-mode client ends its game session, as in the game.
+A disconnected engine-mode client ends its game session, as in the game. `session.ReconnectAsync()` joins it again as the same player, the way the game's own reconnect does:
+
+```csharp
+Session.DisconnectSimulator.SimulateKick("bye");
+await Session.ReconnectAsync();
+Assert.True(Client!.IsJoined);
+```
+
+- **What it works after.** A kick, a lost connection or a shutdown, `session.Disconnect()`, or with the client still joined. A client that is still joined leaves, and the server drops it as after a lost connection.
+- **What ends and starts again.** The old game session ends: its mods are disposed and the world unloads. A new game session then starts and joins over a fresh in-memory connection, and the client's mods start again.
+- **What carries over.** The window, `Client` and every driver a test holds now act on the new session. The link's network conditions and packet recording, the mod message log, and the client's log capture carry over too. `Client.SessionNumber` counts the sessions and `session.Reconnects` counts the reconnects.
+- **Mod statics.** The game compiles a source mod again for each session, so its statics start from zero. A DLL mod is loaded once, so its statics carry over, as they do in the game. A DLL mod that patches with Harmony in `StartClientSide` must unpatch in `Dispose`, or it patches twice. Each session's compiled source mods stay in memory.
+- **The next test.** A pair that reconnected is not rolled back for the next test: the next test gets a freshly booted pair, and the isolation report says "the client reconnected".
+- **What does not follow.** GUI dialogs, element handles and measurement captures a test took before the reconnect belong to the old session. Boot diagnostics stay those of the first session.
+- **Until the new session has the server's assets**, the server's direct push to a client that connects over memory can reach it, as at the first join.
+- **Not supported.** The game's own `.reconnect` command still goes through the menus Pharos does not build. Reconnecting is not supported in fixture mode or over a real TCP connection.
 
 ## Bridge events
 

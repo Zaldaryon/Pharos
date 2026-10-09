@@ -161,7 +161,7 @@ internal sealed class HeadlessPlayerConnection
         _client.Send(data);
     }
 
-    private static int InstallSocket(ServerMain server, DummyTcpNetServer socket)
+    internal static int InstallSocket(ServerMain server, DummyTcpNetServer socket)
     {
         NetServer?[] sockets = server.MainSockets;
         for (int i = FirstPlayerSlot; i < sockets.Length; i++)

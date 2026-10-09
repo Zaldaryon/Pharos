@@ -657,6 +657,7 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime, IScenarioLifecy
         if (_baseline == null || server == null || client == null || session == null) return (null, "the world was never captured");
         if (!server.IsRunning) return (null, "the server stopped");
         if (client.IsDisposed) return (null, "the client was disposed");
+        if (session.Reconnects > 0) return (null, "the client reconnected");
         if (!session.IsConnected || session.IsLinkSevered || client.DisconnectSimulator.IsDisconnected) return (null, "the client was disconnected");
 
         try

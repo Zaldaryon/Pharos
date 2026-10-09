@@ -11,14 +11,24 @@ namespace Zaldaryon.Pharos.Player;
 /// </summary>
 public sealed class PlayerCameraController : IPlayerCameraController
 {
-    private readonly ClientMain _client;
+    // Read on each use, so the class follows the client into a new game session after a reconnect.
+    private readonly Func<ClientMain> _game;
+
+    private ClientMain _client => _game();
 
     private readonly Vec3d _fallbackPosition = new();
 
     public PlayerCameraController(ClientMain client)
+        : this(Fixed(client ?? throw new ArgumentNullException(nameof(client))))
     {
-        _client = client ?? throw new ArgumentNullException(nameof(client));
     }
+
+    internal PlayerCameraController(Func<ClientMain> game)
+    {
+        _game = game ?? throw new ArgumentNullException(nameof(game));
+    }
+
+    private static Func<ClientMain> Fixed(ClientMain client) => () => client;
 
     /// <summary>
     /// Whether the client runs the engine's own camera, as an engine-mode client does.

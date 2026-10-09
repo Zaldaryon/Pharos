@@ -123,6 +123,13 @@ public sealed class LogCapture
     /// <summary>Starts collecting what <paramref name="logger"/> logs.</summary>
     internal void Attach(ILogger logger) => logger.EntryAdded += OnEntryAdded;
 
+    // A game that ends clears every watcher of the logger it shares with the next game.
+    internal void Reattach(ILogger logger)
+    {
+        logger.EntryAdded -= OnEntryAdded;
+        logger.EntryAdded += OnEntryAdded;
+    }
+
     private void OnEntryAdded(EnumLogType type, string format, object[] args)
     {
         if (type is EnumLogType.Debug or EnumLogType.VerboseDebug or EnumLogType.Worldgen) return;

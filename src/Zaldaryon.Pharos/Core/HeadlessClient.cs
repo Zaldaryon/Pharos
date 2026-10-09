@@ -40,10 +40,36 @@ public sealed class HeadlessClient : IDisposable
     private readonly string? _tempDataPath;
     private bool _retainDataPath;
 
-    public ClientMain Client { get; }
+    // A reconnect swaps in the next game session's objects; the window, platform and drivers stay.
+    private volatile ClientMain _game;
+    private volatile GuiScreenRunningGame _screen;
+
+    /// <summary>The client's current game session. A reconnect replaces it with a new one.</summary>
+    public ClientMain Client => _game;
     public ClientPlatformWindows Platform { get; }
     public ScreenManager ScreenManager { get; }
-    public GuiScreenRunningGame RunningGameScreen { get; }
+
+    /// <summary>The running-game screen of the current game session.</summary>
+    public GuiScreenRunningGame RunningGameScreen => _screen;
+
+    /// <summary>
+    /// Which game session the client is in: 1 from its first join, one more after each
+    /// reconnect. See <see cref="ClientServerLoopbackSession.ReconnectAsync"/>.
+    /// </summary>
+    public int SessionNumber { get; private set; } = 1;
+
+    /// <summary>
+    /// Makes <paramref name="game"/> the client's game session: the drivers follow it from here
+    /// on, and its mod messages go on in the same log. Runs on the client thread, between frames.
+    /// </summary>
+    internal void BeginGameSession(ClientMain game, GuiScreenRunningGame screen)
+    {
+        ClientMain previous = _game;
+        Network.ModNetworkLog.Carry(previous, game);
+        _game = game;
+        _screen = screen;
+        SessionNumber++;
+    }
     public HeadlessWindow Window { get; }
 
     /// <summary>What the client has logged since it booted. See <see cref="LogCapture"/>.</summary>
@@ -78,7 +104,8 @@ public sealed class HeadlessClient : IDisposable
     {
         get
         {
-            bool joined = Client.EntityPlayer?.Pos != null && Client.BlocksReceivedAndLoaded && Client.clientPlayingFired;
+            ClientMain game = Client;
+            bool joined = !game.disposed && game.EntityPlayer?.Pos != null && game.BlocksReceivedAndLoaded && game.clientPlayingFired;
 
             // An engine-mode client's mods start during the join: its boot ends once it is in.
             if (joined) Logs.CompleteBoot();
@@ -429,15 +456,15 @@ public sealed class HeadlessClient : IDisposable
     {
         BootMode = bootMode;
         _clientThread = clientThread;
-        Client = client;
+        _game = client;
         Platform = platform;
         ScreenManager = screenManager;
-        RunningGameScreen = runningGameScreen;
+        _screen = runningGameScreen;
         Window = window;
         window.Owner = this;
         Options = options;
         _tempDataPath = tempDataPath;
-        FrameController = new DeterministicFrameController(client, platform, screenManager, runningGameScreen, window)
+        FrameController = new DeterministicFrameController(() => Client, platform, screenManager, () => RunningGameScreen, window)
         {
             BootMode = bootMode,
             ClientThread = clientThread,
@@ -446,8 +473,8 @@ public sealed class HeadlessClient : IDisposable
         // Mod messages are recorded from before the client connects.
         if (bootMode == ClientBootMode.Engine) Network.ModNetworkLog.Register(client, () => FrameController.TotalFrames);
         Gui = new GuiInspector(screenManager);
-        TestPlayer = new ClientTestPlayer(client);
-        Culling = new CullingInspector(client);
+        TestPlayer = new ClientTestPlayer(() => Client);
+        Culling = new CullingInspector(() => Client);
         Inventory = new InventoryAutomation(TestPlayer.Inventory);
         Sounds.Activate();
 
@@ -830,20 +857,31 @@ public sealed class HeadlessClient : IDisposable
 
         ForgetLocalAssetPush(server);
 
-        // The client's sockets pass every packet through a link that records and degrades it.
-        LoopbackLink link = new(PacketRecorder, NetworkDegradation);
-
-        LinkedTcpNetClient tcp = new(link);
-        tcp.SetNetwork(server.TcpNetwork);
-        Client.MainNetClient = tcp;
-
-        LinkedUdpNetClient udp = new(link);
-        udp.SetNetwork(server.UdpNetwork);
-        Client.UdpNetClient = udp;
+        (LoopbackLink link, LinkedTcpNetClient tcp, LinkedUdpNetClient udp) = RunOnClientThread(() => WireEngineLoopback(server.TcpNetwork, server.UdpNetwork));
 
         RunOnClientThread(Client.Connect);
 
-        return new ClientServerLoopbackSession(this, server, link, tcp, udp);
+        return new ClientServerLoopbackSession(this, server, link, tcp, udp, playerName);
+    }
+
+    /// <summary>
+    /// Gives the game sockets on <paramref name="tcpNetwork"/> and <paramref name="udpNetwork"/>
+    /// that pass every packet through a new link, which records and degrades it. Runs on the
+    /// client thread.
+    /// </summary>
+    internal (LoopbackLink Link, LinkedTcpNetClient Tcp, LinkedUdpNetClient Udp) WireEngineLoopback(DummyNetwork tcpNetwork, DummyNetwork udpNetwork)
+    {
+        LoopbackLink link = new(PacketRecorder, NetworkDegradation);
+
+        LinkedTcpNetClient tcp = new(link);
+        tcp.SetNetwork(tcpNetwork);
+        Client.MainNetClient = tcp;
+
+        LinkedUdpNetClient udp = new(link);
+        udp.SetNetwork(udpNetwork);
+        Client.UdpNetClient = udp;
+
+        return (link, tcp, udp);
     }
 
     private static readonly FieldInfo? s_serverAssetsSentLocallyField =
@@ -852,7 +890,7 @@ public sealed class HeadlessClient : IDisposable
     private static readonly FieldInfo? s_worldMetaDataSentLocallyField =
         typeof(Vintagestory.Server.ServerMain).GetField("worldMetaDataPacketAlreadySentToSinglePlayer", BindingFlags.Instance | BindingFlags.NonPublic);
 
-    private static void ForgetLocalAssetPush(EmbeddedServerHost server)
+    internal static void ForgetLocalAssetPush(EmbeddedServerHost server)
     {
         // When the server finishes building its asset packet it pushes its identification, assets
         // and world metadata straight into whatever ClientSystemStartup.instance is at that
@@ -1325,19 +1363,39 @@ public sealed class HeadlessClient : IDisposable
     /// to do it. Left running, each one keeps its client, with its world and assets, in memory for
     /// the rest of the test run.
     /// </remarks>
-    private void StopClientThreads()
+    private void StopClientThreads() => StopClientThreads(Client);
+
+    /// <summary>
+    /// Stops a game's worker threads and waits for them. A game that destroyed its session has
+    /// already cancelled and disposed their token, so only the flag and the join remain.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">A thread was still running after the wait.</exception>
+    internal static void StopClientThreads(ClientMain game)
     {
-        Client.threadsShouldExit = true;
+        game.threadsShouldExit = true;
 
         FieldInfo? ctsField = typeof(ClientMain).GetField("_clientThreadsCts", BindingFlags.Instance | BindingFlags.NonPublic);
-        (ctsField?.GetValue(Client) as CancellationTokenSource)?.Cancel();
+        try
+        {
+            (ctsField?.GetValue(game) as CancellationTokenSource)?.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+            // Cancelled and disposed when the game destroyed its session.
+        }
 
         FieldInfo? threadsField = typeof(ClientMain).GetField("clientThreads", BindingFlags.Instance | BindingFlags.NonPublic);
-        if (threadsField?.GetValue(Client) is List<Thread> threads)
+        if (threadsField?.GetValue(game) is List<Thread> threads)
         {
+            List<string> running = [];
             foreach (Thread thread in threads)
             {
-                thread.Join(TimeSpan.FromSeconds(5));
+                if (!thread.Join(TimeSpan.FromSeconds(5))) running.Add(thread.Name ?? "unnamed");
+            }
+
+            if (running.Count > 0)
+            {
+                throw new InvalidOperationException($"The game's threads did not stop: {string.Join(", ", running)}.");
             }
         }
     }

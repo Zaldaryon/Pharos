@@ -178,6 +178,23 @@ internal sealed class LoopbackLink
         handler?.Invoke(new IOException(reason));
     }
 
+    /// <summary>
+    /// Takes the link out of use without telling the client: a reconnect leaves the old game's
+    /// sockets behind, and nothing of the old connection may reach the new one.
+    /// </summary>
+    public void Detach()
+    {
+        lock (_lock)
+        {
+            IsSevered = true;
+            _onDisconnected = null;
+            _toServer.Clear();
+            _toClient.Clear();
+            _udpToServer.Clear();
+            _udpToClient.Clear();
+        }
+    }
+
     private double Latency()
     {
         // TCP is reliable: it pays the latency and jitter of a lossy network, never the loss.

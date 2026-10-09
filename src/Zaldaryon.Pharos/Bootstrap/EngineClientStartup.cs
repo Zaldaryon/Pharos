@@ -148,14 +148,30 @@ internal static class EngineClientStartup
         screenManager.ClientIsOffline = true;
         s_loadModsMethod.Invoke(screenManager, null);
 
-        GuiScreenRunningGame runningGameScreen = new(screenManager, null);
-        s_currentScreenField.SetValue(screenManager, runningGameScreen);
-
-        ClientMain client = (ClientMain)s_runningGameField.GetValue(runningGameScreen)!;
-        client.Start();
+        (ClientMain client, GuiScreenRunningGame runningGameScreen) = StartGameSession(screenManager);
 
         return new HeadlessClient(client, platform, screenManager, runningGameScreen, window, options, tempDataPath, ClientBootMode.Engine, clientThread) { Logs = logs };
     }
+
+    /// <summary>
+    /// Puts up a new running-game screen with a new game and starts it, as
+    /// <c>ScreenManager.StartGame</c> does without connecting: the caller wires the sockets.
+    /// </summary>
+    internal static (ClientMain Game, GuiScreenRunningGame Screen) StartGameSession(ScreenManager screenManager)
+    {
+        GuiScreenRunningGame screen = new(screenManager, null);
+        s_currentScreenField.SetValue(screenManager, screen);
+
+        ClientMain game = (ClientMain)s_runningGameField.GetValue(screen)!;
+        game.Start();
+        return (game, screen);
+    }
+
+    /// <summary>The screen the screen manager shows now.</summary>
+    internal static GuiScreen? CurrentScreen(ScreenManager screenManager) => s_currentScreenField.GetValue(screenManager) as GuiScreen;
+
+    /// <summary>Lets go of a running-game screen's game, as the screen does when it exits.</summary>
+    internal static void ReleaseGame(GuiScreenRunningGame screen) => s_runningGameField.SetValue(screen, null);
 
     /// <summary>
     /// Runs one vanilla <c>ScreenManager.Render</c> pass: the game's own render to primary,
