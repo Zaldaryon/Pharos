@@ -256,7 +256,11 @@ public static class PhCliRunner
     private static int UpdateBaselines(BenchmarkOptions options, TextWriter stdout, TextWriter stderr)
     {
         var benchmarks = OptimumBenchmarks.CreateAll();
-        var baselines = new Dictionary<string, float>();
+
+        // Keeps keys the benchmarks do not own, such as frame baselines tests wrote.
+        var baselines = (options.BaselineFile ?? "pharos-baselines.json") is var target && File.Exists(target)
+            ? BaselinesFile.TryReadBaselines(target) ?? new Dictionary<string, float>()
+            : new Dictionary<string, float>();
 
         stdout.WriteLine($"Running {benchmarks.Count} benchmarks to update baselines...");
         stdout.WriteLine();

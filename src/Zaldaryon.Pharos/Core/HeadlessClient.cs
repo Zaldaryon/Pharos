@@ -209,6 +209,15 @@ public sealed class HeadlessClient : IDisposable
     private Inspection.RendererInspector? _renderers;
 
     /// <summary>
+    /// Steps <paramref name="frames"/> frames and measures them: each frame's work, its render
+    /// stages and renderers, and what it allocated. Inside a client-server session the session is
+    /// stepped, but its server ticks are measured only by
+    /// <see cref="Server.ClientServerLoopbackSession.MeasureFramesAsync"/>. Engine mode only.
+    /// </summary>
+    public Task<Performance.FrameMeasurement> MeasureFramesAsync(int frames, CancellationToken ct = default) =>
+        Performance.FrameMeasurer.MeasureAsync(this, null, frames, 1, StepAsync, ct);
+
+    /// <summary>
     /// The client's game tick listeners and callbacks, with their mod, and how often listeners are
     /// called. Engine mode only. See <see cref="Inspection.TickListenerInspector"/>.
     /// </summary>

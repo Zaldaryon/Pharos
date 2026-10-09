@@ -71,7 +71,10 @@ public static class BaselinesFile
             Directory.CreateDirectory(directory);
         }
 
-        File.WriteAllText(path, json);
+        // Whole or not at all: a reader never sees half a file.
+        string temporary = $"{path}.{Environment.ProcessId}.tmp";
+        File.WriteAllText(temporary, json);
+        File.Move(temporary, path, overwrite: true);
     }
 
     /// <summary>
