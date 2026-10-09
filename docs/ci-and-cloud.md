@@ -14,6 +14,38 @@ Pharos runs the real Vintage Story client headlessly, so a test machine needs no
 
 `.github/workflows/ci.yml` sets all of this up on GitHub's Linux and Windows runners, and caches the game download between runs.
 
+## Using Pharos in your mod's CI
+
+The `setup-vintage-story` action downloads the game, caches it, sets `VINTAGE_STORY`, and readies software rendering. On Linux that means Mesa and a virtual display that later steps use; on Windows it means Mesa, which Pharos copies next to your tests:
+
+```yaml
+- uses: actions/setup-dotnet@v4
+  with:
+    dotnet-version: "10.0.x"
+- uses: Zaldaryon/Pharos/.github/actions/setup-vintage-story@main   # or a release tag, or a commit
+  with:
+    version: 1.22.7
+- run: dotnet test --filter "Category=Live"
+```
+
+| Input | Default | |
+|---|---|---|
+| `version` | (required) | The game version, such as `1.22.7` or `1.22.0-rc.3`. |
+| `cache` | `true` | Cache the install between runs. |
+| `channel` | stable, or unstable for `-rc` and `-pre` versions | The download channel. |
+| `mesa` | `true` | Install Mesa and set the software rendering variables (`LIBGL_ALWAYS_SOFTWARE`, `GALLIUM_DRIVER` and the rest), and `ALSOFT_DRIVERS=null`. |
+| `xvfb` | `true` | Linux only: start a virtual display and set `DISPLAY`, so tests need no `xvfb-run`. |
+
+It outputs the install's `path`, the `version` and `cache-hit`. On Linux it also sets `LD_LIBRARY_PATH` to the game's libraries. A `v0` tag that follows the latest 0.x release is added by hand after each release.
+
+## Switching installs
+
+The game's assemblies are copied next to the tests when they are built, from the install they are built against. The rest of the game, its native libraries, mods and assets, is linked or copied there when the tests start, from `VINTAGE_STORY`:
+
+- A link or copy made from another install, or from this one at another version, is replaced. A copied folder another process still holds files of is kept, with a warning.
+- When the copied assemblies are from another version than `VINTAGE_STORY`, the tests stop with a message saying to build them again against that install. `PHAROS_ALLOW_GAME_MISMATCH=1` turns that into a warning.
+- The same version with a different `VintagestoryAPI.dll`, as a patched install has, only warns.
+
 ## Auth
 
 Tests join offline by default: the client answers the server's login token itself and nothing contacts the auth server. The embedded server accepts that, and so does the dedicated server image below, because both run with `VerifyPlayerAuth` off. See [Engine Mode](engine-mode.md#real-network-connections-and-auth).

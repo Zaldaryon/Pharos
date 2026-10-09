@@ -156,6 +156,10 @@ public sealed class ScenarioTestCase : XunitTestCase
     /// </summary>
     protected override int GetTimeout(IAttributeInfo factAttribute) => 0;
 
+    /// <summary>The attribute's skip reason, or else the one <see cref="RequireGameVersionAttribute"/> gives.</summary>
+    protected override string GetSkipReason(IAttributeInfo factAttribute) =>
+        base.GetSkipReason(factAttribute) ?? GameVersionSkip.Of(TestMethod, ex => InitializationException = ex)!;
+
     /// <inheritdoc />
     public override Task<RunSummary> RunAsync(IMessageSink diagnosticMessageSink, IMessageBus messageBus, object[] constructorArguments, ExceptionAggregator aggregator, CancellationTokenSource cancellationTokenSource) =>
         new ScenarioTestCaseRunner(this, DisplayName, SkipReason, constructorArguments, TestMethodArguments, messageBus, aggregator, cancellationTokenSource, ScenarioTimeouts.Of(TestMethod)).RunAsync();
@@ -181,9 +185,32 @@ public sealed class ScenarioTheoryTestCase : XunitTheoryTestCase
     /// <inheritdoc cref="ScenarioTestCase" />
     protected override int GetTimeout(IAttributeInfo factAttribute) => 0;
 
+    /// <inheritdoc cref="ScenarioTestCase" />
+    protected override string GetSkipReason(IAttributeInfo factAttribute) =>
+        base.GetSkipReason(factAttribute) ?? GameVersionSkip.Of(TestMethod, ex => InitializationException = ex)!;
+
     /// <inheritdoc />
     public override Task<RunSummary> RunAsync(IMessageSink diagnosticMessageSink, IMessageBus messageBus, object[] constructorArguments, ExceptionAggregator aggregator, CancellationTokenSource cancellationTokenSource) =>
         new ScenarioTheoryTestCaseRunner(this, DisplayName, SkipReason, constructorArguments, diagnosticMessageSink, messageBus, aggregator, cancellationTokenSource, ScenarioTimeouts.Of(TestMethod)).RunAsync();
+}
+
+// Reads [RequireGameVersion] where the test runs. A range that cannot be read fails the test.
+internal static class GameVersionSkip
+{
+    public static string? Of(ITestMethod testMethod, Action<Exception> fail)
+    {
+        try
+        {
+            Type? type = testMethod.TestClass.Class.ToRuntimeType();
+            MethodInfo? method = testMethod.Method.ToRuntimeMethod();
+            return type == null || method == null ? null : RequireGameVersionAttribute.SkipReasonFor(type, method, InstalledGame.ParsedVersion);
+        }
+        catch (FormatException ex)
+        {
+            fail(new InvalidOperationException($"Invalid [RequireGameVersion] range: {ex.Message}", ex));
+            return null;
+        }
+    }
 }
 
 internal sealed class ScenarioTestCaseRunner(
@@ -210,6 +237,9 @@ internal sealed class ScenarioTestRunner(
     CancellationTokenSource cancellationTokenSource, int timeoutMs)
     : XunitTestRunner(test, messageBus, testClass, constructorArguments, testMethod, testMethodArguments, skipReason, beforeAfterAttributes, aggregator, cancellationTokenSource)
 {
+    // Which game and which Pharos ran the test, first in its output.
+    private static readonly string s_versions = $"Vintage Story {InstalledGame.Version}, Pharos {Reporting.FailureArtifactWriter.PharosVersion}{Environment.NewLine}";
+
     // By the time the base returns, the class has torn down: its isolation lines are complete.
     // They go to the test's output, where test explorers and trx files show it.
     protected override async Task<Tuple<decimal, string>> InvokeTestAsync(ExceptionAggregator aggregator)
@@ -217,7 +247,7 @@ internal sealed class ScenarioTestRunner(
         IsolationLog.Notes notes = new();
         IsolationLog.Current = notes;
         Tuple<decimal, string> result = await base.InvokeTestAsync(aggregator).ConfigureAwait(false);
-        return Tuple.Create(result.Item1, result.Item2 + notes.Text);
+        return Tuple.Create(result.Item1, s_versions + result.Item2 + notes.Text);
     }
 
     protected override async Task<decimal> InvokeTestMethodAsync(ExceptionAggregator aggregator)

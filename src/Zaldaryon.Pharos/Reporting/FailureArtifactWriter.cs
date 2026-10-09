@@ -440,6 +440,7 @@ internal static class FailureArtifactWriter
             ["exception"] = failure.Exception.GetType().FullName,
             ["message"] = failure.Exception.Message,
             ["gameVersion"] = GameVersionLoaded,
+            ["gamePath"] = GamePathOrNull(),
             ["pharosVersion"] = PharosVersion,
             ["seed"] = failure.World?.Seed,
             ["worldType"] = failure.World?.WorldType,
@@ -469,9 +470,19 @@ internal static class FailureArtifactWriter
     }
 
     /// <summary>The version of the game that is loaded, which can differ from the one Pharos was built against.</summary>
-    internal static string GameVersionLoaded { get; } =
-        typeof(GameVersion).GetField(nameof(GameVersion.ShortGameVersion), BindingFlags.Public | BindingFlags.Static)?.GetRawConstantValue() as string
-        ?? "unknown";
+    internal static string GameVersionLoaded => InstalledGame.Version;
+
+    private static string? GamePathOrNull()
+    {
+        try
+        {
+            return Platform.HeadlessPlatformResolver.ResolveGamePath();
+        }
+        catch
+        {
+            return null;
+        }
+    }
 
     internal static string PharosVersion { get; } =
         typeof(FailureArtifactWriter).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion

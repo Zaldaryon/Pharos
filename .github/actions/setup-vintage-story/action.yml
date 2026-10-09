@@ -1,0 +1,158 @@
+name: Set up Vintage Story
+description: >-
+  Downloads (and caches) a Vintage Story client install, sets VINTAGE_STORY, and readies headless
+  software rendering: Mesa and a virtual display on Linux, Mesa on Windows. For running Pharos
+  tests in a mod's CI.
+
+inputs:
+  version:
+    description: The game version, such as 1.22.7 or 1.22.0-rc.3.
+    required: true
+  cache:
+    description: Whether to cache the install between runs.
+    required: false
+    default: "true"
+  channel:
+    description: The download channel, stable or unstable. Empty picks unstable for -rc and -pre versions.
+    required: false
+    default: ""
+  mesa:
+    description: Whether to install Mesa for software rendering.
+    required: false
+    default: "true"
+  xvfb:
+    description: Linux only. Whether to start a virtual display and set DISPLAY for the steps that follow.
+    required: false
+    default: "true"
+
+outputs:
+  path:
+    description: Where the game is installed.
+    value: ${{ steps.where.outputs.path }}
+  version:
+    description: The game version installed.
+    value: ${{ inputs.version }}
+  cache-hit:
+    description: Whether the install came from the cache.
+    value: ${{ steps.cache.outputs.cache-hit }}
+
+runs:
+  using: composite
+  steps:
+    - name: Choose the install folder
+      id: where
+      shell: bash
+      env:
+        VS_VERSION: ${{ inputs.version }}
+        VS_CHANNEL: ${{ inputs.channel }}
+      run: |
+        if ! [[ "$VS_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
+          echo "::error::'$VS_VERSION' is not a Vintage Story version such as 1.22.7."
+          exit 1
+        fi
+        channel="$VS_CHANNEL"
+        if [ -z "$channel" ]; then
+          case "$VS_VERSION" in *-rc*|*-pre*) channel=unstable ;; *) channel=stable ;; esac
+        fi
+        echo "path=$RUNNER_TEMP/vintagestory/$VS_VERSION" >> "$GITHUB_OUTPUT"
+        echo "channel=$channel" >> "$GITHUB_OUTPUT"
+
+    - name: Cache Vintage Story
+      id: cache
+      if: inputs.cache == 'true'
+      uses: actions/cache@v4
+      with:
+        path: ${{ steps.where.outputs.path }}
+        key: vintagestory-${{ runner.os }}-${{ inputs.version }}-v3
+
+    - name: Download Vintage Story (Linux)
+      if: runner.os == 'Linux' && steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        VS_DIR: ${{ steps.where.outputs.path }}
+        VS_VERSION: ${{ inputs.version }}
+        VS_CHANNEL: ${{ steps.where.outputs.channel }}
+      run: |
+        mkdir -p "$VS_DIR"
+        wget -q --tries=3 "https://cdn.vintagestory.at/gamefiles/$VS_CHANNEL/vs_client_linux-x64_$VS_VERSION.tar.gz" -O "$RUNNER_TEMP/vs.tar.gz"
+        tar xzf "$RUNNER_TEMP/vs.tar.gz" -C "$VS_DIR" --strip-components=1
+        rm "$RUNNER_TEMP/vs.tar.gz"
+
+    - name: Download Vintage Story (Windows)
+      if: runner.os == 'Windows' && steps.cache.outputs.cache-hit != 'true'
+      shell: pwsh
+      env:
+        VS_DIR: ${{ steps.where.outputs.path }}
+        VS_VERSION: ${{ inputs.version }}
+        VS_CHANNEL: ${{ steps.where.outputs.channel }}
+      run: |
+        New-Item -ItemType Directory -Force -Path $env:VS_DIR | Out-Null
+        $ProgressPreference = 'SilentlyContinue'
+        Invoke-WebRequest -Uri "https://github.com/crazy-max/innoextract/releases/download/v1.13.0/innoextract-windows-amd64.exe" -OutFile "$env:RUNNER_TEMP\innoextract.exe"
+        Invoke-WebRequest -Uri "https://cdn.vintagestory.at/gamefiles/$env:VS_CHANNEL/vs_install_win-x64_$env:VS_VERSION.exe" -OutFile "$env:RUNNER_TEMP\vs_setup.exe"
+        $stage = "$env:RUNNER_TEMP\vs_extract"
+        New-Item -ItemType Directory -Force -Path $stage | Out-Null
+        & "$env:RUNNER_TEMP\innoextract.exe" --silent --extract --output-dir $stage "$env:RUNNER_TEMP\vs_setup.exe"
+        $source = if (Test-Path (Join-Path $stage "app\Vintagestory.exe")) { Join-Path $stage "app" } else { $stage }
+        Copy-Item -Path "$source\*" -Destination $env:VS_DIR -Recurse -Force
+        Remove-Item -Recurse -Force $stage, "$env:RUNNER_TEMP\vs_setup.exe", "$env:RUNNER_TEMP\innoextract.exe" -ErrorAction SilentlyContinue
+
+    - name: Check the install
+      shell: bash
+      env:
+        VS_DIR: ${{ steps.where.outputs.path }}
+      run: |
+        if [ ! -f "$VS_DIR/VintagestoryAPI.dll" ]; then
+          echo "::error::No VintagestoryAPI.dll in $VS_DIR: the download did not produce a game install."
+          exit 1
+        fi
+        echo "VINTAGE_STORY=$VS_DIR" >> "$GITHUB_ENV"
+        if [ "$RUNNER_OS" = "Linux" ]; then
+          echo "LD_LIBRARY_PATH=$VS_DIR/Lib:$VS_DIR${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" >> "$GITHUB_ENV"
+        fi
+        echo "Vintage Story ${{ inputs.version }} at $VS_DIR"
+
+    - name: Install Mesa and Xvfb (Linux)
+      if: runner.os == 'Linux' && inputs.mesa == 'true'
+      shell: bash
+      run: |
+        # A fresh runner may still hold the dpkg lock for its own updates; wait for it, but not forever.
+        timeout 600 sudo apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Retries=3 update
+        timeout 600 sudo apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Retries=3 install -y mesa-utils libgl1-mesa-dri xvfb libopenal1 libglfw3 libcairo2
+
+    # Pharos copies a software opengl32.dll it finds in the game's Lib folder next to the tests,
+    # where Windows looks first.
+    - name: Install Mesa (Windows)
+      if: runner.os == 'Windows' && inputs.mesa == 'true'
+      uses: f3d-app/install-mesa-windows-action@v1
+      with:
+        path: ${{ steps.where.outputs.path }}\Lib
+
+    - name: Software rendering settings
+      if: inputs.mesa == 'true'
+      shell: bash
+      run: |
+        {
+          echo "LIBGL_ALWAYS_SOFTWARE=1"
+          echo "GALLIUM_DRIVER=llvmpipe"
+          echo "MESA_LOADER_DRIVER_OVERRIDE=llvmpipe"
+          echo "MESA_GL_VERSION_OVERRIDE=4.5"
+          echo "MESA_GLSL_VERSION_OVERRIDE=450"
+          echo "ALSOFT_DRIVERS=null"
+        } >> "$GITHUB_ENV"
+
+    - name: Start a virtual display (Linux)
+      if: runner.os == 'Linux' && inputs.xvfb == 'true'
+      shell: bash
+      run: |
+        setsid nohup Xvfb :99 -screen 0 1280x720x24 > "$RUNNER_TEMP/xvfb.log" 2>&1 &
+        for _ in $(seq 1 50); do
+          [ -e /tmp/.X11-unix/X99 ] && break
+          sleep 0.2
+        done
+        if [ ! -e /tmp/.X11-unix/X99 ]; then
+          echo "::error::Xvfb did not start:"
+          cat "$RUNNER_TEMP/xvfb.log"
+          exit 1
+        fi
+        echo "DISPLAY=:99" >> "$GITHUB_ENV"
