@@ -1,0 +1,11 @@
+{
+  "type": "content",
+  "modid": "pharoshandbookmod",
+  "name": "Pharos Handbook Mod",
+  "version": "1.0.0",
+  "side": "Universal",
+  "requiredOnClient": true,
+  "description": "Content mod the survival dialog tests stage: a handbook guide that mentions smelting and links to an item, and the item.",
+  "authors": ["Pharos"],
+  "dependencies": { "game": "" }
+}

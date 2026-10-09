@@ -126,6 +126,127 @@ client.Inventory.DragSlot(0, 3);
 await session.StepUntilAsync(() => /* server sees the stack in slot 3 */ true);
 ```
 
+## Survival dialogs: handbook, world map, waypoints and character
+
+`client.Ui.Handbook`, `client.Ui.WorldMap` and `client.Ui.Character` drive the survival game's
+own dialogs. They open them with their real hotkeys, and they click, type and follow links as a
+player does. The handbook comes from the survival mod and the map from the essentials mod, which
+Pharos reaches by name.
+
+```csharp
+HandbookDriver handbook = client.Ui.Handbook;
+await handbook.OpenPageAsync("mymod-guide");               // as a click on handbook://mymod-guide
+Assert.Contains("Smelting", handbook.PageText);
+var found = await handbook.SearchAsync("lighthouse");       // types into the search field
+var mine = await handbook.PagesAsync("mymod");              // HandbookPageInfo(Code, Title, Category, Kind, Domain)
+
+WorldMapDriver map = client.Ui.WorldMap;
+await map.SetSizeAsync(900, 600);                           // .map worldmapsize 900 600
+await map.OpenAsync();
+await map.SetLayerGroupActiveAsync("waypoints", false);     // clicks the layer group's tab
+WaypointInfo camp = await map.AddWaypointAsync(pos, "Camp", icon: "home", color: map.WaypointColors[3]);
+var onServer = serverHost.RunOnGameThread(() => ServerWaypoints.Of(sapi, playerUid));
+await map.RemoveWaypointAsync("Camp");
+
+CharacterDriver character = client.Ui.Character;
+await character.OpenAsync();
+await character.SwitchTabAsync("Traits");
+string walk = character.Stat("walkspeed");                  // "100%"
+await character.EquipAsync(hotbarSlot: 2, EnumCharacterDressType.ArmorBody);
+```
+
+### Handbook
+
+- `IsAvailable`, `IsOpen`, `OpenAsync` (the `handbook` hotkey) and `CloseAsync`.
+- `WaitUntilLoadedAsync` waits until the game has built the handbook's pages. The game builds them
+  on a worker thread after the world loads, and the handbook lists nothing until then. Every call
+  that reads pages waits for this first.
+- `OpenPageAsync(code)` calls the `handbook://` link protocol the survival mod registers, with a
+  link to `handbook://<code>`. This is what a click on a link does: the handbook opens on the page.
+  An unknown code throws a `KeyNotFoundException` that lists close codes.
+- `CurrentPageCode`, `PageTitle` and `PageText` read the page shown. The text is the page's rich
+  text without its markup: a link gives its label, and an item stack gives nothing.
+- `SearchAsync(text)` goes back to the list when a page is shown, and clicks the "everything"
+  category's tab when another category is shown, since the handbook searches only the category
+  shown. It then empties the search field (Ctrl+A, Backspace), types the text, and returns the
+  pages listed, best match first.
+- `PagesAsync(domain)` lists every page, or a mod's. A guide's domain is its asset's; a stack's
+  domain is its code's.
+
+The handbook pauses only a singleplayer game, so it does not pause a client joined to a server.
+
+### World map, minimap and layers
+
+- `IsAvailable` is false when the world's configuration sets `allowMap` to false and the player
+  lacks the `allowMap` privilege, or when the essentials mod is missing. Opening the map then
+  throws, saying which.
+- `OpenAsync` (`worldmapdialog`), `CloseAsync`, and `SetMinimapAsync(shown)` (`worldmaphud`).
+  `IsOpen` reads the full map and `IsMinimapShown` reads the minimap, which is not shown while
+  the full map is open. `SetMinimapAsync` throws while the full map is open: the game's hotkey
+  would turn the full map into the minimap without saving the setting.
+- `SetSizeAsync(width, height)` runs `.map worldmapsize`. The game registers that command when it
+  first builds the map's dialog, so the driver opens and closes the full map first when needed.
+- `Layers()` lists each layer with its registered code, title, group, whether it is drawn, and
+  where its data comes from.
+- `SetLayerGroupActiveAsync(group, active)` clicks the group's tab on the open map. Its click point
+  comes from the hit geometry of the tab strip's own handler. `client.Ui.Tabs(dialog, key)` and
+  `client.Ui.ClickTab(dialog, key, index or name)` do the same for any vertical or horizontal tab
+  strip.
+- `Markers(layer)` reads the markers of the vanilla layers:
+  - `players`: the server sends player positions only when the world sets `allowMap`, as the
+    game's play styles do;
+  - `entities`: the layer exists only with `entityMapLayer`, and tracks creatures only while the
+    map or the minimap is open;
+  - `waypoints`;
+  - `chunks`, which has none.
+
+  A mod's layer throws `NotSupportedException`.
+
+The full map is 1200 by 800 GUI pixels, with its tabs to its left. On a small window, shrink it
+first with `SetSizeAsync`. The game keeps that size until the client leaves. Showing or
+hiding the minimap saves the process-wide `showMinimapHud` setting. Put both back after the test.
+
+### Waypoints
+
+- `Waypoints` (the client's, the waypoints of the player's groups included), `WaypointIcons` and
+  `WaypointColors` (`#RRGGBB`). A waypoint's `Index` is its number among its owner's waypoints,
+  the number `/waypoint remove` takes; in the client's list, a waypoint another player owns has -1.
+- `AddWaypointAsync(pos, title, icon, color, pinned)` opens the game's "Add waypoint" dialog with
+  its `WorldPos` set to `pos`. A right-click on the map would give a position one map pixel wide,
+  at the height of the terrain.
+  - It clicks the icon and the colour, empties the name the dialog suggests and types the title.
+    It switches pinned on when asked, then clicks Save.
+  - The dialog sends `/waypoint addati`, and the call waits until the server sends the waypoint
+    back.
+  - An unknown icon or colour throws an `ArgumentException` that lists the valid ones.
+- `RemoveWaypointAsync(title)` opens, for the marker of a waypoint the player owns, the dialog
+  that a right-click on the marker opens, and clicks its Delete button. The dialog sends
+  `/waypoint remove <n>`, where `n` counts the player's own waypoints as the server does.
+- `ServerWaypoints.Of(sapi, playerUid)` reads the waypoints the server holds for a player. Call it
+  on the server thread.
+
+Saving a waypoint also writes the name to `waypoints-names.json` in `GamePaths.Config`, as the
+game does. In a test run that is the process-wide temporary data folder, shared by every client
+of the process.
+
+### Character dialog
+
+- `IsOpen`, `OpenAsync` (`characterdialog`) and `CloseAsync`.
+- `Tabs` lists the tabs: Character, plus Traits, which the survival mod adds. `CurrentTab` names
+  the active one, and `SwitchTabAsync(name or index)` clicks a tab.
+- `Stats()` and `Stat(code)` read the stats panel beside the dialog, by element key: `health`,
+  `satiety`, `bodytemp`, `walkspeed`, `healeffectiveness`, `hungerrate`, `rangedweaponacc` and
+  `rangedweaponchargespeed`.
+- `Gear(dressType)` reads a slot of the client's character inventory.
+- `EquipAsync(hotbarSlot, dressType)` clicks the stack in the hotbar, then the gear slot on the
+  first tab, so the client sends real slot packets. A refused stack goes back to the hotbar, and
+  the call throws. When the slot already held gear, the swap leaves the old gear on the cursor,
+  and the driver clicks it into the hotbar slot the new gear came from.
+  - It needs survival or guest mode: a creative player has no character inventory open in the
+    dialog.
+
+Close any of these dialogs from a test with `CloseAsync`, which calls the dialog's `TryClose()`.
+
 ## Sound
 
 There is no audio device. The null device hands the game a silent sound object for each sound it asks for, and `HeadlessClient.Sounds` records every one of them. The game still decides which sounds to play, where, how loud and how often: footsteps, block and item interactions, entities, ambience, music, and sounds the server tells it to play.
