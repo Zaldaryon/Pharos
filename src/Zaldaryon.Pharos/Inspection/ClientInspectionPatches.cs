@@ -35,6 +35,7 @@ internal static class ClientInspectionPatches
             s_harmony.Patch(
                 AccessTools.Method(typeof(BlockHighlight), nameof(BlockHighlight.TesselateModel)),
                 postfix: new HarmonyMethod(typeof(HighlightInspector), nameof(HighlightInspector.AfterTesselate)));
+            Performance.MeasurementHooks.InstallClient();
             s_installed = true;
         }
     }

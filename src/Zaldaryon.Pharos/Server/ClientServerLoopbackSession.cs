@@ -304,6 +304,14 @@ public sealed class ClientServerLoopbackSession : IDisposable
     }
 
     /// <summary>
+    /// Steps <paramref name="frames"/> frames of the session and measures them: the client's work
+    /// per frame, its render stages and renderers, what it allocated, and the embedded server's
+    /// ticks up to where each sleeps (none for a session on the legacy <c>Server</c>). See <see cref="Performance.FrameMeasurement"/>.
+    /// </summary>
+    public Task<Performance.FrameMeasurement> MeasureFramesAsync(int frames, float dt = 1f / 60f, int serverTicksPerFrame = 1, CancellationToken ct = default) =>
+        Performance.FrameMeasurer.MeasureAsync(Client, NativeServer, frames, serverTicksPerFrame, token => StepAsync(dt, serverTicksPerFrame, token), ct);
+
+    /// <summary>
     /// Steps until the client's calendar matches the server's: the same time, to the second when
     /// the calendar is frozen and within <paramref name="tolerance"/> while it runs, the same speed
     /// of time and day length (to the precision the calendar packet carries), and the same month

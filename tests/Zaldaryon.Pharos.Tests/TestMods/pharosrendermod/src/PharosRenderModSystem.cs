@@ -35,6 +35,15 @@ public sealed class PharosRenderModSystem : ModSystem
             .HandleWith(_ => TextCommandResult.Success($"renders={_renderer.Calls} bare={_bareRenders} ticks={_ticks}"))
             .EndSubCommand();
 
+        command.BeginSubCommand("slow")
+            .WithArgs(api.ChatCommands.Parsers.OptionalBool("on"))
+            .HandleWith(args =>
+            {
+                _renderer.Slow = (bool)args[0];
+                return TextCommandResult.Success();
+            })
+            .EndSubCommand();
+
         command.BeginSubCommand("particles")
             .HandleWith(_ =>
             {
@@ -89,7 +98,18 @@ public sealed class PharosRenderModSystem : ModSystem
 
         public int RenderRange => 24;
 
-        public void OnRenderFrame(float deltaTime, EnumRenderStage stage) => Calls++;
+        // When slow, each call busies the client thread for five milliseconds.
+        public bool Slow { get; set; }
+
+        public void OnRenderFrame(float deltaTime, EnumRenderStage stage)
+        {
+            Calls++;
+            if (!Slow) return;
+            long until = System.Diagnostics.Stopwatch.GetTimestamp() + System.Diagnostics.Stopwatch.Frequency / 200;
+            while (System.Diagnostics.Stopwatch.GetTimestamp() < until)
+            {
+            }
+        }
 
         public void Dispose()
         {

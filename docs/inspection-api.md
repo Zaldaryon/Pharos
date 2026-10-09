@@ -91,7 +91,60 @@ Assert.Equal(expectedBlocks, marked.Positions);
   from either side, has no positions.
 - **Slots.** `HighlightSlots()` lists the slots.
 
+## Frame measurements
+
+`Session.MeasureFramesAsync(frames)` steps a client-server session and measures it; `Client.MeasureFramesAsync(frames)` measures a client on its own. Engine mode only.
+
+```csharp
+await Session.StepFramesAsync(30);                       // warm up: the first frames compile code
+FrameMeasurement before = await Session.MeasureFramesAsync(300);
+await Client.Commands.ExecuteSuccessAsync(".mymod effects on");
+FrameMeasurement with = await Session.MeasureFramesAsync(300);
+Assert.True(with.Median - before.Median < TimeSpan.FromMilliseconds(2), with.ToString());
+```
+
+A `FrameMeasurement` gives:
+
+- **`Work`.** The client's work in each frame, as wall-clock time on the client thread, in a `TimingStats`: min, median, P95, P99, max, mean, total, and every sample. `Median`, `P95` and the rest are on the measurement too.
+  - Percentiles take the nearest rank, so P99 of fewer than 100 frames is the slowest.
+  - Pharos steps frames itself, so there is no idle wait to leave out.
+- **Where the time went.**
+  - `Stages`: each render stage's time per frame, with the frames it ran in.
+  - `Renderers`: each renderer's time per frame and calls, mods' and the engine's; `Of(modId)` filters them.
+  - `GameTick`: the client's tick listeners.
+  - `MainThreadTasks`: queued client-thread work, Pharos's and the game's, received packets among it.
+  - `Other`: input, GUI, culling, and what lies between the stages.
+- **Allocations.**
+  - `AllocatedBytes` and `AllocatedBytesPerFrame` count the client thread only.
+  - `ProcessAllocatedBytes` covers every thread.
+  - The `Gen0`, `Gen1` and `Gen2` collection counts are the process's.
+- **`ServerTicks`.** In a session measurement, the embedded server's work per tick and what its thread allocated. Ticks while the server is suspended (as during an autosave) are left out of the times and counted in `SuspendedTicks`.
+  - Each tick is timed up to where the server sleeps out the rest of it, so its 33 ms tick rate is not counted.
+  - It is null for `Client.MeasureFramesAsync`.
+
+What the times leave out:
+- work on other threads: chunk tessellation, the network thread, async particles;
+- the GPU: GL calls return before drawing is done, so a renderer is charged for submitting its work, and one that waits on the GPU can be charged for the renderers before it.
+
+The hooks change nothing the game does, and record nothing outside a measurement.
+
+### A CI gate
+
+Prefer comparing two measurements in the same run, as above: both run on the same machine. For a checked-in baseline, `FrameBaseline` uses the baselines file `pharos benchmark` uses:
+
+```csharp
+FrameMeasurement measured = await Session.MeasureFramesAsync(300);
+FrameBaseline.Assert(measured, "pharos-baselines.json", "mymod.village.alloc", FrameStat.AllocatedBytesPerFrame, tolerance: 0.10);
+FrameBaseline.Assert(measured, "pharos-baselines.json", "mymod.village.median", FrameStat.Median, tolerance: 0.50);
+```
+
+- **Writing baselines.** Run once with `PHAROS_UPDATE_BASELINES=1` to write the measured values. Other keys in the file are kept.
+- **Choosing a stat.** Allocations per frame hardly vary between machines, so they suit a tight tolerance. Times need a generous one, and a baseline written on a machine like the one that checks it.
+- **Several writers.** Updates take a lock other processes see, so parallel workers can update one file. `pharos benchmark --update-baselines` keeps the keys it does not own.
+
 ## GlCommandProxy
+
+
 
 Records OpenGL draw and buffer commands executed during a frame.
 

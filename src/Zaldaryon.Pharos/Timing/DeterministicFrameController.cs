@@ -155,6 +155,10 @@ public sealed class DeterministicFrameController
                 // 1. Process pending GLFW window events
                 _window.NativeWindow.ProcessEvents(0.0);
 
+                // A measured window times the frame's work from here, on this thread.
+                Performance.FrameCollector? measuring = BootMode == ClientBootMode.Engine ? Performance.FrameCollector.Active : null;
+                measuring?.BeginFrame();
+
                 // 2. Increment frame counters
                 _totalFrames++;
                 _totalElapsedSeconds += dt;
@@ -175,15 +179,19 @@ public sealed class DeterministicFrameController
                     }
                 }
 
+                long tasksStart = measuring != null ? System.Diagnostics.Stopwatch.GetTimestamp() : 0;
                 foreach (Action task in pendingTasks)
                 {
                     task.Invoke();
                 }
 
+                measuring?.MainThreadTasks(System.Diagnostics.Stopwatch.GetTimestamp() - tasksStart);
+
                 if (BootMode == ClientBootMode.Engine)
                 {
                     StepEngine(dt);
                     GL.Flush();
+                    measuring?.EndFrame();
                     OnFrameCompleted?.Invoke(this, new FrameCompletedEventArgs(_totalFrames, dt, _totalElapsedSeconds));
                     return;
                 }
