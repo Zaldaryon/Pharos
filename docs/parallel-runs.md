@@ -134,3 +134,53 @@ GitHub's standard Linux runners have four cores: two workers is a good start.
 | `--game <path>` | `VINTAGE_STORY` | The game install workers use. |
 | `--xvfb auto\|always\|never` | auto | A virtual display per worker. |
 | `-v`, `--verbose` | | Print each worker's command and filter. |
+
+## Comparing two runs
+
+`pharos diff before.trx after.trx` says what changed between two runs. It reports:
+
+- tests that newly fail: failing in the second run, and passing, skipped or absent in the first;
+- tests fixed, and tests still failing;
+- tests newly skipped: skipped in the second run, and run in the first (a test that failed and is
+  now skipped is never counted as fixed);
+- tests that vanished, and new tests;
+- passing tests that got much slower or faster.
+
+```bash
+pharos diff main.trx pr.trx --slower-than 50% --json > diff.json
+```
+
+| Option | Default | |
+|---|---|---|
+| `--slower-than <n%>` | 50% | Report a passing test more than this much slower... |
+| `--min-delta <seconds>` | 1 | ...and at least this many seconds slower, so short tests do not count. |
+| `--fail-on-slower` | off | Count slower tests as regressions. |
+| `--fail-on-vanished` | off | Count tests gone from the second run as regressions. |
+| `--fail-on-skipped` | off | Count newly skipped tests as regressions. |
+| `--json` | off | Print the comparison as JSON. |
+
+Tests are matched by their class, method and display name, so each theory row is compared on its
+own. A theory row whose display name changes from run to run (a GUID, a time, or arguments the
+runner truncates with "...") shows up as one vanished and one new test every time. A test reported
+twice in one file is compared by its worst result: failed, then passed, then skipped. A test that
+took no time in the first run is reported slower by `--min-delta` alone.
+
+A second run that stopped early, because its test host crashed or was stopped, or that has no
+results while the first has some, always counts as a regression: the tests it never ran would
+otherwise only show up as vanished.
+
+Exit codes:
+
+- 0: no regressions;
+- 1: regressions (new failures, a second run that stopped early, and slower, vanished or newly
+  skipped tests when asked);
+- 2: bad arguments, or a file that is missing or is not a TRX file.
+
+The JSON holds `schemaVersion` (1), the files and thresholds compared, `regressed` and `exitCode`,
+`beforeAborted` and `afterAborted` when a run stopped early, one list per category (`newFailures`,
+`fixed`, `stillFailing`, `newlySkipped`, `vanished`, `added`, `slower`, `faster`), and the test
+counts. Each test gives its durations both as `"00:00:01.5"` strings and as `beforeSeconds` and
+`afterSeconds` numbers.
+
+A CI job can gate on the exit code directly: for instance, compare a pull request's run with the
+latest run on main, or one game version's run with the next.
