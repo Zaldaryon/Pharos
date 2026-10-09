@@ -1,0 +1,9 @@
+{
+  code: "sword",
+  variantgroups: [ { code: "metal", states: ["iron"] } ],
+  tool: "sword",
+  durability: 500,
+  shape: { base: "game:item/resource/beeswax" },
+  texture: { base: "game:item/resource/beeswax" },
+  creativeinventory: { "general": ["*"] }
+}

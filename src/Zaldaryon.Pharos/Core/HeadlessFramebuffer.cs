@@ -135,7 +135,7 @@ public sealed class HeadlessFramebuffer : IDisposable
     /// <summary>
     /// Flips the rows of a flat RGBA byte array in-place (converts bottom-up to top-down or vice versa).
     /// </summary>
-    private static void FlipVertically(byte[] rgba, int width, int height)
+    internal static void FlipVertically(byte[] rgba, int width, int height)
     {
         int stride = width * 4;
         byte[] row = new byte[stride];

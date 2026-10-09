@@ -96,6 +96,9 @@ public sealed class DeterministicFrameController
     /// </summary>
     public bool IsStepping => _isStepping;
 
+    /// <summary>Whether this thread is inside a step: a frame that asks for another frame.</summary>
+    internal bool IsSteppingOnThisThread => Volatile.Read(ref _isStepping) && (ClientThread == null || ClientThread.IsCurrent) && Monitor.IsEntered(_stepLock);
+
     /// <summary>
     /// Raised immediately after each deterministic frame completes.
     /// </summary>

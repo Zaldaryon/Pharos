@@ -74,7 +74,7 @@ public sealed class FramebufferSnapshot
             }
         }
         using SKData data = bmp.Encode(SKEncodedImageFormat.Png, 100);
-        using FileStream fs = File.OpenWrite(path);
+        using FileStream fs = File.Create(path);
         data.SaveTo(fs);
     }
 
@@ -85,19 +85,26 @@ public sealed class FramebufferSnapshot
     {
         ArgumentException.ThrowIfNullOrEmpty(path);
 
-        using SKBitmap src = SKBitmap.Decode(path)
+        (byte[] pixels, int width, int height) = DecodeRgba(path);
+        return new FramebufferSnapshot(pixels, width, height);
+    }
+
+    /// <summary>
+    /// Decodes an image into top-down RGBA bytes with straight (unpremultiplied) alpha, as
+    /// snapshots hold them: a pixel saved with <see cref="SaveToPng"/> reads back unchanged.
+    /// </summary>
+    internal static (byte[] Pixels, int Width, int Height) DecodeRgba(string path)
+    {
+        using SKCodec codec = SKCodec.Create(path)
             ?? throw new InvalidOperationException($"Failed to decode image: {path}");
 
-        // Normalize to RGBA8888 top-down regardless of source format.
-        var info = new SKImageInfo(src.Width, src.Height, SKColorType.Rgba8888, SKAlphaType.Unpremul);
-        SKBitmap? converted = src.Copy(info.ColorType);
-        if (converted is null)
-            throw new InvalidOperationException($"Failed to convert image to RGBA8888: {path}");
-
-        using SKBitmap bmp = converted;
+        // Decoding straight into an unpremultiplied RGBA bitmap: the default decode premultiplies.
+        SKImageInfo info = codec.Info.WithColorType(SKColorType.Rgba8888).WithAlphaType(SKAlphaType.Unpremul);
+        using SKBitmap bmp = SKBitmap.Decode(codec, info)
+            ?? throw new InvalidOperationException($"Failed to decode image: {path}");
         byte[] pixels = new byte[bmp.Width * bmp.Height * 4];
         System.Runtime.InteropServices.Marshal.Copy(bmp.GetPixels(), pixels, 0, pixels.Length);
-        return new FramebufferSnapshot(pixels, bmp.Width, bmp.Height);
+        return (pixels, bmp.Width, bmp.Height);
     }
 
     /// <summary>

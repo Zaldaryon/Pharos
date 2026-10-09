@@ -91,6 +91,40 @@ Assert.Equal(expectedBlocks, marked.Positions);
   from either side, has no positions.
 - **Slots.** `HighlightSlots()` lists the slots.
 
+## Items: tooltips and icons
+
+`client.Items` gives an engine-mode client's items. It covers stacks by code, the tooltips the game
+builds for them, and their GUI icons, rendered as the game's own `.exponepng` renders them.
+
+```csharp
+ItemStack sword = client.Items.Stack("mymod:sword-iron");
+Assert.Contains("Durability: 500 / 500", client.Items.Tooltip(sword).Lines);
+GoldenImageAssertion.Assert(client.Items.RenderIcon(sword, 64), "Goldens/sword-iron.png");
+```
+
+- **`Stack(code, quantity, type)`** finds the item or block with the code. The domain is "game"
+  when the code has none. When an item and a block share a code, `type` picks one.
+- **`Tooltip(stack, extendedInfo)`** builds the tooltip as the game does: the stack's name as
+  `Title`, and the description its collectible builds (`GetHeldItemInfo`) as `Text`.
+  - `PlainText` and `Lines` give the description without its markup.
+  - `extendedInfo` adds the lines the game shows with extended debug info on, such as the code.
+  - The caller's stack is not changed.
+- **`RenderIcon(stack, size)`** renders the stack's GUI icon into an offscreen framebuffer and
+  returns a `FramebufferSnapshot`.
+  - The icon is rendered in the GUI pass of a frame, so each call advances the client by one
+    frame.
+  - It is drawn at GUI scale 1, whatever the client's setting.
+  - The frame's GL state and matrices are put back afterwards.
+  - It throws when the stack has no GUI model.
+- **`RenderIcons(domain)`** renders every block and item of a domain that is in a creative
+  inventory tab (all of them with `creativeOnly: false`), up to 256 per frame.
+- **`SaveIcons(domain, directory)`** writes each one to `block/<path>.png` or `item/<path>.png`,
+  for making golden images.
+
+The pixels are the framebuffer's, top row first, RGBA. Opaque and fully transparent pixels match
+the game's export at GUI scale 1. Edges blended over the transparent background do not match it byte for byte,
+so make goldens with `SaveIcons` or `RenderIcon`, not with `.exponepng`.
+
 ## Frame measurements
 
 `Session.MeasureFramesAsync(frames)` steps a client-server session and measures it; `Client.MeasureFramesAsync(frames)` measures a client on its own. Engine mode only.
