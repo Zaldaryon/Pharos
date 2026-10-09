@@ -314,6 +314,7 @@ public sealed class EmbeddedServerHost : IDisposable, IAsyncDisposable
 
         ModSafetyCheck.Disable();
         SideDataPaths.Patch();
+        Performance.MeasurementHooks.InstallServer();
         SideDataPaths.UseServerDataPath(dataPath);
         ServerMain server = new(startArgs, new[] { "--dataPath", dataPath }, progArgs, isDedicatedServer: false);
 
@@ -408,6 +409,7 @@ public sealed class EmbeddedServerHost : IDisposable, IAsyncDisposable
 
         ModSafetyCheck.Disable();
         SideDataPaths.Patch();
+        Performance.MeasurementHooks.InstallServer();
         SideDataPaths.UseServerDataPath(dataPath);
         ServerMain server = new(startArgs, new[] { "--dataPath", dataPath }, progArgs, isDedicatedServer: false);
 
