@@ -21,8 +21,9 @@ namespace Zaldaryon.Pharos.Server;
 /// <para>
 /// A snapshot holds every loaded chunk in the game's own save format: blocks, fluids, light,
 /// decor, block entities, the entities stored with the chunk, and mod data. It also holds the
-/// height maps of their map chunks, the world data of every known player, and the position, game
-/// mode and inventories of the players connected when it was taken.
+/// height maps of their map chunks, the mod data of the save game and of every loaded map region,
+/// the world and server data of every known player, and, for the players connected when it was
+/// taken, their position, game mode, inventories and entity state.
 /// </para>
 /// <para>
 /// <see cref="Restore"/> runs on the server's game thread. It serializes each loaded chunk again
@@ -35,7 +36,15 @@ namespace Zaldaryon.Pharos.Server;
 /// <para>
 /// Players that joined after the snapshot are forgotten, so a player joining under the same name
 /// later starts fresh. Connected players are put back where they were, in the game mode and with
-/// the inventories they had.
+/// the inventories they had, with their entity's attribute trees and stats (health, satiety, body
+/// temperature, damage over time, character class and traits), their spawn point, role,
+/// privileges and mod data. A player that died is revived. Their clients are sent the restored
+/// entity and player data.
+/// </para>
+/// <para>
+/// The save game's mod data (<c>SaveGame.StoreData</c>) and each map region's mod data are put
+/// back key by key; a key stored with null counts as absent. Mods that keep a copy of that data in
+/// memory reload it themselves.
 /// </para>
 /// <para>
 /// The calendar and the weather are restored too: the time, its speed and a freeze; each loaded
@@ -43,8 +52,8 @@ namespace Zaldaryon.Pharos.Server;
 /// and whether the weather changes on its own. Clients are sent the restored calendar and weather.
 /// </para>
 /// <para>
-/// Not restored: chunks and map regions first loaded after the snapshot, world-level mod data,
-/// and tick listeners or event handlers a test registered.
+/// Not restored: chunks first loaded after the snapshot and unloaded again, what mods keep in
+/// memory, and tick listeners or event handlers a test registered.
 /// </para>
 /// </remarks>
 public sealed record WorldSnapshot : IWorldSnapshot
@@ -72,6 +81,19 @@ public sealed record WorldSnapshot : IWorldSnapshot
     /// out where they sit. See <see cref="TrackChunksLoadedLater"/>.
     /// </summary>
     private readonly List<(ServerChunk Chunk, byte[] Saved, MapChunkState? Map)> _loadedLater = [];
+
+    /// <summary>Each map region's mod data, keyed by its region index.</summary>
+    private readonly Dictionary<long, Dictionary<string, byte[]>> _mapRegions = [];
+
+    /// <summary>
+    /// Map regions loaded after the snapshot, with their mod data as it was when they loaded. The
+    /// chunk thread loads regions, so this is locked.
+    /// </summary>
+    private readonly List<(long Index, Dictionary<string, byte[]> ModData)> _regionsLoadedLater = [];
+
+    private IReadOnlyDictionary<string, byte[]> SaveGameModData { get; init; } = new Dictionary<string, byte[]>();
+
+    private string[] RuntimePrivilegeCodes { get; init; } = [];
 
     private IReadOnlyDictionary<string, byte[]> WorldPlayerData { get; }
 
@@ -154,11 +176,21 @@ public sealed record WorldSnapshot : IWorldSnapshot
             }
         }
 
-        return new WorldSnapshot(host.Options, chunks, mapChunks, worldPlayerData, serverPlayerData, online)
+        ICoreServerAPI api = (ICoreServerAPI)server.Api;
+        WorldSnapshot snapshot = new(host.Options, chunks, mapChunks, worldPlayerData, serverPlayerData, online)
         {
             Calendar = host.Calendar.Capture(),
             Weather = host.Weather.Capture(),
+            SaveGameModData = StateRestore.Copy((api.WorldManager.SaveGame as SaveGame)?.ModData),
+            RuntimePrivilegeCodes = [.. ServerConfigInternals.RuntimePrivilegeCodes(server.Config)],
         };
+
+        foreach ((long index, IMapRegion region) in api.WorldManager.AllLoadedMapRegions)
+        {
+            snapshot._mapRegions[index] = StateRestore.Copy(region.ModData);
+        }
+
+        return snapshot;
     }
 
     /// <summary>
@@ -174,7 +206,7 @@ public sealed record WorldSnapshot : IWorldSnapshot
         new(options, chunkData);
 
     /// <inheritdoc/>
-    public void Restore(EmbeddedServerHost host) => RestoreCore(host);
+    public void Restore(EmbeddedServerHost host) => RestoreCore(host, WorldRestoreFilter.All);
 
     /// <summary>
     /// Where the connected player <paramref name="playerUid"/> stood when the snapshot was taken,
@@ -192,7 +224,24 @@ public sealed record WorldSnapshot : IWorldSnapshot
     /// </remarks>
     internal IDisposable TrackChunksLoadedLater(EmbeddedServerHost host)
     {
-        IServerEventAPI events = ((ICoreServerAPI)host.Server.Api).Event;
+        ICoreServerAPI api = (ICoreServerAPI)host.Server.Api;
+        IServerEventAPI events = api.Event;
+        MapRegionLoadedDelegate onRegionLoaded = (coord, region) =>
+        {
+            Dictionary<string, byte[]> modData;
+            try
+            {
+                modData = StateRestore.Copy(region.ModData);
+            }
+            catch (InvalidOperationException)
+            {
+                // Written to while it was copied, on the chunk thread: left out.
+                return;
+            }
+
+            lock (_regionsLoadedLater) _regionsLoadedLater.Add((api.WorldManager.MapRegionIndex2D(coord.X, coord.Y), modData));
+        };
+
         ChunkColumnLoadedDelegate onLoaded = (coord, chunks) =>
         {
             MapChunkState? map = chunks.OfType<ServerChunk>().FirstOrDefault()?.serverMapChunk is { } mapChunk
@@ -206,7 +255,12 @@ public sealed record WorldSnapshot : IWorldSnapshot
         };
 
         events.ChunkColumnLoaded += onLoaded;
-        return new Unsubscriber(() => events.ChunkColumnLoaded -= onLoaded);
+        events.MapRegionLoaded += onRegionLoaded;
+        return new Unsubscriber(() =>
+        {
+            events.ChunkColumnLoaded -= onLoaded;
+            events.MapRegionLoaded -= onRegionLoaded;
+        });
     }
 
     /// <summary>
@@ -215,6 +269,16 @@ public sealed record WorldSnapshot : IWorldSnapshot
     /// </summary>
     private void AdoptChunksLoadedLater(ServerMain server)
     {
+        lock (_regionsLoadedLater)
+        {
+            foreach ((long index, Dictionary<string, byte[]> modData) in _regionsLoadedLater)
+            {
+                _mapRegions.TryAdd(index, modData);
+            }
+
+            _regionsLoadedLater.Clear();
+        }
+
         if (_loadedLater.Count == 0) return;
 
         Dictionary<ServerChunk, long> indexOf = new(ReferenceEqualityComparer.Instance);
@@ -236,11 +300,12 @@ public sealed record WorldSnapshot : IWorldSnapshot
     }
 
     /// <summary>
-    /// Restores the world and returns how many chunks changed. Runs on the calling thread, which
-    /// must be the server's game thread.
+    /// Restores the world, putting back the keys <paramref name="filter"/> allows, and returns what
+    /// it put back. Runs on the calling thread, which must be the server's game thread.
     /// </summary>
-    internal int RestoreCore(EmbeddedServerHost host)
+    internal WorldRestoreResult RestoreCore(EmbeddedServerHost host, WorldRestoreFilter filter)
     {
+        ArgumentNullException.ThrowIfNull(filter);
         ArgumentNullException.ThrowIfNull(host);
 
         if (!host.IsRunning)
@@ -251,8 +316,11 @@ public sealed record WorldSnapshot : IWorldSnapshot
         ServerMain server = host.Server;
         AdoptChunksLoadedLater(server);
 
-        // The calendar first: restored weather and block entities read the time.
+        // The calendar first: restored weather and block entities read the time. Mod data before
+        // the weather, which keeps state of its own in the save game and in each region.
         if (Calendar != null) host.Calendar.Restore(Calendar);
+        int regions = RestoreMapRegions(server, filter);
+        int modData = RestoreSaveGameModData(server, filter);
         if (Weather != null) host.Weather.Restore(Weather);
         RestorePlayerData(server);
 
@@ -277,8 +345,46 @@ public sealed record WorldSnapshot : IWorldSnapshot
             }
         }
 
-        RestoreOnlinePlayers(server);
-        return restored;
+        int players = RestoreOnlinePlayers(server, filter);
+        return new WorldRestoreResult(restored, players, modData, regions);
+    }
+
+    private int RestoreSaveGameModData(ServerMain server, WorldRestoreFilter filter)
+    {
+        if (((ICoreServerAPI)server.Api).WorldManager.SaveGame is not SaveGame save) return 0;
+
+        save.ModData ??= new System.Collections.Concurrent.ConcurrentDictionary<string, byte[]>();
+        return StateRestore.ModDataInPlace(save.ModData, SaveGameModData, filter.RestoresModData);
+    }
+
+    /// <summary>
+    /// Puts back each loaded map region's mod data and sends a changed region to every client that
+    /// has it. Returns how many regions changed.
+    /// </summary>
+    private int RestoreMapRegions(ServerMain server, WorldRestoreFilter filter)
+    {
+        IWorldManagerAPI world = ((ICoreServerAPI)server.Api).WorldManager;
+        int changed = 0;
+        foreach ((long index, Dictionary<string, byte[]> saved) in _mapRegions)
+        {
+            if (world.GetMapRegion(index) is not ServerMapRegion region) continue;
+
+            region.ModData ??= [];
+            if (StateRestore.ModDataInPlace(region.ModData, saved, filter.RestoresModData) == 0) continue;
+
+            region.DirtyForSaving = true;
+            changed++;
+
+            // Sent at once: the chunk sender only goes through its queue while a client is still
+            // being sent chunks.
+            Vec3i pos = world.MapRegionPosFromIndex2D(index);
+            foreach (ConnectedClient client in server.Clients.Values)
+            {
+                if (client.DidSendMapRegion(index)) server.SendPacket(client.Id, region.ToPacket(pos.X, pos.Z));
+            }
+        }
+
+        return changed;
     }
 
     private static void RestoreChunk(ServerMain server, long index, ServerChunk current, byte[] saved)
@@ -365,7 +471,18 @@ public sealed record WorldSnapshot : IWorldSnapshot
 
         foreach (string uid in players.PlayerDataByUid.Keys.ToList())
         {
-            if (ServerPlayerData.TryGetValue(uid, out string? saved))
+            if (ServerPlayerData.TryGetValue(uid, out string? saved) && online.Contains(uid))
+            {
+                // A connected player holds its server data object: it is restored in place, so the
+                // player and the permissions API go on seeing the same one.
+                ServerPlayerData live = players.PlayerDataByUid[uid];
+                JsonConvert.PopulateObject(saved, live, s_replaceCollections);
+                if (OnlinePlayers.TryGetValue(uid, out OnlinePlayerState? state) && state.Entity is { } entity)
+                {
+                    PlayerEntityState.PlayerDataInternals.RuntimePrivileges(live) = [.. entity.RuntimePrivileges];
+                }
+            }
+            else if (saved != null)
             {
                 players.PlayerDataByUid[uid] = JsonConvert.DeserializeObject<ServerPlayerData>(saved)!;
             }
@@ -376,17 +493,29 @@ public sealed record WorldSnapshot : IWorldSnapshot
         }
 
         players.playerDataDirty = true;
+
+        ref HashSet<string> codes = ref ServerConfigInternals.RuntimePrivilegeCodes(server.Config);
+        codes = [.. RuntimePrivilegeCodes];
     }
 
-    private void RestoreOnlinePlayers(ServerMain server)
+    private static readonly JsonSerializerSettings s_replaceCollections = new() { ObjectCreationHandling = ObjectCreationHandling.Replace };
+
+    private int RestoreOnlinePlayers(ServerMain server, WorldRestoreFilter filter)
     {
+        int restored = 0;
         foreach (ConnectedClient client in server.Clients.Values)
         {
             if (client.Player is { Entity: not null } player && OnlinePlayers.TryGetValue(player.PlayerUID, out OnlinePlayerState? state))
             {
-                state.RestoreInto(player);
+                bool gameModeChanged = state.RestoreInto(player, filter);
+
+                // Game mode, spawn point, role and privileges go out in one player data packet.
+                server.BroadcastPlayerData(player, sendInventory: gameModeChanged, sendPrivileges: true);
+                restored++;
             }
         }
+
+        return restored;
     }
 
     private sealed class Unsubscriber(Action unsubscribe) : IDisposable
@@ -414,12 +543,15 @@ public sealed record WorldSnapshot : IWorldSnapshot
         }
     }
 
-    /// <summary>Where a connected player stood, in which game mode, holding what.</summary>
+    /// <summary>Where a connected player stood, in which game mode, holding what, in what state.</summary>
     private sealed record OnlinePlayerState(
         double X, double Y, double Z, float Yaw, float Pitch, int Dimension,
         EnumGameMode GameMode,
         IReadOnlyDictionary<string, byte[]> Inventories)
     {
+        /// <summary>The player's entity state and the rest of its player data.</summary>
+        public PlayerEntityState? Entity { get; init; }
+
         public static OnlinePlayerState From(IServerPlayer player)
         {
             EntityPos pos = player.Entity.Pos;
@@ -433,16 +565,19 @@ public sealed record WorldSnapshot : IWorldSnapshot
                 inventories[id] = tree.ToBytes();
             }
 
-            return new OnlinePlayerState(pos.X, pos.Y, pos.Z, pos.Yaw, pos.Pitch, pos.Dimension, player.WorldData.CurrentGameMode, inventories);
+            return new OnlinePlayerState(pos.X, pos.Y, pos.Z, pos.Yaw, pos.Pitch, pos.Dimension, player.WorldData.CurrentGameMode, inventories)
+            {
+                Entity = PlayerEntityState.From(player),
+            };
         }
 
-        public void RestoreInto(IServerPlayer player)
+        /// <summary>Puts the player back and returns whether its game mode changed.</summary>
+        public bool RestoreInto(IServerPlayer player, WorldRestoreFilter filter)
         {
-            if (player.WorldData.CurrentGameMode != GameMode)
-            {
-                player.WorldData.CurrentGameMode = GameMode;
-                player.BroadcastPlayerData(true);
-            }
+            bool gameModeChanged = player.WorldData.CurrentGameMode != GameMode;
+            if (gameModeChanged) player.WorldData.CurrentGameMode = GameMode;
+
+            Entity?.RestoreInto(player, filter);
 
             foreach ((string id, IInventory inventory) in player.InventoryManager.Inventories)
             {
@@ -462,6 +597,8 @@ public sealed record WorldSnapshot : IWorldSnapshot
                 entity.Pos.Yaw = Yaw;
                 entity.Pos.Pitch = Pitch;
             }
+
+            return gameModeChanged;
         }
     }
 
@@ -473,6 +610,13 @@ public sealed record WorldSnapshot : IWorldSnapshot
     {
         restorable = inventory is InventoryBasePlayer player and not InventoryPlayerCreative ? player : null;
         return restorable != null;
+    }
+
+    /// <summary>The server config's runtime privileges, which the game keeps internal.</summary>
+    private static class ServerConfigInternals
+    {
+        [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "RuntimePrivileveCodes")]
+        public static extern ref HashSet<string> RuntimePrivilegeCodes(ServerConfig config);
     }
 
     /// <summary>The server's chunk table, which the game keeps internal.</summary>

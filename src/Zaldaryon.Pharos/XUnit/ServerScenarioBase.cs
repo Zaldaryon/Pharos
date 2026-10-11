@@ -115,6 +115,14 @@ public abstract class ServerScenarioBase : IAsyncLifetime, IScenarioLifecycle
     protected virtual bool IsTestListener(Delegate handler) => ListenerWatermark.DeclaredIn(handler, IsolationLog.TestAssemblies(GetType()));
 
     /// <summary>
+    /// Whether a rollback puts back the mod data stored under <paramref name="key"/>: in the save
+    /// game (<c>SaveGame.StoreData</c>), in a map region, or in a connected player's data
+    /// (<c>IServerPlayer.SetModdata</c>). A refused key keeps its value from test to test. By
+    /// default, every key. Runs on the server's game thread; what it throws fails the rollback.
+    /// </summary>
+    protected virtual bool RestoreModData(string key) => true;
+
+    /// <summary>
     /// Gets how long a test waits for another scenario to release the host before it fails.
     /// </summary>
     protected virtual TimeSpan HostWaitTimeout => TimeSpan.FromMinutes(10);
@@ -327,7 +335,7 @@ public abstract class ServerScenarioBase : IAsyncLifetime, IScenarioLifecycle
                 IsolationReport? rolledBack = null;
                 if (fallback == null && WorldIsolation == WorldIsolation.Rollback)
                 {
-                    (rolledBack, fallback) = _pooled.TryRollback(IsTestListener, ScenarioTestInfo.Current?.DisplayName);
+                    (rolledBack, fallback) = _pooled.TryRollback(IsTestListener, new WorldRestoreFilter(ModData: RestoreModData), ScenarioTestInfo.Current?.DisplayName);
                     fallback ??= RollbackParticipants.Try(nameof(OnRollbackRestored), OnRollbackRestored);
                     if (fallback != null) rolledBack = null;
                 }
@@ -436,23 +444,30 @@ public abstract class ServerScenarioBase : IAsyncLifetime, IScenarioLifecycle
         /// Removes the listeners the test left, puts the world back as booted and tells the
         /// server's mods. Returns what it did, or why it failed.
         /// </summary>
-        public (IsolationReport? Report, string? Failure) TryRollback(System.Func<Delegate, bool> ownedByTest, string? test)
+        public (IsolationReport? Report, string? Failure) TryRollback(System.Func<Delegate, bool> ownedByTest, WorldRestoreFilter filter, string? test)
         {
             if (_baseline == null) return (null, "the world was never captured");
 
             int listeners = 0, chunks = 0, files = 0;
+            WorldRestoreResult? restored = null;
             string? failure = null;
             TimeSpan took = IsolationLog.Time(() =>
             {
                 failure = RollbackParticipants.Try("Removing the test's listeners", () => listeners = RollbackParticipants.Remove(Host, _listeners, ownedByTest))
-                    ?? RollbackParticipants.Try("The rollback", () => chunks = Host.RestoreSnapshot(_baseline))
+                    ?? RollbackParticipants.Try("The rollback", () => chunks = (restored = Host.RestoreSnapshot(_baseline, filter)).ChunksRestored)
                     ?? (Host.IsRunning ? null : "the server stopped during the rollback")
                     ?? RollbackParticipants.Try("Restoring the data files", () => files = Host.RunOnGameThread(() => _dataFiles?.Restore() ?? 0))
                     ?? RollbackParticipants.Try("Clearing the logs", Host.Logs.Clear)
                     ?? RollbackParticipants.Try($"A {RollbackEvents.Restored} handler", () => RollbackParticipants.Push(Host, RollbackEvents.Restored, test, chunks));
             });
 
-            return failure != null ? (null, failure) : (new IsolationReport(IsolationKind.RolledBack, null, chunks, listeners, took) { DataFilesRestored = files }, null);
+            return failure != null ? (null, failure) : (new IsolationReport(IsolationKind.RolledBack, null, chunks, listeners, took)
+            {
+                DataFilesRestored = files,
+                PlayersRestored = restored?.PlayersRestored ?? 0,
+                ModDataKeysRestored = restored?.ModDataKeysRestored ?? 0,
+                MapRegionsRestored = restored?.MapRegionsRestored ?? 0,
+            }, null);
         }
 
         public void Dispose()

@@ -505,16 +505,30 @@ public sealed partial class EmbeddedServerHost : IDisposable, IAsyncDisposable
     /// <returns>How many chunks had changed and were restored.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="snapshot"/> is null.</exception>
     /// <exception cref="InvalidOperationException">The server is not running.</exception>
-    public int RestoreSnapshot(WorldSnapshot snapshot)
+    public int RestoreSnapshot(WorldSnapshot snapshot) => RestoreSnapshot(snapshot, WorldRestoreFilter.All).ChunksRestored;
+
+    /// <summary>
+    /// Puts the world back as it was when <paramref name="snapshot"/> was taken, in place, on the
+    /// game thread, leaving the keys <paramref name="filter"/> refuses as they are. The server keeps
+    /// running and connected clients stay joined; they are sent the restored chunks, map regions,
+    /// entity state and player data again.
+    /// </summary>
+    /// <param name="snapshot">The snapshot to restore.</param>
+    /// <param name="filter">Which mod data and player attribute keys to put back.</param>
+    /// <returns>What was put back.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="snapshot"/> or <paramref name="filter"/> is null.</exception>
+    /// <exception cref="InvalidOperationException">The server is not running.</exception>
+    public WorldRestoreResult RestoreSnapshot(WorldSnapshot snapshot, WorldRestoreFilter filter)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
+        ArgumentNullException.ThrowIfNull(filter);
 
         if (!IsRunning)
         {
             throw new InvalidOperationException("Cannot restore snapshot to a stopped server.");
         }
 
-        return _gameThread.Invoke(() => snapshot.RestoreCore(this));
+        return _gameThread.Invoke(() => snapshot.RestoreCore(this, filter));
     }
 
     /// <summary>

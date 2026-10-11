@@ -170,8 +170,9 @@ public sealed class WeatherDriver
             Member.Call(region, "sendWeatherUpdatePacket");
         }
 
-        Member.Set(system, "OverridePrecipitation", saved.PrecipitationOverride);
-        Member.Set(system, "RainCloudDaysOffset", saved.RainCloudDaysOffset);
+        // Each setter writes the save game's mod data, so only a value that changed is set.
+        if ((float?)Member.Get(system, "OverridePrecipitation") != saved.PrecipitationOverride) Member.Set(system, "OverridePrecipitation", saved.PrecipitationOverride);
+        if ((double)Member.Get(system, "RainCloudDaysOffset")! != saved.RainCloudDaysOffset) Member.Set(system, "RainCloudDaysOffset", saved.RainCloudDaysOffset);
         Member.Set(system, "autoChangePatterns", saved.AutoChange);
         Member.Call(system, "broadCastConfigUpdate");
     }
