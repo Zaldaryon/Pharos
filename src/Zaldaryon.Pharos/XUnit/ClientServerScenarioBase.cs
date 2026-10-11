@@ -532,6 +532,7 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime, IScenarioLifecy
             // Ignore clock teardown errors
         }
 
+        Events.LeftOpenLogs.Close(_serverHost, _client);
         foreach (ServerTestPlayer player in _testPlayers)
         {
             try

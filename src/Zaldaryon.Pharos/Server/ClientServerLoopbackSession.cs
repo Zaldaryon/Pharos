@@ -283,6 +283,18 @@ public sealed partial class ClientServerLoopbackSession : IDisposable
         Server = null;
 #pragma warning restore CS0618
         client.SessionStepper = _stepper = ct => StepAsync(ct: ct);
+        server.SessionStepper = _serverStepper = ServerStepAsync;
+    }
+
+    // What a wait on the server steps: the session, or the server alone once the session or its
+    // client is gone, so a session left undisposed does not step a dead client.
+    private readonly Func<CancellationToken, Task>? _serverStepper;
+
+    private Task ServerStepAsync(CancellationToken ct)
+    {
+        if (!_disposed && !Client.IsDisposed) return StepAsync(ct: ct);
+        NativeServer!.Tick();
+        return Task.CompletedTask;
     }
 
     // What the client's drivers step while they wait, so the server ticks too.
@@ -824,5 +836,6 @@ public sealed partial class ClientServerLoopbackSession : IDisposable
         _disposed = true;
         Disconnect();
         if (Client.SessionStepper == _stepper) Client.SessionStepper = null;
+        if (NativeServer != null && NativeServer.SessionStepper == _serverStepper) NativeServer.SessionStepper = null;
     }
 }

@@ -80,6 +80,10 @@ Task<Entity> WaitForEntitySpawnAsync(string entityCode, double radius, Vec3d aro
 Task WaitForConditionAsync(Func<bool> condition, int maxTicks = 300);
 ```
 
+`Host.Events.Record(filter)` records the server's game events, such as blocks placed, entities
+dying and players respawning, as typed records to assert on and wait for. See
+[Game events](inspection-api.md#game-events-record-and-assert).
+
 ## Lifecycle
 
 `ServerScenarioBase` implements `IAsyncLifetime`. Before each test it boots an embedded server in a fresh sandbox from `WorldOptions`, which defaults to the class-level `[ServerWorld]`. It stages every `[ServerMods]` path from the class and the assembly into the sandbox's `Mods` folder first. After the test it stops the server, or keeps it for the next test (see below).
@@ -130,7 +134,7 @@ Before the world is restored, the rollback removes what was added since the worl
 - tick listeners, delayed callbacks and event-bus listeners whose handler is the test's own: compiled into the test class's assembly or a base class's, lambdas and local functions included. Override `IsTestListener(Delegate)` to judge otherwise;
 - every block-position delayed callback scheduled since, whoever scheduled it and in whatever chunk, such as water still spreading: it carries on a change the restore undoes.
 
-Listeners the game or mods registered stay. A mod resets its own state on `pharos:rollback:restored`.
+Listeners the game or mods registered stay. A mod resets its own state on `pharos:rollback:restored`. Game event logs a test left open (`Host.Events.Record`) are closed before the rollback.
 
 ### Mods and rollbacks
 

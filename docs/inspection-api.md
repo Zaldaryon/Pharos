@@ -93,6 +93,115 @@ Assert.Equal(expectedBlocks, marked.Positions);
   from either side, has no positions.
 - **Slots.** `HighlightSlots()` lists the slots.
 
+## Game events: record and assert
+
+`host.Events.Record(filter)` and `client.Events.Record(filter)` listen to the game's own events
+and return a log. The log holds typed records in firing order, each with the tick or frame it
+fired at. The game fires its events synchronously on its game thread, so the order is exact.
+
+```csharp
+using ServerEventLog log = ServerHost!.Events.Record(ServerEvents.Blocks | ServerEvents.Entities);
+await Session!.Blocks.PlaceAsync(ground, BlockFacing.UP, "mymod:lamp");
+BlockPlaced placed = Assert.Single(log.BlockPlaced);
+Assert.Equal("mymod:lamp", placed.Stack?.Collectible.Code.ToString());
+EntityDied died = await log.WaitForAsync<EntityDied>(e => e.Code?.Path == "wolf-male");
+PharosAssert.EventOrder(log, typeof(BlockPlaced), EventMatch.Of<EntityDied>(e => e.EntityId == wolfId));
+```
+
+In a server scenario the host is `Host`; in a client-server scenario it is `ServerHost`.
+`BlockPlaced.Stack` is null when the player's active slot was empty, hence the `?.` above.
+
+### What is recorded
+
+| Record | Event | Side | Main fields |
+|---|---|---|---|
+| `BlockPlaced` | `DidPlaceBlock` | server | `Player`, `OldBlockId`, `Selection`, `Pos`, `Stack` |
+| `BlockBroken` | `DidBreakBlock` | server | `Player`, `OldBlockId`, `Selection`, `Pos` |
+| `BlockUsed` | `DidUseBlock` | server | `Player`, `Selection`, `Pos` |
+| `PlayerDied` | `PlayerDeath` | server | `Player`, `Source` |
+| `PlayerRespawned` | `PlayerRespawn` | server | `Player` |
+| `GameModeChanged` | `PlayerSwitchGameMode` | server | `Player`, `Mode` |
+| `ActiveSlotChanged` | `AfterActiveSlotChanged` | server | `Player`, `FromSlot`, `ToSlot` |
+| `EntityInteracted` | `OnPlayerInteractEntity` | server | `Entity`, `Player`, `Stack`, `HitPosition`, `Mode` |
+| `EntitySpawnAttempted` | `OnTrySpawnEntity` | server | `Properties`, `Code`, `Position`, `HerdId`, `OnGameThread` |
+| `ChunkColumnLoaded` | `ChunkColumnLoaded` | server | `ChunkX`, `ChunkZ`, `ChunkCount` |
+| `ChunkColumnUnloaded` | `ChunkColumnUnloaded` | server | `ChunkX`, `ChunkY`, `ChunkZ` |
+| `WorldSaved` | `GameWorldSave` | server | |
+| `EntitySpawned` | `OnEntitySpawn` | both | `Entity` |
+| `EntityDied` | `OnEntityDeath` | both | `Entity`, `Source` |
+| `EntityDespawned` | `OnEntityDespawn` | both | `Entity`, `Reason` |
+| `EntityMounted`, `EntityUnmounted` | `EntityMounted`, `EntityUnmounted` | both | `Rider`, `Seat` |
+| `MapRegionLoaded` | `MapRegionLoaded` | both | `RegionX`, `RegionZ`, `Region` |
+
+Every record has:
+- `Index`: its place in the log, from 0;
+- `Side`;
+- `Step`: the host's `TickCount` on the server, or the client's `FrameController.TotalFrames`.
+
+An event fired while a tick runs carries the count from before that tick. Entity records also keep
+`EntityId` and `Code` as they were, so a test can match an entity that is gone.
+
+- **Filters.** `ServerEvents` and `ClientEvents` have one flag per event and the groups `Blocks`,
+  `Players`, `Entities`, `Chunks` and `All` (the default). Only the chosen events are listened to.
+- **Copies and live objects.** Item stacks, block selections and coordinates are copied when the
+  event fires. Players, entities, seats, damage sources and map regions are the game's live objects.
+- **When the game fires them.** The game's timing affects what a log sees:
+  - `DidPlaceBlock` and the other block events fire for what a client asks for, not for blocks
+    set through a block accessor.
+  - `BlockPlaced.Stack` is the active slot's stack after the placement, so in survival its size is
+    already one less.
+  - `PlayerDeath` comes on the tick after the player's entity died, after its `EntityDied`.
+  - `PlayerRespawn` fires for every respawn request, also one the game ignores because the player
+    is alive, but not once the world's `playerlives` are used up. The game may move and revive the player later, once the spawn point's chunks have
+    loaded: wait for `Player.Entity.Alive`.
+  - `ChunkColumnUnloaded` fires once per column (Y 0) when nobody is near it, once per chunk from
+    `WorldManager.UnloadChunkColumn`, and once per loaded chunk at shutdown.
+  - The client records `EntitySpawned` for an entity spawned while it is in the world. One it gets
+    with a chunk, such as one spawned while it is still loading the world after a join, comes as
+    loaded, which is not recorded.
+  - The vanilla client rarely runs `Die`, so a client log seldom has `EntityDied`. It has the
+    despawn.
+- **Outcomes stay the game's.** The log listens after the handlers registered before it and never
+  changes an outcome. `OnTrySpawnEntity` stops at the first handler that refuses, so a log cannot
+  see a spawn that an earlier handler refused, nor whether a later one refuses. An interaction an
+  earlier handler stopped with `PreventSubsequent` is not recorded.
+- **Not recorded.** The events that can cancel something (`CanUseBlock`, `CanPlaceOrBreakBlock`,
+  `BreakBlock`, `BeforeActiveSlotChanged`, `HandInteract`), joins, leaves, chat, `OnEntityLoaded`,
+  `MapRegionUnloaded`, `ChunkDirty`, and client-only events such as `IClientEventAPI.PlayerDeath`.
+
+### Reading and waiting
+
+- `All`, `Of<T>()` and the typed lists (`log.BlockPlaced`, `log.EntityDied`, ...) return copies.
+  They can be read while the game adds records. `Count`, `Clear()` and `Mark()` help bracket a step.
+  After `Clear()`, indexes go on counting.
+- `WaitForAsync<T>(predicate, since, maxTicks)` (server) and `WaitForAsync<T>(predicate, since,
+  maxFrames)` (client) step until the log holds a matching `T`, and return the earliest one.
+  - By default the whole log counts, so an event that fired before the call, during
+    `PlaceAsync` for example, is found. This differs from `ModNetwork`'s waits, which count from
+    the call. Pass `since: log.Mark()` to count only what comes after.
+  - A server log inside a client-server session steps the whole session, so the client keeps up.
+    Otherwise it ticks the host. With several sessions on one server, the last one made is the
+    one stepped; once its client is disposed, the host alone ticks. A client log steps the session
+    or the client's frame.
+  - It throws `TimeoutException` with the records listed, or `ObjectDisposedException` when
+    nothing matches and the log is disposed or its server or client is gone.
+- `PharosAssert.EventOrder(log, first, rest...)` checks that the expected records come in that order,
+  with any others between. An expectation is a record type (`typeof(BlockPlaced)`) or an
+  `EventMatch`: `EventMatch.Of<T>(predicate)` or `EventMatch.Where(predicate, description)`. It
+  also takes a list of records, such as `log.All.Where(...)`.
+
+### Threads and cleanup
+
+- Subscribing and unsubscribing run on the side's game thread. Recording takes a lock.
+  `OnTrySpawnEntity` also fires on the world generation thread; such a record has
+  `OnGameThread` false, and its place among the others is not exact.
+- A handler never throws into the game. If building a record fails, every read of the log from
+  then on throws it; `Clear()` does not reset it.
+- Dispose the log (`using`) to stop listening; the records stay readable. A log a test leaves open
+  is closed when the scenario ends, before the players leave and before the world is rolled back.
+  The rollback's own listener cleanup does not cover these handlers, which belong to Pharos.
+- A client log follows the client across a reconnect.
+
 ## Items: tooltips and icons
 
 `client.Items` gives an engine-mode client's items. It covers stacks by code, the tooltips the game

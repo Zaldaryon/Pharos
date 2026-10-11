@@ -1217,4 +1217,52 @@ public static class PharosAssert
         throw new PharosAssertException(
             $"{left.Count} tick listener(s) or callback(s) are still tied to {pos}:\n  " + string.Join("\n  ", left));
     }
+
+    /// <summary>
+    /// Asserts that <paramref name="log"/> holds records matching <paramref name="first"/> and then
+    /// each of <paramref name="rest"/>, in that order. Other records may come between them. Each
+    /// expectation takes the earliest matching record after the one before it.
+    /// </summary>
+    /// <param name="log">The log, read now.</param>
+    /// <param name="first">The first expected record: a record type, or an <see cref="Events.EventMatch"/>.</param>
+    /// <param name="rest">The records expected after it, in order.</param>
+    /// <example><c>PharosAssert.EventOrder(log, typeof(EntitySpawned), EventMatch.Of&lt;EntityDied&gt;(d =&gt; d.EntityId == id));</c></example>
+    /// <exception cref="PharosAssertException">One was missing or out of order; the message lists the records.</exception>
+    public static void EventOrder(Events.GameEventLog log, Events.EventMatch first, params Events.EventMatch[] rest)
+    {
+        ArgumentNullException.ThrowIfNull(log);
+        EventOrder(log.All, first, rest);
+    }
+
+    /// <summary>
+    /// Asserts that <paramref name="records"/> hold records matching <paramref name="first"/> and
+    /// then each of <paramref name="rest"/>, in that order. See
+    /// <see cref="EventOrder(Events.GameEventLog, Events.EventMatch, Events.EventMatch[])"/>.
+    /// </summary>
+    /// <exception cref="PharosAssertException">One was missing or out of order; the message lists the records.</exception>
+    public static void EventOrder(IEnumerable<Events.GameEventRecord> records, Events.EventMatch first, params Events.EventMatch[] rest)
+    {
+        ArgumentNullException.ThrowIfNull(records);
+        ArgumentNullException.ThrowIfNull(first);
+        ArgumentNullException.ThrowIfNull(rest);
+        List<Events.GameEventRecord> list = [.. records];
+        Events.EventMatch[] expected = [first, .. rest];
+        int at = 0;
+        Events.GameEventRecord? previous = null;
+        for (int i = 0; i < expected.Length; i++)
+        {
+            int found = list.FindIndex(at, r => expected[i].Matches(r));
+            if (found < 0)
+            {
+                bool anywhere = list.Any(expected[i].Matches);
+                string where = previous == null ? "" : $" after {previous}";
+                throw new PharosAssertException(
+                    $"Expected {expected[i]} (#{i + 1} of {expected.Length}){where}, but {(anywhere ? "it came only before that" : "none was recorded")}. " +
+                    Events.GameEventLog.Listing(list));
+            }
+
+            previous = list[found];
+            at = found + 1;
+        }
+    }
 }

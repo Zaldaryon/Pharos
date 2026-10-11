@@ -162,6 +162,13 @@ Assert.Equal(1, ack.Version);
 
 A UDP message counts as sent when the client hands it to its socket: a degraded network may still drop it. The newest 10,000 messages are kept. A class whose pair is reused between tests (the default rollback isolation) starts each test with none; sequence numbers keep growing. Messages that do not decode as `T`, such as a malformed one a test delivered, are left out of `Sent<T>`, `Received<T>` and the waits.
 
+## Game Events
+
+`ServerHost.Events.Record(filter)` and `Client.Events.Record(filter)` record each side's game
+events as typed records: blocks placed, broken and used, entities spawning and dying, players
+respawning, and more. A server log's `WaitForAsync` steps the whole session. See
+[Game events](inspection-api.md#game-events-record-and-assert).
+
 ## Lifecycle
 
 `ClientServerScenarioBase` handles the full lifecycle:

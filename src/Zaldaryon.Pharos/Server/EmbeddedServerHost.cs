@@ -103,6 +103,24 @@ public sealed partial class EmbeddedServerHost : IDisposable, IAsyncDisposable
 
     private ServerTickListenerInspector? _tickListeners;
 
+    /// <summary>
+    /// Records the server's game events, such as blocks placed and entities dying, to assert on.
+    /// See <see cref="Zaldaryon.Pharos.Events.ServerEventRecorder"/>.
+    /// </summary>
+    public global::Zaldaryon.Pharos.Events.ServerEventRecorder Events => _events ??= new global::Zaldaryon.Pharos.Events.ServerEventRecorder(this);
+
+    private global::Zaldaryon.Pharos.Events.ServerEventRecorder? _events;
+
+    /// <summary>
+    /// Steps one frame of the <see cref="ClientServerLoopbackSession"/> the server is in, so a wait
+    /// on the server keeps the client going too; null outside a session. With several sessions on
+    /// one server, the last one made wins. Once its client is disposed it ticks only the server.
+    /// </summary>
+    internal System.Func<CancellationToken, Task>? SessionStepper { get; set; }
+
+    /// <summary>Whether the calling thread is the server's game thread.</summary>
+    internal bool IsOnGameThread => _gameThread.IsCurrent;
+
     /// <summary>The dummy TCP transport layer used for in-process connections.</summary>
     public DummyNetwork TcpNetwork { get; }
 
