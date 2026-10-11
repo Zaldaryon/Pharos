@@ -1188,4 +1188,33 @@ public static class PharosAssert
             string.Join("\n  ", missing.Take(50).Select(m => $"{m.Key} ({m.Language}{(m.FellBackToDefault ? ", shown in English" : "")}, {m.Count}x)")) +
             (missing.Count > 50 ? $"\n  ... and {missing.Count - 50} more" : ""));
     }
+
+    // -------------------------------------------------------------------------
+    // Server tick listener assertions
+    // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// Asserts that no game tick listener, and by default no delayed callback, is tied to
+    /// <paramref name="pos"/> on the server: what a block entity leaves behind when it is removed
+    /// without unregistering. See <see cref="Server.ServerTickListenerInspector.At"/>.
+    /// </summary>
+    /// <param name="host">The server.</param>
+    /// <param name="pos">The block position.</param>
+    /// <param name="includeCallbacks">
+    /// Whether delayed callbacks count too. Blocks schedule some on their own, such as liquid
+    /// flow; pass false when only listeners matter.
+    /// </param>
+    /// <exception cref="PharosAssertException">Some were left; the message lists them.</exception>
+    public static void NoTickListenersAt(Server.EmbeddedServerHost host, Vintagestory.API.MathTools.BlockPos pos, bool includeCallbacks = true)
+    {
+        ArgumentNullException.ThrowIfNull(host);
+        ArgumentNullException.ThrowIfNull(pos);
+        List<string> left = [.. host.TickListeners.At(pos).Select(l => $"listener #{l.Id} {l.Handler} ({l.Mod ?? "engine"}) every {l.IntervalMs} ms")];
+        if (includeCallbacks)
+            left.AddRange(host.TickListeners.CallbacksAt(pos).Select(c => $"callback #{c.Id} {c.Handler} ({c.Mod ?? "engine"}) due in {c.DueInMs} ms"));
+        if (left.Count == 0) return;
+
+        throw new PharosAssertException(
+            $"{left.Count} tick listener(s) or callback(s) are still tied to {pos}:\n  " + string.Join("\n  ", left));
+    }
 }

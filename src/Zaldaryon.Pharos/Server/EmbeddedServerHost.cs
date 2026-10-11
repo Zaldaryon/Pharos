@@ -95,6 +95,14 @@ public sealed partial class EmbeddedServerHost : IDisposable, IAsyncDisposable
 
     private WeatherDriver? _weather;
 
+    /// <summary>
+    /// The server's game tick listeners and delayed callbacks, and a fast-forward for the ones at
+    /// one block position. See <see cref="ServerTickListenerInspector"/>.
+    /// </summary>
+    public ServerTickListenerInspector TickListeners => _tickListeners ??= new ServerTickListenerInspector(this);
+
+    private ServerTickListenerInspector? _tickListeners;
+
     /// <summary>The dummy TCP transport layer used for in-process connections.</summary>
     public DummyNetwork TcpNetwork { get; }
 

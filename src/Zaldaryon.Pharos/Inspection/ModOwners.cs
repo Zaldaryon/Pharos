@@ -21,7 +21,7 @@ internal sealed class ModOwners
     /// <summary>The owners of the mods <paramref name="api"/> has loaded. Run on the game's thread.</summary>
     public static ModOwners Of(ICoreAPI? api)
     {
-        if (api?.ModLoader?.Mods is null) throw new InvalidOperationException("The client has not loaded its mods yet: it has not started a game.");
+        if (api?.ModLoader?.Mods is null) throw new InvalidOperationException("The game has not loaded its mods yet.");
         Dictionary<Assembly, string> byAssembly = [];
         foreach (Mod mod in api.ModLoader.Mods)
         {

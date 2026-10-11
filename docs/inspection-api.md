@@ -51,6 +51,8 @@ int calls = await Client.TickListeners.CountCallsAsync(listener, frames: 120);
   least one call.
 - **Counting.** `CountCallsAsync(frames)` counts every listener at once. While a count runs, each
   listener's handler is wrapped and `All()` still shows the original.
+- **The server's.** `Host.TickListeners` lists the server's listeners and fast-forwards the ones at
+  a block position; see `docs/writing-server-scenarios.md`.
 
 ### Particles
 
