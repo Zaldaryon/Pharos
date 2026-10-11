@@ -73,6 +73,19 @@ public sealed class FailureArtifactWriterTests : IDisposable
     }
 
     [Fact]
+    public void Write_SavesTheRandomSeed_ForAReplay()
+    {
+        FailureReport report = FailureArtifactWriter.Write(Failure("X.Seeded", "Seeded") with { RandomSeed = 1234, RandomSeedSource = "[Seeded] on the method" });
+
+        using JsonDocument run = JsonDocument.Parse(File.ReadAllText(Path.Combine(report.Directory, "run.json")));
+        Assert.Equal(1234, run.RootElement.GetProperty("randomSeed").GetInt32());
+        Assert.Equal("[Seeded] on the method", run.RootElement.GetProperty("randomSeedSource").GetString());
+
+        using JsonDocument unseeded = JsonDocument.Parse(File.ReadAllText(Path.Combine(FailureArtifactWriter.Write(Failure("X.Unseeded", "Unseeded")).Directory, "run.json")));
+        Assert.Equal(JsonValueKind.Null, unseeded.RootElement.GetProperty("randomSeed").ValueKind);
+    }
+
+    [Fact]
     public void Write_NeverReusesAFolder()
     {
         string first = FailureArtifactWriter.Write(Failure("X.Again", "Again")).Directory;

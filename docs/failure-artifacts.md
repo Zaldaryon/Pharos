@@ -18,7 +18,7 @@ row adds a short hash of its arguments to the method name, and a folder that alr
 | `client.log`, `server.log` | What the client and the server logged during the test. | `Logs` |
 | `client-logs/`, `server-logs/` | The game's own log files (`client-main.log`, `server-main.log` and the rest), up to their last 20 MB each. | `Logs` |
 | `packets.json` | The client-server traffic of the test, in the `PacketRecorder` format. | `Packets`, which is off by default |
-| `run.json` | The test, the outcome (`failed` or `timedOut`), the exception, the game and Pharos versions, the game install, the Optimum build (`optimum`, null on vanilla), the seed, world type and play style, the isolation and the isolation report (how the hosts were made ready, and what a rollback put back: chunks, players, mod data keys, map regions, data files, listeners removed), the client's boot mode, the frames and server ticks the test stepped, the server's clock (`serverClock`: `real`, or `virtual` with its tick, whether the calendar followed it and the simulated time), the run id, the time, the OS and the files written. | `RunInfo` |
+| `run.json` | The test, the outcome (`failed` or `timedOut`), the exception, the game and Pharos versions, the game install, the Optimum build (`optimum`, null on vanilla), the world's seed, world type and play style, the random seed and where it came from (`randomSeed` and `randomSeedSource`, null when the test is not seeded), the isolation and the isolation report (how the hosts were made ready, and what a rollback put back: chunks, players, mod data keys, map regions, data files, listeners removed), the client's boot mode, the frames and server ticks the test stepped, the server's clock (`serverClock`: `real`, or `virtual` with its tick, whether the calendar followed it and the simulated time), the run id, the time, the OS and the files written. | `RunInfo` |
 
 The failure message itself starts with the original exception's type and message. It then says
 where the artifacts went and lists the first 20 errors the client and the server logged. On a
@@ -60,6 +60,7 @@ still run.
 |----------|--------|
 | `PHAROS_ARTIFACTS` | The root folder. Defaults to `TestResults/pharos` next to the test assembly, for example `bin/Release/net10.0/TestResults/pharos`. |
 | `PHAROS_KEEP_SANDBOX=1` | Keeps the failed test's server sandbox and the client's temporary data folder instead of deleting them. Their paths are in the message and in `run.json`. A kept host is not reused by the next test. |
+| `PHAROS_RANDOM_SEED` | Replaces the random seed of every test `[Seeded]` covers, to replay a failure with the `randomSeed` from its `run.json`. See `docs/writing-server-scenarios.md`, "Seeded randomness". |
 | `PHAROS_RUN_ID` | Names the run in `run.json`. Defaults to `GITHUB_RUN_ID-GITHUB_RUN_ATTEMPT` on GitHub Actions, otherwise to one id per test process. |
 
 On CI, point `PHAROS_ARTIFACTS` into the workspace and upload it when the job fails. This

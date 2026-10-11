@@ -474,6 +474,67 @@ Some block entities use the world's random numbers. A firepit's temperature beha
 
 Blocks also schedule callbacks of their own, such as liquid flow. Pass `includeCallbacks: false` to check listeners only.
 
+## Seeded randomness
+
+Almost all of the game's random numbers come from unseeded generators, such as `World.Rand`, the static generators behind drops and crop growth, and those that systems, blocks and entities hold. `[Seeded]` seeds them before each test it covers, so a test can assert exact outcomes and a failure can be replayed:
+
+```csharp
+[ServerScenario, Seeded(1234)]          // a fixed seed
+public void Grass_DropsSeeds_Sometimes() { ... }
+
+[Seeded]                                 // a stable hash of each test's name
+public class DropTests : ServerScenarioBase { ... }
+
+[assembly: Seeded]                       // every scenario test in the assembly
+```
+
+- Seeding is opt-in. A test that no `[Seeded]` covers keeps the game's own generators. `[assembly: Seeded]` gives every test the hash of its name by default.
+- The nearest attribute wins: the test's, then the class's, then the assembly's.
+- The seed of a hash is the same on every machine and every run. It is taken from the class's full name, the method and the theory arguments.
+- The test's output starts with the seed, after the versions: `Random seed: 1234 ([Seeded] on the method). Replay it with PHAROS_RANDOM_SEED=1234.`
+- A failure's `run.json` has `randomSeed` and `randomSeedSource`; see `docs/failure-artifacts.md`.
+- `PHAROS_RANDOM_SEED=1234` replaces the seed of every test that `[Seeded]` covers. Run the one test with it to replay its failure.
+- Only the scenario attributes read `[Seeded]`. Under a plain `[Fact]`, call `Host.Random.Seed(n)` yourself. It seeds the statics of the calling assembly too; `Seed(n, assemblies)` names more.
+
+`Host.Random` does it by hand, at any time in a test:
+
+```csharp
+Host!.Random.Seed(42);                   // re-seeds, undoing the earlier seeding
+int? seed = Host.Random.CurrentSeed;     // null while the game's own generators run
+Host.Random.Restore();                   // the game's own generators again
+IReadOnlyList<SeededRandom> seeded = Host.Random.Seeded;
+Assert.Empty(Host.Random.Unseeded.Where(u => u.Assembly == typeof(MyMod).Assembly));
+```
+
+A seeding happens when the body starts, after the boot or the rollback, and is undone when the test ends, in every isolation mode. A reseed during the test adds a line to the test's output. In a client-server scenario, `SeedRandom(n)` reseeds both sides; `ServerHost.Random.Seed(n)` reseeds only the server and the statics.
+
+What is seeded:
+
+- every generator gets a stream of its own, derived from the seed and the generator's name, so one system drawing more does not shift another;
+- `World.Rand` on each side (`ServerMain.rand`, `ClientMain.rand`): one stream per thread, named after the thread;
+- the static generators of the game, of the side's mods and of the test assembly, such as `BlockDropItemStack.random` and `BlockEntityFastForwardGrowth.rand`. They are seeded in place, so every holder sees the seeded stream;
+- the generators held by the side's systems, mod systems, blocks, items and their behaviours, loaded entities, block entities and their behaviours;
+- the entities and block entities the side makes during the test. Each is seeded once, right after the game's call to its `AfterInitialized` or `Initialize` returns, so fields an override sets after calling the base method are covered too. Each is keyed by its code, where it is, and how many of it came before in the test, never by its entity id;
+- `[ThreadStatic]` generators, such as `NatFloat`'s and the AI tasks', on the server's game thread and an engine-mode client's thread.
+
+`Host.Random.Unseeded` lists what Pharos cannot seed, each entry with its `Assembly`:
+
+- generators created inside methods with no seed, or with a seed taken from a clock (`Environment.TickCount`, `DateTime.Now`, a `Stopwatch`, `Guid.NewGuid`, `ElapsedMilliseconds`, `string.GetHashCode`);
+- instance fields of objects Pharos does not reach, and fields set to a new generator after Pharos seeds them;
+- `[ThreadStatic]` fields, which are seeded only on the game threads;
+- anything a seeding failed on.
+
+Pharos reads the code of the game and the mods once per process, when the first host boots. That takes about a second for the game. It patches, before the world ticks, the methods that initialize entities and block entities. Code it meets later, such as a mod loaded on a reconnect, is read at the next seeding.
+
+Limits:
+
+- **The draws become replayable, not the whole simulation.** Unless a virtual clock drives the server (see "Virtual Clock"), the server's tick length follows the wall clock, so how many draws a tick makes can change from run to run. Assert on what a seeded call produces, rather than on what many ticks add up to.
+- **Work on other threads is reproducible in what it draws, but not in when it runs.** Examples are the random block ticks, chunk loading, and the client's particles. A static generator that several threads share, such as `BlockDropItemStack.random`, which the client and the server share in one process, interleaves in timing order.
+- **Thread-pool threads and a fixture-mode client are not replayable.** Thread-pool threads have no name and share one stream per generator. A fixture-mode client runs on the test's own thread, so its `[ThreadStatic]` generators are listed in `Unseeded` rather than seeded.
+- **Entities and block entities that a mod initializes through a non-virtual call, or by calling the base method directly, are not seeded when they are made.**
+- **Pharos seeds the fields declared on the objects it reaches, not objects nested inside them.** It does not cover a generator that a mod copied somewhere else from a `ThreadLocal` that Pharos replaced.
+- **A `Random` subclass that draws in methods of its own may keep state the seed does not reach.** Such generators carry a note in `Seeded`.
+
 ## Staging Server Mods
 
 Use `[ServerMods]` to load mods before server boot:

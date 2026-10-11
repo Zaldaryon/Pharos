@@ -56,7 +56,7 @@ Set `CompleteCharacterSelection = false` to drive the dialog from the test inste
 
 ## Limits
 
-- Timing is real, not deterministic: the engine's worker threads run on their own schedule. Use fixture mode when a test needs bit-exact frame stepping.
+- Timing is real, not deterministic: the engine's worker threads run on their own schedule. Use fixture mode when a test needs bit-exact frame stepping. `[Seeded]` makes the random draws replayable, not the timing; see `docs/writing-server-scenarios.md`, "Seeded randomness".
 - One engine-mode client at a time per process. The engine keeps static state (`ScreenManager.Platform`, `ClientSystemStartup.instance`, the shader registry). Clients booted one after another in the same process work. For multiplayer, join headless players (`EmbeddedServerHost.JoinPlayerAsync`) next to the one rendering client. The rendering client sees them as other players.
 
 ## Input

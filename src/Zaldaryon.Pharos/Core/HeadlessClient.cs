@@ -83,6 +83,14 @@ public sealed class HeadlessClient : IDisposable
     public ChunkTesselatorManager? ChunkTesselatorManager { get; private set; }
     public bool IsDisposed => _disposed;
 
+    /// <summary>
+    /// The client's random generators and the process-wide static ones: seeds them so a test's
+    /// draws can be replayed. See <see cref="World.GameRandom"/> and <see cref="XUnit.SeededAttribute"/>.
+    /// </summary>
+    public World.GameRandom Random => _random ??= new World.GameRandom(new World.ClientRandomSide(this));
+
+    private World.GameRandom? _random;
+
     private readonly EngineThread? _clientThread;
 
     /// <summary>
@@ -511,6 +519,9 @@ public sealed class HeadlessClient : IDisposable
             Inventory.Live = new LiveInventory(this, Ui);
             _lang = new Translations.LanguageDriver(this, () => clientThread?.IsCurrent ?? false);
         }
+
+        // Before the client joins or steps: what the game makes from here on can be seeded.
+        Random.HookAtBoot();
     }
 
     /// <summary>
@@ -1219,6 +1230,7 @@ public sealed class HeadlessClient : IDisposable
     public void Dispose()
     {
         if (_disposed) return;
+        _random?.ReleaseOnDispose();
         _disposed = true;
         _lang?.Dispose();
 

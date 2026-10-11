@@ -249,7 +249,11 @@ public abstract class ServerScenarioBase : IAsyncLifetime, IScenarioLifecycle
     /// </summary>
     protected BootDiagnosticsResult UnexpectedBootDiagnostics => BootCheck.Evaluate(GetType(), _host?.BootDiagnostics);
 
-    void IScenarioLifecycle.BeforeBody() => _run.BodyStarting(frames: null, ticks: _host?.TickCount);
+    void IScenarioLifecycle.BeforeBody()
+    {
+        _run.BodyStarting(frames: null, ticks: _host?.TickCount);
+        ScenarioRun.SeedRandom(this, _host?.Random, client: null);
+    }
 
     void IScenarioLifecycle.CheckLoggedErrors() =>
         LoggedErrorGate.ThrowIfAny(LoggedErrorGate.Collect(FailOnLoggedErrors, AllowedLoggedErrors, _host?.Logs));
@@ -281,6 +285,8 @@ public abstract class ServerScenarioBase : IAsyncLifetime, IScenarioLifecycle
         World = WorldOptions,
         Isolation = WorldIsolation.ToString(),
         IsolationReport = Isolation,
+        RandomSeed = server?.Random.CurrentSeed,
+        RandomSeedSource = server?.Random.CurrentSource,
         ServerTicks = ScenarioRun.Since(_run.TicksAtStart, server?.TickCount),
         Artifacts = Artifacts,
         AddFiles = OnFailure,
@@ -298,6 +304,7 @@ public abstract class ServerScenarioBase : IAsyncLifetime, IScenarioLifecycle
 
         if (_run.Abandoned)
         {
+            World.RandomSeeding.Abandon();
             IsolationLog.Left(GetType(), null, "the previous test timed out and was left running");
             // The timed-out body still runs on the game thread: the host is left as it is.
             _testPlayers.Clear();
@@ -329,9 +336,14 @@ public abstract class ServerScenarioBase : IAsyncLifetime, IScenarioLifecycle
 
             _testPlayers.Clear();
 
+            // The generators go back before anything else: the server is pooled or disposed next,
+            // and the static ones belong to the whole process.
+            string? random = RollbackParticipants.Try("Restoring the random generators", () => World.RandomSeeding.EndScenario(_host is { IsRunning: true } host ? host.Random : null, client: null));
+            if (random != null && WorldIsolation == WorldIsolation.Restart) ServerMain.Logger?.Warning("Pharos: {0}", random);
+
             if (_pooled != null)
             {
-                string? fallback = WhyNotReusable(_pooled);
+                string? fallback = WhyNotReusable(_pooled) ?? random;
                 IsolationReport? rolledBack = null;
                 if (fallback == null && WorldIsolation == WorldIsolation.Rollback)
                 {

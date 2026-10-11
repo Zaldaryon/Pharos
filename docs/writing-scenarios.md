@@ -315,6 +315,10 @@ public class VisualTests : ClientScenarioBase
 }
 ```
 
+## Seeded Randomness
+
+`[Seeded]` and `Client.Random` seed the game's random generators for a test, the same way as on the server: see `docs/writing-server-scenarios.md`, "Seeded randomness". A fixture-mode client runs on the test's own thread, so its `[ThreadStatic]` generators are not seeded.
+
 ## Best Practices
 
 ### Keep Tests Focused

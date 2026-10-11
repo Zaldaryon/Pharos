@@ -169,6 +169,10 @@ events as typed records: blocks placed, broken and used, entities spawning and d
 respawning, and more. A server log's `WaitForAsync` steps the whole session. See
 [Game events](inspection-api.md#game-events-record-and-assert).
 
+## Seeded Randomness
+
+`[Seeded]` seeds both sides' random generators before each test; see `docs/writing-server-scenarios.md`, "Seeded randomness". `SeedRandom(n)` reseeds both sides during a test. `ServerHost.Random.Seed(n)` and `Client.Random.Seed(n)` reseed one side each, together with the process-wide statics.
+
 ## Lifecycle
 
 `ClientServerScenarioBase` handles the full lifecycle:
