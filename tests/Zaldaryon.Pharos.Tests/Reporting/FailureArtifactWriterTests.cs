@@ -187,6 +187,31 @@ public sealed class FailureArtifactWriterTests : IDisposable
         Assert.Contains("and 5 more", summary);
     }
 
+    [Fact]
+    public void RunJson_RecordsServerClock()
+    {
+        JsonElement Clock(ServerClockInfo? clock, string method)
+        {
+            FailureReport report = FailureArtifactWriter.Write(Failure("Clock." + method, method) with { ServerClock = clock });
+            using JsonDocument run = JsonDocument.Parse(File.ReadAllText(Path.Combine(report.Directory, "run.json")));
+            return run.RootElement.GetProperty("serverClock").Clone();
+        }
+
+        JsonElement simulated = Clock(new ServerClockInfo("virtual", 50, true, false, 30_000), "Virtual");
+        Assert.Equal("virtual", simulated.GetProperty("mode").GetString());
+        Assert.Equal(50, simulated.GetProperty("tickMs").GetInt32());
+        Assert.True(simulated.GetProperty("followsCalendar").GetBoolean());
+        Assert.False(simulated.GetProperty("active").GetBoolean());
+        Assert.Equal(30_000, simulated.GetProperty("simulatedMs").GetInt64());
+
+        JsonElement real = Clock(new ServerClockInfo("real", null, null, false, null), "Real");
+        Assert.Equal("real", real.GetProperty("mode").GetString());
+        Assert.Equal(JsonValueKind.Null, real.GetProperty("tickMs").ValueKind);
+
+        // No server, no clock.
+        Assert.Equal(JsonValueKind.Null, Clock(null, "NoServer").ValueKind);
+    }
+
     private static ScenarioFailure Failure(string displayName, string method) => new()
     {
         DisplayName = displayName,

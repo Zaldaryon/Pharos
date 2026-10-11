@@ -278,6 +278,50 @@ public async Task EntityMovesToTarget()
 }
 ```
 
+## Virtual Clock
+
+The server's time follows the wall clock by default: one `Tick()` moves it by however much real time passed, so anything that integrates `dt` depends on the machine's speed. That includes hunger, AI, a firepit's burn tick, fire spread and entity physics. `Host.UseVirtualClock` makes ticks drive the time instead:
+
+```csharp
+using VirtualClock clock = Host!.UseVirtualClock(tickMs: 50);
+Host.Ticks(600);                              // exactly 30 simulated seconds
+clock.Advance(TimeSpan.FromMinutes(2));       // ticks in steps of 250 ms or less
+await Host.WaitForBackgroundWorkAsync();      // relight, random ticks, spawner, chunks, pathfinding idle
+```
+
+- **What follows the clock:**
+  - which server systems run, and with what `dt`;
+  - tick listeners and delayed callbacks;
+  - `world.ElapsedMilliseconds`;
+  - the server API's uptime;
+  - the calendar, unless you pass `followCalendar: false`.
+
+  Each `Tick()` moves the time by exactly `tickMs`. A tick in which the server does not run, because it is suspended, moves it by nothing.
+- **Intervals:** a system or listener runs once *more* than its interval has passed, so with 50 ms ticks a 100 ms listener runs every 150 ms, each time with `dt = 0.15`. That is the same on every machine.
+- **The first tick after the switch:** the simulated time starts where the server's time was. The first `dt` each system and listener gets still includes the real time since it last ran, which can be long, more than 0.4 s, after a slow setup. Every `dt` after that is exact.
+- **`Advance`:** each step is one tick with that `dt`, 250 ms or less by default (`maxStep` goes up to 1 s). Entity physics discards what it has to catch up on once it passes 0.4 s, so long steps lose physics time:
+  - a 1 s step keeps only 0.2 s of it, losing about 80%;
+  - a step near a multiple of 0.4 s keeps almost nothing.
+
+  Hunger works in 10-second buckets. A `tickMs` above about 360 drops physics time the same way.
+- **Server time in simulated seconds:** the clock is the server's single time, so these count simulated time too:
+  - pings: a real TCP client that does not answer for 15 simulated seconds is kicked; in-memory clients never are;
+  - autosave: every 300 simulated seconds;
+  - the unloading of map regions: after 120 simulated seconds unused;
+  - the AFK kick, when configured.
+- **The calendar:** it moves `SpeedOfTime × CalendarSpeedMul` game seconds per simulated second while it runs, that is, while players are connected. Clients keep projecting their calendar on real time between the calendar packets the server sends, so freeze the calendar for an exact check of client and server calendars.
+- **Background threads:** these keep their own clocks and run on real time:
+  - relight;
+  - random block ticks;
+  - the creature spawner;
+  - chunk loading and generation;
+  - async pathfinding.
+
+  What they do per simulated second therefore depends on the machine. `WaitForBackgroundWorkAsync` waits, without ticking or moving the clock, until each has an empty queue and has finished a whole pass since it last held work. Each wait takes at least one pass of every thread, so about half a second for the spawner's cycle. It throws `TimeoutException` naming the systems still busy after 30 seconds, scaled by `PHAROS_TIMEOUT_SCALE`; the message also says when the server is suspended or a thread was asked to pause (`ShouldPause`). What a pass hands to the game thread is done on the following ticks: random ticks to run, creatures to spawn, chunk columns loaded. It cannot be called on the game thread.
+- **Disposing:** the server goes back to the wall clock, carrying on from the simulated time, so its time never goes backwards. A clock a test leaves in use ends with the test, before a rollback or a recycle. The server's time is never rolled back.
+- **Failure artifacts:** a failure's `run.json` records the clock under `serverClock`.
+- **Cost:** Pharos patches the server's time reads once per process, before anything boots, whether or not a test uses the clock. That takes about 0.4 s, and longer in a process where nothing has used Harmony yet. Without a clock, the patched reads return what the game's stopwatch says.
+
 ## Calendar and Weather
 
 `Host.Calendar` reads and sets the world's calendar. The game's clock follows the wall clock: while players are connected it moves 30 game seconds per real second, and with nobody connected it stands still. A test that needs exact times freezes it first:

@@ -231,12 +231,14 @@ public sealed class CalendarDriver
 
         /// <summary>
         /// The calendar's time in seconds including what its wall clock has run since its last
-        /// tick, without changing it: where it would be if it ticked now.
+        /// tick, without changing it: where it would be if it ticked now. A calendar following a
+        /// <see cref="VirtualClock"/> counts the simulated time instead.
         /// </summary>
         public static double ProjectedSeconds(GameCalendar calendar)
         {
             Stopwatch watch = Watch(calendar);
-            double pending = watch.IsRunning ? watch.Elapsed.TotalSeconds * calendar.SpeedOfTime * calendar.CalendarSpeedMul : 0;
+            double elapsed = ServerClockPatches.CalendarPendingMilliseconds(watch) is { } simulatedMs ? simulatedMs / 1000.0 : watch.Elapsed.TotalSeconds;
+            double pending = watch.IsRunning ? elapsed * calendar.SpeedOfTime * calendar.CalendarSpeedMul : 0;
             return Timespan(calendar).TotalSeconds + pending;
         }
     }

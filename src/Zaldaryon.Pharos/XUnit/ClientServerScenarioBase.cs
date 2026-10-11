@@ -522,6 +522,16 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime, IScenarioLifecy
         }
         _classSettings = null;
 
+        // A virtual clock the test left in use ends before the world is rolled back.
+        try
+        {
+            _serverHost?.ResetVirtualClock();
+        }
+        catch
+        {
+            // Ignore clock teardown errors
+        }
+
         foreach (ServerTestPlayer player in _testPlayers)
         {
             try

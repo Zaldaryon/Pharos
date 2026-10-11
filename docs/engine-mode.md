@@ -539,6 +539,8 @@ var server = EmbeddedServerHost.Boot(new ServerWorldOptions { ListenPort = 0 });
 var session = client.ConnectTcp(server, ClientAuth.Offline("Alice"));             // ticks the server in lockstep
 ```
 
+With a server on a virtual clock (`server.UseVirtualClock(tickMs)`, see [Writing Server Scenarios](writing-server-scenarios.md#virtual-clock)), each lockstep frame moves the server by `serverTicksPerFrame × tickMs`. A `tickMs` of `dt × 1000 / serverTicksPerFrame` keeps both sides in step. `clock.Advance` ticks only the server, so in a lockstep session step the session instead. The client's own clock, and its delayed callbacks, stay on real time.
+
 `ConnectRemote(host, port, auth)` joins a server this process does not run, such as a dedicated server in a container. The `RemoteServerSession` it returns steps only the client, since the server keeps its own clock.
 
 `ClientAuth` decides who the client is:
