@@ -133,5 +133,18 @@ internal sealed class ListenerWatermark
         public static List<DelayedCallbackBlock> BlockCallbacks(EventManager manager) => [.. BlockCallbacksField(manager)];
 
         public static Dictionary<BlockPos, DelayedCallbackBlock> SingleBlockCallbacks(EventManager manager) => new(SingleBlockCallbacksField(manager));
+
+        // The game's own collections, not copies: for code that changes them, on the game thread.
+
+        public static List<GameTickListener> LiveEntityListeners(EventManager manager) => EntityListenersField(manager);
+
+        public static List<GameTickListenerBlock> LiveBlockListeners(EventManager manager) => BlockListenersField(manager);
+
+        public static List<DelayedCallbackBlock> LiveBlockCallbacks(EventManager manager) => BlockCallbacksField(manager);
+
+        public static Dictionary<BlockPos, DelayedCallbackBlock> LiveSingleBlockCallbacks(EventManager manager) => SingleBlockCallbacksField(manager);
+
+        /// <summary>The handler the game calls for a block listener: the bare one when there is one.</summary>
+        public static Delegate? HandlerOf(GameTickListenerBlock listener) => (Delegate?)listener.HandlerBare ?? listener.Handler;
     }
 }

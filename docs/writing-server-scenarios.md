@@ -310,6 +310,92 @@ Host.Weather.StopChanges();                        // no new patterns, winds or 
 
 A rollback puts the calendar and the weather back as they were after boot.
 
+## Tick Listeners and Fast-Forward
+
+`Host.TickListeners` lists the server's game tick listeners and delayed callbacks, the ones block entities do their work in, and runs the ones at a block position on simulated time:
+
+```csharp
+BlockPos pos = new(512000, 4, 512000);
+var listeners = Host!.TickListeners.At(pos);
+Assert.Contains(listeners, l => l.Mod == "mymod" && l.IntervalMs == 100);
+
+FastForwardResult run = await Host.TickListeners.FastForwardAsync(pos, TimeSpan.FromMinutes(2), step: TimeSpan.FromMilliseconds(100));
+
+Host.RunOnGameThread(() => Api!.World.BlockAccessor.SetBlock(0, pos));
+PharosAssert.NoTickListenersAt(Host, pos);
+```
+
+### Listing
+
+- `All()`, `Of(modId)`, `At(pos)`, `OfEntity(entityId)` and `OfType(type)` list listeners. `Callbacks()` and `CallbacksAt(pos)` list delayed callbacks.
+- Each `ServerTickListenerInfo` gives:
+  - `Id` and `IntervalMs`;
+  - `Kind`: `Block` when it was registered with a position, as `BlockEntity.RegisterGameTickListener` does;
+  - `Pos`: that position, or, for a plain listener, the position of the block entity its handler belongs to;
+  - `Handler`, the type and method;
+  - `Mod`, by the assembly of the object the handler is bound to;
+  - `OwnerType`, that object's type: the block entity, a behavior, an entity;
+  - `EntityId`, for an entity or one of its behaviors;
+  - `SinceLastRunMs`, which is negative while an initial delay is pending;
+  - `Manager`: the server has two event managers, and ids count up separately in each.
+- Callbacks give `DueInMs` instead of the interval and the time since the last run.
+- A vanilla firepit has four listeners:
+  - `OnBurnTick` every 100 ms and `On500msTick` every 500 ms;
+  - the 10 s inventory tick of `BlockEntityContainer`;
+  - `onTick` of its `BEBehaviorTemperatureSensitive`, every 1900 to 2099 ms.
+
+  `OfType` matches the first three.
+- A lambda's target is a compiler-made closure, so its `Mod` comes from the closure's assembly. Its `OwnerType` is the closure, and `Pos` and `EntityId` stay null unless it captured nothing but `this`.
+
+### Fast-forward
+
+`FastForwardAsync(pos, span, step)` runs everything tied to `pos` (listeners and callbacks, block and plain, in both managers) for `span` of simulated time, at once, on the server's thread. A firepit cooks and a quern grinds as far as they would in that time, without waiting real seconds.
+
+- **Steps.** `span` is cut to whole milliseconds. Simulated time moves `step` at a time. The last step is shorter if `span` is not a multiple of `step`. `step` is whole milliseconds, at least 1. By default it is the smallest interval at `pos`, or 50 ms when there are only callbacks.
+- **When a listener runs.** Each step, a listener runs once if at least its interval has passed since it last ran, with `dt` the simulated time since then. When `step` divides the interval, `dt` is exactly the interval. The game itself waits for strictly more than the interval: on a 50 ms tick it runs a 100 ms listener every 150 ms. A fast-forward runs it every 100 ms.
+- **Order.** Within a step, listeners run by interval, then id, across both kinds and both managers; the game runs plain listeners first, then block listeners, in list order. Due callbacks run after the listeners, by due time. Each callback is taken out before it runs, with `dt` the time it is late.
+- **Errors.** As in the game, an error goes to the listener's error handler: a block entity's logs it, so read `Host.Logs`. A block listener whose handler throws keeps its last run time, so it is called again every step. A listener or callback with no error handler stops the run with its exception.
+- **Changes during a run.** Handlers may register and unregister listeners and callbacks, or remove their own block:
+  - a listener or callback registered at `pos` joins the run, with its initial delay;
+  - one that is removed is not called again;
+  - the run stops early once nothing is left at `pos`, and `Simulated` says how far it got.
+- **Nesting.** A fast-forward inside a handler throws `InvalidOperationException`.
+- **The result.** `Calls` counts calls per listener; `CallsTo(listener)` reads it. `CallbacksRun` counts callbacks.
+
+#### How it fits with real time
+
+A run starts every listener afresh, from now. The real time a listener was owed (less than one interval) is dropped, so a run is exact and repeatable.
+
+The exception is a listener that has not run since the previous fast-forward: it carries on from where that run left it. So 60 s in one run and 30 s twice end in the same state, as long as each part is a whole number of steps.
+
+Afterwards, every listener and callback is moved back to real time. The next tick owes a listener only what the run left over, not the span, and a callback with 4 s left still has 4 s left.
+
+#### What it does not move
+
+Only the listeners and callbacks at `pos` run. These stay where they were:
+- `world.ElapsedMilliseconds`;
+- the calendar;
+- weather;
+- every other block entity and system.
+
+Handlers that measure time with them see none pass. Two examples:
+- A quern drops a player who stopped turning it 1 s after their last turn, by `ElapsedMilliseconds`. Under a fast-forward it never drops them, and keeps grinding.
+- A firepit turns from extinct to cold after 2 game hours, by the calendar. Move `Host.Calendar` for that.
+
+#### Clients
+
+In a client-server test, the client's copy of the block entity catches up when the server sends it, on the next `Host.Tick()`.
+
+#### Randomness
+
+Some block entities use the world's random numbers. A firepit's temperature behavior cools it in the rain, at random. Call `Host.Weather.SetPrecipitation(0)` and `Host.Calendar.Freeze()` when two runs must match.
+
+### Leftover listeners
+
+`PharosAssert.NoTickListenersAt(host, pos)` fails, listing them, while any listener or callback is still tied to `pos`. Breaking a block removes its block entity's listeners at once, so it can run right after.
+
+Blocks also schedule callbacks of their own, such as liquid flow. Pass `includeCallbacks: false` to check listeners only.
+
 ## Staging Server Mods
 
 Use `[ServerMods]` to load mods before server boot:

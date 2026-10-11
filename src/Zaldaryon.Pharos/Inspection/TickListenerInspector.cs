@@ -71,7 +71,7 @@ public sealed class TickListenerInspector
         foreach (GameTickListenerBlock listener in ListenerWatermark.Internals.BlockListeners(events))
         {
             if (listener == null) continue;
-            Delegate? handler = Unwrapped((Delegate?)listener.HandlerBare ?? listener.Handler);
+            Delegate? handler = Unwrapped(ListenerWatermark.Internals.HandlerOf(listener));
             listeners.Add(new TickListenerInfo(listener.ListenerId, listener.Millisecondinterval, ListenerKind.Block, listener.Pos?.Copy(),
                 ModOwners.Describe(handler), owners.OfDelegate(handler)));
         }
