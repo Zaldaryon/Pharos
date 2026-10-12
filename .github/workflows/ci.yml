@@ -75,7 +75,9 @@ jobs:
     needs: plan
     if: needs.plan.outputs.run == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    # The full lane grew past an hour: 46m on 11/10, 57m38s on main on 12/10, and the
+    # full-ci pull requests were killed at the 60 minute mark while still running tests.
+    timeout-minutes: 90
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -273,7 +275,9 @@ jobs:
     needs: plan
     if: needs.plan.outputs.run == 'true' && needs.plan.outputs.full == 'true'
     runs-on: windows-latest
-    timeout-minutes: 90
+    # Windows downloads the client, builds and runs the whole suite in one job, and it
+    # already reached 90m08s on 11/10, which the old budget killed. Runs took 58m to 82m.
+    timeout-minutes: 120
     env:
       VS_CACHE_PATH: C:\vintagestory-cache
     steps:
