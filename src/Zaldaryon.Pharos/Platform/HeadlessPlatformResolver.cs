@@ -207,6 +207,8 @@ public static class HeadlessPlatformResolver
         Inspection.ClientInspectionPatches.Install();
         Network.ModNetworkPatches.Install();
         Performance.MeasurementHooks.InstallServer();
+        Server.ServerClockPatches.Install();
+        Server.BackgroundWork.Install();
         Translations.TranslationCapture.Install();
         try
         {

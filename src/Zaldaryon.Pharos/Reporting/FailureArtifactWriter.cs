@@ -36,6 +36,9 @@ internal sealed record ScenarioFailure
     /// <summary>The server, when the scenario has one.</summary>
     public EmbeddedServerHost? Server { get; init; }
 
+    /// <summary>How the server's time ran during the test, for run.json; read from <see cref="Server"/> when not set.</summary>
+    public ServerClockInfo? ServerClock { get; init; }
+
     /// <summary>The frames the client stepped during the test, when known.</summary>
     public long? Frames { get; init; }
 
@@ -458,6 +461,14 @@ internal static class FailureArtifactWriter
             ["clientBootMode"] = failure.Client?.BootMode.ToString(),
             ["frames"] = failure.Frames,
             ["serverTicks"] = failure.ServerTicks,
+            ["serverClock"] = (failure.ServerClock ?? failure.Server?.ClockInfo) is { } clock ? new Dictionary<string, object?>
+            {
+                ["mode"] = clock.Mode,
+                ["tickMs"] = clock.TickMs,
+                ["followsCalendar"] = clock.FollowsCalendar,
+                ["active"] = clock.Active,
+                ["simulatedMs"] = clock.SimulatedMs,
+            } : null,
             ["runId"] = RunId,
             ["timeUtc"] = DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture),
             ["os"] = RuntimeInformation.OSDescription,

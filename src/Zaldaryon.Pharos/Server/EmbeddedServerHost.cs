@@ -797,6 +797,10 @@ public sealed partial class EmbeddedServerHost : IDisposable, IAsyncDisposable
 
     private void DisposeOnGameThread()
     {
+        EndVirtualClock();
+
+        // A later server answers its own time reads; this one's offset goes with it.
+        if (_clockState != null && ReferenceEquals(ServerClockPatches.Current, _clockState)) ServerClockPatches.Current = null;
         try
         {
             _gameThread.Invoke(DrainAndDisposeCore);

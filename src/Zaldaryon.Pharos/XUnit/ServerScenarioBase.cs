@@ -303,6 +303,16 @@ public abstract class ServerScenarioBase : IAsyncLifetime, IScenarioLifecycle
         IsolationException? isolationFailure = null;
         try
         {
+            // A virtual clock the test left in use ends before the world is rolled back.
+            try
+            {
+                _host?.ResetVirtualClock();
+            }
+            catch
+            {
+                // Ignore clock teardown errors
+            }
+
             foreach (ServerTestPlayer player in _testPlayers)
             {
                 player.Dispose();
