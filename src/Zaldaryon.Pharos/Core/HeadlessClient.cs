@@ -507,6 +507,7 @@ public sealed class HeadlessClient : IDisposable
             Input.Sink = new EngineInputSink(this);
             ((ClientTestPlayer)TestPlayer).UseEngineCamera();
             Ui = new GuiDriver(this);
+            ((ClientTestPlayer)TestPlayer).UseGuiDriver(() => Ui);
             Gui.Driver = Ui;
             Inventory.Live = new LiveInventory(this, Ui);
             _lang = new Translations.LanguageDriver(this, () => clientThread?.IsCurrent ?? false);

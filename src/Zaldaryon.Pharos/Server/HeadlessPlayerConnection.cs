@@ -117,6 +117,13 @@ internal sealed class HeadlessPlayerConnection
         });
 
     /// <summary>
+    /// Asks to respawn, as a real client does when its player clicks Respawn on the death screen.
+    /// The server handles packet 12 in <c>ServerSystemEntitySimulation.HandleSpecialKey</c>, which
+    /// triggers <c>PlayerRespawn</c> and puts the player back at its spawn point.
+    /// </summary>
+    public void RequestRespawn() => Send(new Packet_Client { Id = 12 });
+
+    /// <summary>
     /// Tells the server the player is leaving, as a real client does when it quits.
     /// </summary>
     public void Leave() => Send(new Packet_Client { Id = 14, Leave = new Packet_ClientLeave { Reason = 0 } });
