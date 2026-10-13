@@ -46,6 +46,9 @@ public sealed class ClientTestPlayer : IClientTestPlayer
 
     public EntityPlayer? RawEntity => _client.EntityPlayer;
 
+    /// <inheritdoc />
+    public IMountableSeat? MountedOn => RawEntity?.MountedOn;
+
     public Vec3d Position
     {
         get
