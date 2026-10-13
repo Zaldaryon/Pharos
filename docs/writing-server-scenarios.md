@@ -259,6 +259,70 @@ var pings = Host.ModPackets<MyPing>(alice, "mymod");
 
 `player.Received.Clear()` starts a fresh record.
 
+### Player vitals
+
+`player.Vitals` reads and changes the survival state the game keeps on the player entity: health, satiety and the five nutrient levels, oxygen, and body temperature and wetness. Every value comes from the game's own behaviour (`EntityBehaviorHealth`, `EntityBehaviorHunger`, `EntityBehaviorBreathe`, `EntityBehaviorBodyTemperature`), found by the name the game gives them, so nothing depends on the shape of the watched attribute trees.
+
+```csharp
+[ServerWorld(seed: 4242, playStyle: "surviveandbuild")]
+public class HungerTests : ServerScenarioBase
+{
+    [ServerScenario]
+    public async Task Eating_RaisesSatietyAndTheProteinLevel()
+    {
+        ServerTestPlayer player = await CreateTestPlayerAsync("Alice");
+        PlayerVitals vitals = player.Vitals;
+
+        Assert.Equal(15, vitals.MaxHealth);
+        Assert.Equal(1500, vitals.Saturation);
+
+        // Only what is named changes, through the behaviour, so what the game derives updates.
+        vitals.Set(health: 5, saturation: 300);
+        Assert.Equal(5, vitals.Health);
+
+        // Food feeds one nutrient level. The multiplier is the one a mod's food passes.
+        vitals.ReceiveSaturation(250, EnumFoodCategory.Protein, nutritionGainMultiplier: 2f);
+        Assert.Equal(200, vitals.Nutrition!.Protein);
+
+        // Spending it, the way an attack or a health regeneration does, without waiting ten seconds.
+        vitals.ConsumeSaturation(100);
+    }
+}
+```
+
+| Member | What it does |
+|--------|--------------|
+| `Read()` | A `VitalsReading` of every value at once |
+| `Health`, `MaxHealth`, `BaseMaxHealth`, `MaxHealthModifiers`, `FutureHealth`, `HealthChangeRate`, `DamageOverTime` | The health behaviour |
+| `Saturation`, `MaxSaturation`, `Nutrition` | The hunger behaviour, and `Nutrition` the five levels |
+| `Oxygen`, `MaxOxygen`, `HasAir` | The breathe behaviour |
+| `BodyTemperature`, `NormalBodyTemperature`, `Wetness` | The body temperature behaviour |
+| `Set(health:, maxHealth:, saturation:, maxSaturation:, nutrition:, oxygen:, hasAir:, bodyTemperature:, wetness:)` | Changes what is named, and only that |
+| `SetMaxHealthModifier(key, value)`, `RemoveMaxHealthModifier(key)` | What a trait or an armour piece adds to max health |
+| `ConsumeSaturation(amount)` | Spends satiety the way the game does, scaled by the player's `hungerrate` |
+| `ReceiveSaturation(amount, category, saturationLossDelay, nutritionGainMultiplier)` | Feeds the player the way an item does |
+| `WaitForAsync(predicate, maxTicks)` | Ticks until a reading matches, and returns it |
+
+`Read()` costs one walk of the entity's behaviours. Take one reading and keep it rather than reading again per assertion:
+
+```csharp
+VitalsReading before = vitals.Read();
+Assert.Equal(15, before.MaxHealth);
+Assert.Equal(1500, before.Saturation);
+```
+
+A few things the game does, worth knowing before a test asserts an exact value:
+
+- **Max health is derived.** `Set(maxHealth:)` sets the base and lets the behaviour recompute, so the modifiers and the `maxhealthExtraPoints` stat still add to it. `SetMaxHealthModifier` is the same path a mod takes.
+- **Health is clamped.** `Set(health:)` will not put the player above `MaxHealth` or below 0.
+- **Hunger is skipped in creative and spectator mode.** The game neither drains satiety nor regenerates health from it there. Changing or spending hunger for such a player throws, rather than quietly doing nothing, because the value would not stick.
+- **Satiety and health regeneration accumulate over game time.** For an exact value, drive the server with a [virtual clock](#virtual-clock) and read after a known number of ticks. `ConsumeSaturation` and `ReceiveSaturation` reach the same changes without waiting.
+- **Body temperature follows the calendar.** It moves over game hours, so `Host.Calendar.Advance` moves it; see also [Calendar and Weather](#calendar-and-weather).
+
+A world without the survival mod gives the player none of these behaviours. Every value reads as `null`, `vitals.IsAvailable` is false, and `Set` throws saying which behaviour is missing.
+
+The client's copy of the same state is `Player.Vitals` in a `ClientServerScenarioBase` (see [Writing Client-Server Scenarios](writing-client-server-scenarios.md)), and `ClientServerAssert.VitalsSynced(Session, playerName)` compares the two.
+
 ## Server Tick Control
 
 `EmbeddedServerHost` exposes deterministic tick stepping:
