@@ -305,6 +305,29 @@ public class ServerSandboxTests : IDisposable
     }
 
     [Fact]
+    public void Cleanup_ReportsALockedDirectory_InsteadOfThrowing()
+    {
+        ServerSandbox sandbox = new(deleteOnDispose: false);
+        string rootPath = sandbox.RootPath;
+        _createdDirectories.Add(rootPath);
+
+        // Windows refuses to delete a file another handle holds open. Linux deletes it happily,
+        // so what the lock asserts is the platform, and only Windows gets to run the assertion.
+        if (!OperatingSystem.IsWindows()) return;
+
+        string locked = Path.Combine(rootPath, "locked.json");
+        File.WriteAllText(locked, "{}");
+        using FileStream held = new(locked, FileMode.Open, FileAccess.Read, FileShare.None);
+
+        bool result = sandbox.Cleanup(maxRetries: 1, initialDelayMs: 1);
+
+        // A sandbox left on disk is reported, not thrown: the teardown of every other scenario
+        // used to fail on Windows because the server's log handle outlived its shutdown.
+        Assert.False(result);
+        Assert.True(Directory.Exists(rootPath));
+    }
+
+    [Fact]
     public void Dispose_DeletesDirectory_WhenDeleteOnDisposeIsTrue()
     {
         string rootPath;
