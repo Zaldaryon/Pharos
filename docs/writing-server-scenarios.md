@@ -293,6 +293,38 @@ var pings = Host.ModPackets<MyPing>(alice, "mymod");
 
 `player.Received.Clear()` starts a fresh record.
 
+### Headless player actions
+
+`player.Bot` sends the same client packets as the game client. The embedded server runs its normal
+movement, block, inventory and entity interaction handlers, so permissions and mod callbacks still
+apply. Every action returns a `BotResult`: `Accepted` reports the observed server-side result,
+`Error` contains a new in-game error from the server, and `Reason` describes a refusal without an
+in-game message.
+
+```csharp
+ServerTestPlayer bob = await CreateTestPlayerAsync("Bob");
+BotResult walk = await bob.Bot.WalkToAsync(new Vec3d(12, 4, 10), maxTicks: 600);
+Assert.True(walk.Accepted, walk.Error?.Code ?? walk.Reason);
+
+BotResult selected = await bob.Bot.SelectSlotAsync(0);
+BotResult broken = await bob.Bot.BreakBlockAsync(pos);
+Assert.True(selected.Accepted, selected.Error?.Code ?? selected.Reason);
+Assert.True(broken.Accepted, broken.Error?.Code ?? broken.Reason);
+
+BotResult used = await bob.Bot.UseBlockAsync(chestPos);
+IInventory chest = ((IBlockEntityContainer)GetBlockEntity(chestPos)!).Inventory;
+IInventory hotbar = bob.Player!.InventoryManager.GetHotbarInventory();
+BotResult moved = await bob.Bot.MoveSlotAsync(hotbar.InventoryID, 0, chest.InventoryID, 3, quantity: 1);
+Assert.True(used.Accepted && moved.Accepted);
+```
+
+The bot can also place a block with `PlaceBlockAsync`, attack or use an entity with
+`AttackEntityAsync` and `UseEntityAsync`, and press or release a control with `SetControlAsync`.
+`WalkToAsync` sends position updates at 20 ticks per second, follows one straight line, and can
+step up one block. It does not find a route around a taller wall or other obstruction. A block
+placement needs a block in the active hotbar slot, and a container inventory must be opened before
+`MoveSlotAsync` can move items into it.
+
 ### Player vitals
 
 `player.Vitals` reads and changes the survival state the game keeps on the player entity: health, satiety and the five nutrient levels, oxygen, and body temperature and wetness. Every value comes from the game's own behaviour (`EntityBehaviorHealth`, `EntityBehaviorHunger`, `EntityBehaviorBreathe`, `EntityBehaviorBodyTemperature`), found by the name the game gives them, so nothing depends on the shape of the watched attribute trees.

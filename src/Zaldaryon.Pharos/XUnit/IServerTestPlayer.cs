@@ -26,6 +26,9 @@ public interface IServerTestPlayer
     /// </summary>
     EntityPlayer? Entity { get; }
 
+    /// <summary>Gets the client-packet driver for this player when it is joined headlessly.</summary>
+    HeadlessPlayerBot Bot { get; }
+
     /// <summary>
     /// Gets the seat this player is mounted on, or null when the player is not mounted.
     /// </summary>
