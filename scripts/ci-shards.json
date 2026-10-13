@@ -1,0 +1,16 @@
+{
+  "include": [
+    {
+      "shard": 1,
+      "filter": "FullyQualifiedName~Zaldaryon.Pharos.Tests.Server.|FullyQualifiedName~Zaldaryon.Pharos.Tests.Scenarios.|FullyQualifiedName~Zaldaryon.Pharos.Tests.ModCompatibilityTests|FullyQualifiedName~Zaldaryon.Pharos.Tests.World."
+    },
+    {
+      "shard": 2,
+      "filter": "FullyQualifiedName~Zaldaryon.Pharos.Tests.XUnit.|FullyQualifiedName~Zaldaryon.Pharos.Tests.Network.|FullyQualifiedName~Zaldaryon.Pharos.Tests.Cli.|FullyQualifiedName~Zaldaryon.Pharos.Tests.Memory.|FullyQualifiedName~Zaldaryon.Pharos.Tests.Reporting.|FullyQualifiedName~Zaldaryon.Pharos.Tests.Events."
+    },
+    {
+      "shard": 3,
+      "filter": "FullyQualifiedName!~Zaldaryon.Pharos.Tests.Server.&FullyQualifiedName!~Zaldaryon.Pharos.Tests.Scenarios.&FullyQualifiedName!~Zaldaryon.Pharos.Tests.ModCompatibilityTests&FullyQualifiedName!~Zaldaryon.Pharos.Tests.World.&FullyQualifiedName!~Zaldaryon.Pharos.Tests.XUnit.&FullyQualifiedName!~Zaldaryon.Pharos.Tests.Network.&FullyQualifiedName!~Zaldaryon.Pharos.Tests.Cli.&FullyQualifiedName!~Zaldaryon.Pharos.Tests.Memory.&FullyQualifiedName!~Zaldaryon.Pharos.Tests.Reporting.&FullyQualifiedName!~Zaldaryon.Pharos.Tests.Events."
+    }
+  ]
+}
