@@ -53,6 +53,19 @@ internal sealed class ScenarioRun
         ScenarioHostPool.Poison(ScenarioTestInfo.Current?.DisplayName ?? "a scenario");
     }
 
+    /// <summary>
+    /// Seeds the scenario's random generators as its <see cref="SeededAttribute"/> asks, when the
+    /// body starts, and gives reseeds made during the body the test's output.
+    /// </summary>
+    /// <exception cref="InvalidOperationException"><c>PHAROS_RANDOM_SEED</c> is not a number.</exception>
+    public static void SeedRandom(object owner, World.GameRandom? server, World.GameRandom? client)
+    {
+        World.RandomSeeding.Notes = IsolationLog.Current;
+        if (ScenarioTestInfo.Current?.RandomSeed is not { } seed) return;
+        if (seed.Error != null) throw new InvalidOperationException(seed.Error);
+        World.RandomSeeding.SeedScenario(owner, seed.Seed, seed.Source, server, client);
+    }
+
     /// <summary>How far a counter moved since the body started.</summary>
     public static long? Since(long? start, long? now) => start is { } s && now is { } n ? n - s : null;
 

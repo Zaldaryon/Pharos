@@ -14,6 +14,9 @@ namespace Zaldaryon.Pharos.XUnit.Execution;
 /// <param name="Method">The test method, when the scenario pipeline runs it.</param>
 internal sealed record ScenarioTestInfo(string DisplayName, Type TestClass, string MethodName, MethodInfo? Method = null)
 {
+    /// <summary>The seed the test runs with, from <see cref="SeededAttribute"/>, or null when it is not seeded.</summary>
+    public ScenarioRandomSeed? RandomSeed { get; init; }
+
     private static readonly AsyncLocal<ScenarioTestInfo?> s_current = new();
 
     /// <summary>The scenario test running on this flow, set before its class is created.</summary>
@@ -256,15 +259,19 @@ internal sealed class ScenarioTestRunner(
     {
         IsolationLog.Notes notes = new();
         IsolationLog.Current = notes;
+        _randomSeed = ScenarioRandomSeed.Resolve(TestClass, TestMethod, TestMethodArguments);
         Tuple<decimal, string> result = await base.InvokeTestAsync(aggregator).ConfigureAwait(false);
-        return Tuple.Create(result.Item1, s_versions + result.Item2 + notes.Text);
+        return Tuple.Create(result.Item1, s_versions + _randomSeed?.OutputLine + result.Item2 + notes.Text);
     }
+
+    // The seed of this test, which its output starts with and its class seeds the game with.
+    private ScenarioRandomSeed? _randomSeed;
 
     protected override async Task<decimal> InvokeTestMethodAsync(ExceptionAggregator aggregator)
     {
         // Async, so the test info stays on this test's flow: the class's InitializeAsync reads it
         // to save artifacts when the scenario cannot even start.
-        ScenarioTestInfo.Current = new ScenarioTestInfo(Test.DisplayName, TestClass, TestMethod.Name, TestMethod);
+        ScenarioTestInfo.Current = new ScenarioTestInfo(Test.DisplayName, TestClass, TestMethod.Name, TestMethod) { RandomSeed = _randomSeed };
         return await new ScenarioTestInvoker(Test, MessageBus, TestClass, ConstructorArguments, TestMethod, TestMethodArguments, BeforeAfterAttributes, aggregator, CancellationTokenSource, timeoutMs)
             .RunAsync().ConfigureAwait(false);
     }

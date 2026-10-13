@@ -37,9 +37,9 @@ jobs:
       run: ${{ steps.plan.outputs.run }}
       full: ${{ steps.plan.outputs.full }}
       filter: ${{ steps.plan.outputs.filter }}
+      matrix: ${{ steps.plan.outputs.matrix }}
     steps:
       - name: Checkout repository
-        if: github.event_name == 'pull_request'
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -68,16 +68,24 @@ jobs:
           echo "run=$run" >> "$GITHUB_OUTPUT"
           echo "full=$full" >> "$GITHUB_OUTPUT"
           echo "filter=$filter" >> "$GITHUB_OUTPUT"
+          if [ "$full" = "true" ]; then
+            echo "matrix=$(jq -c . scripts/ci-shards.json)" >> "$GITHUB_OUTPUT"
+          else
+            echo 'matrix={"include":[{"shard":1,"filter":""}]}' >> "$GITHUB_OUTPUT"
+          fi
           echo "Lane: run=$run full=$full filter='$filter'"
 
   test-linux:
-    name: Build and Test (Linux)
+    name: Build and Test (Linux, shard ${{ matrix.shard }})
     needs: plan
     if: needs.plan.outputs.run == 'true'
     runs-on: ubuntu-latest
     # The full lane grew past an hour: 46m on 11/10, 57m38s on main on 12/10, and the
     # full-ci pull requests were killed at the 60 minute mark while still running tests.
     timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -129,7 +137,15 @@ jobs:
           PHAROS_VS_SESSIONSIGNATURE: ${{ secrets.PHAROS_VS_SESSIONSIGNATURE }}
           PHAROS_ARTIFACTS: ${{ github.workspace }}/artifacts/pharos
           TEST_FILTER: ${{ needs.plan.outputs.filter }}
+          SHARD_FILTER: ${{ matrix.filter }}
         run: |
+          if [ -n "$SHARD_FILTER" ]; then
+            if [ -n "$TEST_FILTER" ]; then
+              TEST_FILTER="($TEST_FILTER)&($SHARD_FILTER)"
+            else
+              TEST_FILTER="$SHARD_FILTER"
+            fi
+          fi
           if [ -n "$TEST_FILTER" ]; then
             xvfb-run -a -s "-screen 0 1280x720x24" dotnet test Pharos.sln -c Release --no-build --filter "$TEST_FILTER"
           else
@@ -137,6 +153,7 @@ jobs:
           fi
 
       - name: Check the pharos tool package
+        if: matrix.shard == 1
         env:
           VINTAGE_STORY: ${{ steps.vs.outputs.path }}
         run: |
@@ -146,7 +163,7 @@ jobs:
           scripts/check-tool-package.sh ./tool-nupkg/Zaldaryon.Pharos.Cli.*.nupkg "$VINTAGE_STORY"
 
       - name: Smoke-test mods with the installed pharos tool
-        if: needs.plan.outputs.full == 'true'
+        if: needs.plan.outputs.full == 'true' && matrix.shard == 1
         env:
           VINTAGE_STORY: ${{ steps.vs.outputs.path }}
           LIBGL_ALWAYS_SOFTWARE: 1
@@ -178,7 +195,7 @@ jobs:
         if: failure() || cancelled()
         uses: actions/upload-artifact@v4
         with:
-          name: pharos-failures-linux-${{ github.run_attempt }}
+          name: pharos-failures-linux-${{ matrix.shard }}-${{ github.run_attempt }}
           path: ${{ github.workspace }}/artifacts/pharos
           if-no-files-found: ignore
           retention-days: 14
@@ -271,13 +288,16 @@ jobs:
         run: docker logs vs 2>&1 | tail -200
 
   test-windows:
-    name: Build and Test (Windows)
+    name: Build and Test (Windows, shard ${{ matrix.shard }})
     needs: plan
     if: needs.plan.outputs.run == 'true' && needs.plan.outputs.full == 'true'
     runs-on: windows-latest
     # Windows downloads the client, builds and runs the whole suite in one job, and it
     # already reached 90m08s on 11/10, which the old budget killed. Runs took 58m to 82m.
     timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
     env:
       VS_CACHE_PATH: C:\vintagestory-cache
     steps:
@@ -341,13 +361,14 @@ jobs:
           # Software rendering on the Windows runner is the slowest lane; the watchdog only
           # catches hangs, so it gets twice the time.
           PHAROS_TIMEOUT_SCALE: "2"
-        run: dotnet test Pharos.sln -c Release --no-build
+          SHARD_FILTER: ${{ matrix.filter }}
+        run: dotnet test Pharos.sln -c Release --no-build --filter "$env:SHARD_FILTER"
 
       - name: Upload failure artifacts
         if: failure() || cancelled()
         uses: actions/upload-artifact@v4
         with:
-          name: pharos-failures-windows-${{ github.run_attempt }}
+          name: pharos-failures-windows-${{ matrix.shard }}-${{ github.run_attempt }}
           path: ${{ github.workspace }}/artifacts/pharos
           if-no-files-found: ignore
           retention-days: 14

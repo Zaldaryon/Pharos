@@ -14,6 +14,7 @@ using Vintagestory.Server.Network;
 using Zaldaryon.Pharos.Platform;
 using Zaldaryon.Pharos.XUnit;
 using Zaldaryon.Pharos.Reporting;
+using Zaldaryon.Pharos.World;
 
 namespace Zaldaryon.Pharos.Server;
 
@@ -120,6 +121,14 @@ public sealed partial class EmbeddedServerHost : IDisposable, IAsyncDisposable
 
     /// <summary>Whether the calling thread is the server's game thread.</summary>
     internal bool IsOnGameThread => _gameThread.IsCurrent;
+
+/// <summary>
+    /// The server's random generators and the process-wide static ones: seeds them so a test's
+    /// draws can be replayed. See <see cref="GameRandom"/> and <see cref="XUnit.SeededAttribute"/>.
+    /// </summary>
+    public GameRandom Random => _random ??= new GameRandom(new ServerRandomSide(this));
+
+    private GameRandom? _random;
 
     /// <summary>The dummy TCP transport layer used for in-process connections.</summary>
     public DummyNetwork TcpNetwork { get; }
@@ -290,7 +299,11 @@ public sealed partial class EmbeddedServerHost : IDisposable, IAsyncDisposable
         EngineThread gameThread = new("Pharos server game thread");
         try
         {
-            return gameThread.Invoke(() => boot(gameThread));
+            EmbeddedServerHost host = gameThread.Invoke(() => boot(gameThread));
+
+            // Before the world ticks: what the game makes from here on can be seeded.
+            host.Random.HookAtBoot();
+            return host;
         }
         catch
         {
@@ -811,6 +824,7 @@ public sealed partial class EmbeddedServerHost : IDisposable, IAsyncDisposable
     public void Dispose()
     {
         if (_disposed) return;
+        _random?.ReleaseOnDispose();
         _disposed = true;
 
         DisposeOnGameThread();
@@ -822,6 +836,7 @@ public sealed partial class EmbeddedServerHost : IDisposable, IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         if (_disposed) return;
+        _random?.ReleaseOnDispose();
         _disposed = true;
 
         await Task.Run(DisposeOnGameThread).ConfigureAwait(false);

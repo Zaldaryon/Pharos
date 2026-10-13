@@ -145,6 +145,7 @@ internal static class IsolationLog
     internal sealed class Notes
     {
         private string? _prepared, _summary, _after;
+        private readonly List<string> _lines = [];
 
         public void SetPrepared(string line, string summary)
         {
@@ -154,7 +155,21 @@ internal static class IsolationLog
 
         public void SetAfter(string? line) => _after = line;
 
-        public string Text => string.Join(Environment.NewLine, new[] { _prepared, _after, _summary }.Where(l => l != null)) is { Length: > 0 } text
+        /// <summary>Adds a line of the test's own, such as a reseed it made; any thread may add one.</summary>
+        public void AddLine(string line)
+        {
+            lock (_lines) _lines.Add(line);
+        }
+
+        private string[] Lines
+        {
+            get
+            {
+                lock (_lines) return [.. _lines];
+            }
+        }
+
+        public string Text => string.Join(Environment.NewLine, Lines.Concat(new[] { _prepared, _after, _summary }.Where(l => l != null)!)) is { Length: > 0 } text
             ? text + Environment.NewLine
             : "";
     }

@@ -220,6 +220,8 @@ public abstract class ClientScenarioBase : IAsyncLifetime, IScenarioLifecycle
             client.PacketRecorder.Start();
             _recordingForArtifacts = true;
         }
+
+        ScenarioRun.SeedRandom(this, server: null, Client?.Random);
     }
 
     void IScenarioLifecycle.CheckLoggedErrors() =>
@@ -244,6 +246,8 @@ public abstract class ClientScenarioBase : IAsyncLifetime, IScenarioLifecycle
         // still hold its GL context. An engine-mode client's capture queues on its own thread.
         ClientReachable = !_run.Abandoned && !(timedOut && client?.BootMode == ClientBootMode.Fixture),
         Isolation = IsolationMode.ToString(),
+        RandomSeed = client?.Random.CurrentSeed,
+        RandomSeedSource = client?.Random.CurrentSource,
         Frames = ScenarioRun.Since(_run.FramesAtStart, client?.FrameController.TotalFrames),
         Artifacts = Artifacts,
         AddFiles = OnFailure,
@@ -263,6 +267,7 @@ public abstract class ClientScenarioBase : IAsyncLifetime, IScenarioLifecycle
         if (_run.Abandoned)
         {
             // The timed-out body still drives the client: it is left as it is.
+            World.RandomSeeding.Abandon();
             _classSettings = null;
             _pooled = null;
             Client = null;
@@ -290,11 +295,16 @@ public abstract class ClientScenarioBase : IAsyncLifetime, IScenarioLifecycle
             _classSettings = null;
         }
 
+        // The static generators belong to the whole process: they go back before the client is pooled or disposed.
+        string? random = Client is { IsDisposed: false } seeded
+            ? RollbackParticipants.Try("Restoring the random generators", () => World.RandomSeeding.EndScenario(server: null, seeded.Random))
+            : RollbackParticipants.Try("Restoring the random generators", () => World.RandomSeeding.EndScenario(null, null));
+
         try
         {
             if (_pooled != null)
             {
-                if (IsolationMode != IsolationMode.FreshClient && !_pooled.Client.IsDisposed && !_run.TimedOut && !_pooled.Client.IsDataPathRetained
+                if (IsolationMode != IsolationMode.FreshClient && random == null && !_pooled.Client.IsDisposed && !_run.TimedOut && !_pooled.Client.IsDataPathRetained
                     && TryRestoreBootWindow(_pooled.Client))
                 {
                     // The next test judges only what it logs itself.

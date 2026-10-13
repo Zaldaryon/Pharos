@@ -362,6 +362,21 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime, IScenarioLifecy
         {
             client.PacketRecorder.Start();
         }
+
+        ScenarioRun.SeedRandom(this, _serverHost?.Random, _client?.Random);
+    }
+
+    /// <summary>
+    /// Seeds the server's and the client's random generators, and the process-wide static ones,
+    /// with <paramref name="seed"/>, undoing an earlier seeding first. <c>ServerHost.Random.Seed</c>
+    /// and <c>Client.Random.Seed</c> seed one side each, with the statics. See <see cref="SeededAttribute"/>.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">The session is not running.</exception>
+    protected void SeedRandom(int seed)
+    {
+        if (_serverHost == null || _client == null) throw new InvalidOperationException("The session is not running.");
+        World.RandomSeeding.SeedScenario(this, seed, $"SeedRandom({seed})", _serverHost.Random, _client.Random);
+        World.RandomSeeding.Notes?.AddLine($"SeedRandom({seed}) re-seeded the random generators.");
     }
 
     void IScenarioLifecycle.CheckLoggedErrors() =>
@@ -397,6 +412,8 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime, IScenarioLifecy
         World = WorldOptions,
         Isolation = WorldIsolation.ToString(),
         IsolationReport = Isolation,
+        RandomSeed = _serverHost?.Random.CurrentSeed ?? _client?.Random.CurrentSeed,
+        RandomSeedSource = _serverHost?.Random.CurrentSource ?? _client?.Random.CurrentSource,
         Frames = ScenarioRun.Since(_run.FramesAtStart, _session?.FrameCount),
         ServerTicks = ScenarioRun.Since(_run.TicksAtStart, _session?.ServerTickCount),
         Artifacts = Artifacts,
@@ -514,6 +531,7 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime, IScenarioLifecy
 
         if (_run.Abandoned)
         {
+            World.RandomSeeding.Abandon();
             IsolationLog.Left(GetType(), null, "the previous test timed out and was left running");
 
             // The timed-out body still drives the client and the server: they are left as they are.
@@ -564,10 +582,15 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime, IScenarioLifecy
 
         _testPlayers.Clear();
 
+        // The generators go back before anything else: the hosts are pooled or disposed next, and
+        // the static ones belong to the whole process.
+        string? random = RollbackParticipants.Try("Restoring the random generators", () =>
+            World.RandomSeeding.EndScenario(_serverHost is { IsRunning: true } server ? server.Random : null, _client is { IsDisposed: false } client ? client.Random : null));
+
         string? fallback = _setupFailed ? "the test failed to start"
             : _run.TimedOut ? "the test timed out"
             : _sandbox is { IsRetained: true } || _client is { IsDataPathRetained: true } ? "the sandbox was kept for inspection"
-            : null;
+            : random;
         bool strict = fallback == null && StrictIsolation;
         IsolationReport? rolledBack = null;
         if (_poolKey != null && fallback == null)

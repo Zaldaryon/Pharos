@@ -385,8 +385,16 @@ public static class ParallelRunProbes
 {
     private static void Act(Type probe)
     {
-        if (Environment.GetEnvironmentVariable("PHAROS_PROBE_CRASH") == probe.FullName) Environment.FailFast("pharos run probe: crashing as asked");
+        if (Environment.GetEnvironmentVariable("PHAROS_PROBE_CRASH") == probe.FullName) AbortWorker("pharos run probe: crashing as asked");
         if (Environment.GetEnvironmentVariable("PHAROS_PROBE_HANG") == probe.FullName) Thread.Sleep(Timeout.Infinite);
+    }
+
+    private static void AbortWorker(string message)
+    {
+        // Exit abruptly without invoking Windows crash reporting or opening a system dialog.
+        // The parent still observes a failed worker, including after its last test passed.
+        Console.Error.WriteLine(message);
+        Environment.Exit(134);
     }
 
     public class First
@@ -405,7 +413,7 @@ public static class ParallelRunProbes
         {
             public void Dispose()
             {
-                if (Environment.GetEnvironmentVariable("PHAROS_PROBE_CRASH_LATE") == "1") Environment.FailFast("pharos run probe: crashing after the last test");
+                if (Environment.GetEnvironmentVariable("PHAROS_PROBE_CRASH_LATE") == "1") AbortWorker("pharos run probe: crashing after the last test");
             }
         }
     }

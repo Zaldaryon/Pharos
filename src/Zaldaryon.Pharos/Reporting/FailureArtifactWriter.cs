@@ -60,6 +60,12 @@ internal sealed record ScenarioFailure
     /// <summary>The world the server booted.</summary>
     public ServerWorldOptions? World { get; init; }
 
+    /// <summary>The seed of the game's random generators when the test failed, for run.json; null when unseeded.</summary>
+    public int? RandomSeed { get; init; }
+
+    /// <summary>Where <see cref="RandomSeed"/> came from, for run.json.</summary>
+    public string? RandomSeedSource { get; init; }
+
     /// <summary>How the scenario isolates its tests, for run.json.</summary>
     public string? Isolation { get; init; }
 
@@ -449,6 +455,8 @@ internal static class FailureArtifactWriter
             ["seed"] = failure.World?.Seed,
             ["worldType"] = failure.World?.WorldType,
             ["playStyle"] = failure.World?.PlayStyle,
+            ["randomSeed"] = failure.RandomSeed,
+            ["randomSeedSource"] = failure.RandomSeedSource,
             ["isolation"] = failure.Isolation,
             ["isolationReport"] = failure.IsolationReport is { } report ? new Dictionary<string, object?>
             {
