@@ -122,7 +122,7 @@ public sealed partial class EmbeddedServerHost : IDisposable, IAsyncDisposable
     /// <summary>Whether the calling thread is the server's game thread.</summary>
     internal bool IsOnGameThread => _gameThread.IsCurrent;
 
-    /// <summary>
+/// <summary>
     /// The server's random generators and the process-wide static ones: seeds them so a test's
     /// draws can be replayed. See <see cref="GameRandom"/> and <see cref="XUnit.SeededAttribute"/>.
     /// </summary>
