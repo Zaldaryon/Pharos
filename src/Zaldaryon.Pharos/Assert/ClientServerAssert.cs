@@ -1,4 +1,6 @@
 using Vintagestory.API.MathTools;
+using Vintagestory.API.Server;
+using Zaldaryon.Pharos.Player;
 using Zaldaryon.Pharos.Server;
 
 namespace Zaldaryon.Pharos.Assertions;
@@ -188,6 +190,70 @@ public static class ClientServerAssert
             throw new PharosAssertException(
                 $"Client prediction not reconciled. Client at {clientPos}, server authoritative at {serverPos}. " +
                 $"Distance {distance:F4} exceeds reconciliation tolerance {maxDistance:F4}.");
+        }
+    }
+
+    /// <summary>
+    /// Asserts that the survival state the client shows is the state the server holds.
+    /// </summary>
+    /// <remarks>
+    /// Only health and wetness are compared by default: the survival mod works out oxygen, air and
+    /// body temperature on each side for itself, and the server does not send them, so a client
+    /// never catches up with those. Ask for them by name with <paramref name="values"/> when a test
+    /// wants to see that they differ. Step the session first: a server change reaches the client on
+    /// the next frame.
+    /// </remarks>
+    /// <param name="session">The loopback session to verify.</param>
+    /// <param name="playerName">
+    /// The name of the playing client, as it joined. The client holds its own player's vitals and
+    /// no other's, so this must be that player's name.
+    /// </param>
+    /// <param name="tolerance">How far a float may differ. Default is 0.5, which covers the precision the attribute packets carry.</param>
+    /// <param name="values">Which values to compare. See <see cref="VitalsValues"/>.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="session"/> is null.</exception>
+    /// <exception cref="ArgumentException"><paramref name="playerName"/> is empty or whitespace.</exception>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="tolerance"/> is negative.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// The session is not connected, the client has no player entity, the name is not the client's
+    /// own player, or that player is not on the server.
+    /// </exception>
+    /// <exception cref="PharosAssertException">The two sides disagree on a value both carry.</exception>
+    public static void VitalsSynced(ClientServerLoopbackSession session, string playerName, float tolerance = 0.5f, VitalsValues values = VitalsValues.SyncedByDefault)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        ArgumentException.ThrowIfNullOrWhiteSpace(playerName);
+        ArgumentOutOfRangeException.ThrowIfNegative(tolerance);
+
+        if (!session.IsConnected)
+        {
+            throw new InvalidOperationException("Session is not connected. Wait for player to join before asserting synchronization.");
+        }
+
+        EmbeddedServerHost host = session.NativeServer ?? throw new InvalidOperationException("The session has no embedded server.");
+        IServerPlayer? serverPlayer = host.Server.Clients.Values
+            .Select(c => c.Player)
+            .FirstOrDefault(p => string.Equals(p.PlayerName, playerName, StringComparison.OrdinalIgnoreCase))
+            ?? throw new InvalidOperationException($"No player named '{playerName}' is connected to the server.");
+
+        string? clientName = session.Client.Client.player?.PlayerName;
+        if (!string.Equals(clientName, playerName, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException(
+                $"The client holds its own player's vitals and no other's: it is '{clientName ?? "not joined"}', not '{playerName}'.");
+        }
+
+        if (serverPlayer.Entity is not { } entity || session.Client.Client.EntityPlayer is not { } clientEntity)
+        {
+            throw new InvalidOperationException($"'{playerName}' has no entity on one of the two sides.");
+        }
+
+        VitalsReading server = host.RunOnGameThread(() => VitalsBehaviors.Read(entity));
+        VitalsReading client = session.Client.RunOnClientThread(() => VitalsBehaviors.Read(clientEntity));
+
+        if (!server.Matches(client, tolerance, values, out string why, out IReadOnlyList<string> compared))
+        {
+            throw new PharosAssertException(
+                $"'{playerName}' shows different vitals on the two sides: {why}. Server {server}, client {client}. Compared {string.Join(", ", compared)}.");
         }
     }
 
