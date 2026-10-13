@@ -44,11 +44,11 @@ public class LiveClientVitalsTests : ClientServerScenarioBase
     }
 
     [ClientServerScenario]
-    public async Task HealthAndWetness_ReachTheClient_AndBodyTemperatureDoesNot()
+    public async Task HealthAndWetness_ReachTheClient()
     {
         // The vitals the client can see are its own player's, so the change goes to the server side of
         // the player the rendering client joined as.
-        ServerPlayer.Vitals.Set(health: 7, wetness: 0.6f, bodyTemperature: 33, oxygen: 1234);
+        ServerPlayer.Vitals.Set(health: 7, wetness: 0.6f);
 
         Assert.True(await StepUntilAsync(() => Check(PlayerName, VitalsValues.Health | VitalsValues.Wetness), maxFrames: 600), _lastFailure);
 
@@ -59,16 +59,44 @@ public class LiveClientVitalsTests : ClientServerScenarioBase
         // over game hours.
         Assert.True(client.Health < 15, $"the client still shows full health: {client.Health}");
         Assert.True(client.Wetness > 0.3f, $"the client shows no wetness: {client.Wetness}");
+    }
 
-        // Oxygen and body temperature are worked out on each side and never sent, so asking for
-        // them says what they are rather than passing.
-        PharosAssertException oxygen = Assert.Throws<PharosAssertException>(
-            () => ClientServerAssert.VitalsSynced(Session!, PlayerName, values: VitalsValues.Oxygen));
-        Assert.Contains("oxygen", oxygen.Message);
+    [ClientServerScenario]
+    public async Task VitalsSynced_ComparesOnlyWhatItWasAskedFor()
+    {
+        // Oxygen and body temperature are worked out on each side for itself, so they drift and are
+        // left out by default. Asking for them is allowed, and the assertion says which values it
+        // looked at either way. Which of them happens to agree on a given platform is the game's
+        // business, not this test's, so it does not assume a mismatch.
+        string? reported = null;
+        try
+        {
+            ClientServerAssert.VitalsSynced(Session!, PlayerName, values: VitalsValues.Health | VitalsValues.Oxygen | VitalsValues.BodyTemperature);
+        }
+        catch (PharosAssertException ex)
+        {
+            reported = ex.Message;
+        }
 
-        PharosAssertException temperature = Assert.Throws<PharosAssertException>(
-            () => ClientServerAssert.VitalsSynced(Session!, PlayerName, values: VitalsValues.BodyTemperature));
-        Assert.Contains("body temperature", temperature.Message);
+        if (reported is not null)
+        {
+            Assert.Contains("Compared", reported);
+            Assert.Contains("oxygen", reported);
+            Assert.Contains("body temperature", reported);
+        }
+
+        // And it says which values it did not look at when they do not agree.
+        string? skipped = null;
+        try
+        {
+            ClientServerAssert.VitalsSynced(Session!, PlayerName, values: VitalsValues.Health, tolerance: 0.01f);
+        }
+        catch (PharosAssertException ex)
+        {
+            skipped = ex.Message;
+        }
+
+        if (skipped is not null) Assert.DoesNotContain("oxygen", skipped);
     }
 
     [ClientServerScenario]

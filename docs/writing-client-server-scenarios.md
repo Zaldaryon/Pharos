@@ -122,7 +122,7 @@ public async Task Wetting_ThePlayer_ReachesTheClient()
 }
 ```
 
-Only health and wetness are compared by default. Oxygen, air and body temperature are worked out on each side for itself and the server never sends them, so a client never catches up with those; ask for them by name with `values: VitalsValues.Oxygen` or `VitalsValues.BodyTemperature` when a test wants to see them differ. The failure message names what differs and what it compared.
+Only health and wetness are compared by default. Oxygen, air and body temperature are worked out on each side for itself, from the calendar and the climate, so the two drift and a client can hold its own value for a while; ask for them by name with `values: VitalsValues.Oxygen` or `VitalsValues.BodyTemperature` when a test wants to see that. The failure message names what differs and what it compared.
 
 `ServerPlayer` is bound to the player's server-side object and has no connection of its own: it is there to change what the client will be told next, not to play. Players a test joins with `CreateTestPlayerAsync` are the ones with a real connection.
 
@@ -300,3 +300,4 @@ public class MyTests : ClientServerScenarioBase
     protected override void OnRollbackRestored() => MyModSystem.Instance.ReloadFromWorld();
 }
 ```
+
