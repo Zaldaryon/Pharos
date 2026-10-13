@@ -198,10 +198,10 @@ public static class ClientServerAssert
     /// </summary>
     /// <remarks>
     /// Only health and wetness are compared by default: the survival mod works out oxygen, air and
-    /// body temperature on each side for itself, and the server does not send them, so a client
-    /// never catches up with those. Ask for them by name with <paramref name="values"/> when a test
-    /// wants to see that they differ. Step the session first: a server change reaches the client on
-    /// the next frame.
+    /// body temperature on each side for itself, from the calendar and the climate, so the two drift
+    /// and a client can hold its own value for a while. Ask for them by name with
+    /// <paramref name="values"/> when a test wants to see that. Step the session first: a server
+    /// change reaches the client on the next frame.
     /// </remarks>
     /// <param name="session">The loopback session to verify.</param>
     /// <param name="playerName">
