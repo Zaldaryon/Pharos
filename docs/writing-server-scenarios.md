@@ -357,6 +357,46 @@ A world without the survival mod gives the player none of these behaviours. Ever
 
 The client's copy of the same state is `Player.Vitals` in a `ClientServerScenarioBase` (see [Writing Client-Server Scenarios](writing-client-server-scenarios.md)), and `ClientServerAssert.VitalsSynced(Session, playerName)` compares the two.
 
+### Damage, death and respawn
+
+```csharp
+[ServerWorld(seed: 4242, playStyle: "surviveandbuild")]
+public class ArmorTests : ServerScenarioBase
+{
+    [ServerScenario]
+    public async Task AHit_GoesThroughTheModsArmor()
+    {
+        ServerTestPlayer player = await CreateTestPlayerAsync("Alice");
+
+        await player.DamageAsync(10, DamageInfo.FromEntity(wolf, EnumDamageType.PiercingAttack));
+
+        // The mod's armour took 5 off, and the health behaviour did the rest.
+        Assert.Equal(10, player.Vitals.Health);
+    }
+}
+```
+
+`DamageAsync` goes through `Entity.ReceiveDamage`, so armour, resistances, invulnerability frames and every behaviour and mod hook run for a real hit. The `DamageInfo` says what happened:
+
+| Member | What it decides |
+|--------|-----------------|
+| `Type` | Which armour resists it, such as `EnumDamageType.PiercingAttack` |
+| `Kind` | What kind of thing caused it, such as `EnumDamageSource.Entity` |
+| `Source`, `Cause` | The entity that hit, and the entity behind a projectile |
+| `Tier` | The weapon tier, which decides how much armour gets through |
+| `Knockback` | How hard the hit pushes the player |
+| `OverTime(duration, ticks, effect)` | Spreads the damage out, the way a poison or a bleeding wound does |
+
+Three things the game does, worth knowing before a test asserts an exact result:
+
+- **A creative or spectator player takes no damage.** `EntityPlayer.ShouldReceiveDamage` refuses everything but healing in those modes, so the world's `playStyle` has to be `surviveandbuild`.
+- **Damage over time is not instant.** With a `Duration` the health behaviour creates a damage-over-time effect and takes nothing off until its ticks come; `player.Vitals.DamageOverTime` lists what is running.
+- **The game gives the player half a second of invulnerability after any hit**, so two hits in quick succession need a tick between them unless the `DamageInfo` asks to ignore invulnerability frames.
+
+`KillAsync` ends the player the way `EntityPlayer.Die` does, with a death reason and `OnEntityDeath` fired, and without touching health. `RespawnAsync` sends the packet a real client sends when its player clicks Respawn on the death screen, and ticks until the player is alive again. A living player is refused rather than pretended: the server ignores the packet too.
+
+In a `ClientServerScenarioBase`, kill the joined player with `ServerPlayer.DamageAsync(...)` and respawn it with `Player.Death.Respawn()`, which clicks the client's own button; see [Writing Client-Server Scenarios](writing-client-server-scenarios.md).
+
 ## Server Tick Control
 
 `EmbeddedServerHost` exposes deterministic tick stepping:

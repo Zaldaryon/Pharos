@@ -126,6 +126,32 @@ Only health and wetness are compared by default. Oxygen, air and body temperatur
 
 `ServerPlayer` is bound to the player's server-side object and has no connection of its own: it is there to change what the client will be told next, not to play. Players a test joins with `CreateTestPlayerAsync` are the ones with a real connection.
 
+### Dying and coming back
+
+`Player.Death` is the client's side: whether the death screen is up, and the Respawn button on it. The game opens `GuiDialogDead` itself, two and a half game seconds after the player stops being alive, and closes it again once the player is alive.
+
+```csharp
+[ServerWorld(seed: 4242, playStyle: "surviveandbuild")]   // a creative player takes no damage
+public class DeathScreenTests : ClientServerScenarioBase
+{
+    [ClientServerScenario]
+    public async Task TheDeathScreen_OpensAndRespawnClosesIt()
+    {
+        await ServerPlayer.DamageAsync(100, DamageInfo.Blunt);
+
+        Assert.True(await StepUntilAsync(() => Player.Death.IsDialogOpen, maxFrames: 600));
+
+        Assert.True(Player.Death.Respawn());     // a real click on the dialog's own button
+        Assert.True(await StepUntilAsync(() => ServerPlayer.Entity!.Alive, maxFrames: 600));
+        Assert.True(await StepUntilAsync(() => !Player.Death.IsDialogOpen, maxFrames: 600));
+    }
+}
+```
+
+`Respawn()` clicks the button with a real mouse click, so the dialog, the button and the respawn packet all run. It returns `false` for a player that is not dead, and a world with a limited number of lives leaves the button out once they are spent.
+
+A headless player has no screen, so `player.RespawnAsync()` on the server sends the same packet; see [Writing Server Scenarios](writing-server-scenarios.md).
+
 ## Packet Tracing
 
 `PacketTracer` captures which packets cross the loopback boundary:
