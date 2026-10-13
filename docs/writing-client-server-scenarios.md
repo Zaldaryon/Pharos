@@ -259,6 +259,7 @@ Under `Rollback`, after each test:
 
 - **Test players:** they leave.
 - **World:** the snapshot taken after the join is restored on the server's game thread (see [Rollback](writing-server-scenarios.md#rollback)).
+- **Player:** the joined player's health, satiety, stats, spawn point, role, privileges and mod data are put back, and a player that died is revived. The rollback waits until the client sees it alive, with the server's health and no death dialog. `Isolation.PlayersRestored` is 1. Override `RestorePlayerAttribute(key)` or `RestoreModData(key)` to keep a key from test to test (see [Opting keys out](writing-server-scenarios.md#opting-keys-out)).
 - **Joined player:** it goes back to where it stood, with the game mode and inventories it had.
 - **Client:** it is sent the restored chunks. Its held controls are released and its dialogs closed. Its packet recorder, network degradation, sound recorder and logs are reset.
 

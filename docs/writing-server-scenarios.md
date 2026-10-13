@@ -114,7 +114,8 @@ Right after boot, the scenario takes a `WorldSnapshot`. When a test ends, its te
 What the snapshot holds:
 
 - **Chunks:** every loaded chunk, in the game's own save format (blocks, fluids, light, decor, block entities, the entities stored with the chunk, and mod data), plus the height maps of their map chunks. Chunks that load later are recorded as they were when they loaded.
-- **Players:** the world data of every known player.
+- **Players:** the world and server data of every known player. For each connected player, also the entity's `WatchedAttributes` and `Attributes` trees, its stats exactly (every value, persistent or not, and each category's blend type), whether it is alive, its spawn point, game mode, inventories, position, mod data and runtime privileges.
+- **Mod data:** the save game's (`SaveGame.StoreData`) and each map region's. Map regions that load later are recorded as they were when they loaded.
 - **Calendar:** the time, its speed, and a freeze.
 - **Weather:** each loaded region's cloud pattern, wind, weather event and snow accumulation, the precipitation override, and whether the weather changes on its own.
 
@@ -122,10 +123,39 @@ What a restore does:
 
 - **Unchanged chunks:** left alone.
 - **Changed chunks:** swapped for their saved copy the way the game reloads a chunk from disk. Their entities are despawned, the saved ones are loaded with their original ids, and their block entities are initialized.
-- **Players:** any player who joined after the snapshot is forgotten, so a later player of the same name starts fresh.
+- **Players:** any player who joined after the snapshot is forgotten, so a later player of the same name starts fresh. A connected player is put back:
+  - its health, satiety, body temperature, damage over time, character class, traits and every other key of its attribute trees, written into the live trees so the behaviours that hold a sub-tree keep holding the right one;
+  - its stats and the health behaviour's max health modifiers;
+  - its spawn point, role, permanent and runtime privileges, deaths, movement settings and mod data;
+  - a player that died is revived the way the game respawns one, then given its saved state.
+
+  Its client is sent the whole entity and its player data, and the rollback waits until the client sees the player alive or dead as the server does, with the server's health and no death dialog.
+- **Mod data:** each key of the save game's and of each loaded map region's mod data is put back, removed if the snapshot did not have it. A region that changed is sent again to the clients that have it.
 - **Calendar and weather:** put back first, then sent to connected clients. Time can go backwards: a mod that keeps the time in memory resets on `pharos:rollback:restored`.
 
-Not restored: map regions first loaded after the snapshot, world-level mod data (including what mods keep in the save game), and C# event handlers a test added (such as `Api.Event.PlayerJoin += ...`). A chunk that unloads during a test is saved with its changes. A restore that fails leaves the next test a freshly booted server.
+Not restored: chunks first loaded after the snapshot and unloaded again, what mods keep in memory, and C# event handlers a test added (such as `Api.Event.PlayerJoin += ...`). A chunk that unloads during a test is saved with its changes. A restore that fails leaves the next test a freshly booted server.
+
+Mod data comes back as bytes. Most mods, the game's included, read their save-game data once when the world loads and write it when the world saves, so a restore gives them the booted data to reload in a `pharos:rollback:restored` handler, but does not rewind what they hold in memory. The temporal storm and rift state is one such case (#339). Regions load and generate on the chunk thread, which may write a region's mod data while it is recorded; a region caught that way is left out. A key stored with null counts as absent. A world save during a test, such as a player leaving, rewrites the game's own keys, which then count in `ModDataKeysRestored`. The weather system writes a region's mod data whenever that region's weather changes, so while the weather changes on its own, regions may be counted in `MapRegionsRestored` and sent again after every rollback.
+
+The counters that order packets always keep their live value: `positionVersionNumber` and `onHurtCounter` in `WatchedAttributes`, `tick` and `tickDiff` in `Attributes`. The server config's temporary privileges (`GrantTemporaryPrivilege`) are restored; a player's view distance is not. The server drops a stat category a test added, but the client keeps it, with the test's values, because a client only overwrites the categories the server sends: client code that reads such a stat still sees the test's modifier. Modifiers a test added to a category that existed at boot are put back on the client too. Counters and timers a behaviour keeps in fields of its own, outside the trees, are not restored either; a mod with such state resets it on `pharos:rollback:restored`. A respawn the client requested before the rollback, still in flight, can land after it.
+
+### Opting keys out
+
+A key a class wants to keep from test to test, such as lifetime statistics, is opted out by overriding a hook. A refused key keeps its live value, whether or not the snapshot had it:
+
+```csharp
+[ServerWorld(Isolation = WorldIsolation.Rollback)]
+public class EconomyTests : ClientServerScenarioBase
+{
+    // Save-game, map region and player mod data keys.
+    protected override bool RestoreModData(string key) => key != "mymod:lifetimeStats";
+
+    // Top-level keys of the joined player's WatchedAttributes and Attributes.
+    protected override bool RestorePlayerAttribute(string key) => key != "mymod:reputation";
+}
+```
+
+`ServerScenarioBase` has `RestoreModData` only: its test players leave before the rollback, so it never restores a connected player. Both hooks run on the server's game thread; a hook that throws fails the rollback. `EmbeddedServerHost.RestoreSnapshot(snapshot, new WorldRestoreFilter(modData, playerAttribute))` takes the same filters and returns a `WorldRestoreResult` with what it put back.
 
 ### Listeners a test leaves
 
@@ -163,14 +193,14 @@ The scenario class gets the same through `OnRollbackCaptured()` and `OnRollbackR
 | `Kind` | Meaning |
 |--------|---------|
 | `FirstBoot` | The class's first test booted it. |
-| `RolledBack` | The previous test's server was kept and its world rolled back. `ChunksRestored`, `ListenersRemoved` and `Duration` say what that took. |
+| `RolledBack` | The previous test's server was kept and its world rolled back. `ChunksRestored`, `PlayersRestored`, `ModDataKeysRestored`, `MapRegionsRestored`, `ListenersRemoved`, `DataFilesRestored` and `Duration` say what that took. |
 | `Recycled` | The previous test's server was kept as it was. |
 | `Restarted` | It was booted again. `Reason` says why when a rollback was expected: the previous test stopped the server or timed out, its rollback failed, or another class used the pooled server in between. |
 
 Each test's output ends with how it was made ready, how it left the server, and a summary of the class so far:
 
 ```
-isolation: rolled back (12 chunks, 3 listeners removed, 340 ms)
+isolation: rolled back (12 chunks, 1 player, 2 mod data keys, 1 map region, 3 listeners removed, 340 ms)
 after this test: rolled back (4 chunks, 0 listeners removed, 120 ms)
 MyTests so far: 1 first boot, 6 rolled back
 ```

@@ -51,6 +51,28 @@ public sealed class FailureArtifactWriterTests : IDisposable
     }
 
     [Fact]
+    public void Write_ListsWhatTheRollbackPutBack()
+    {
+        Zaldaryon.Pharos.XUnit.IsolationReport isolation = new(Zaldaryon.Pharos.XUnit.IsolationKind.RolledBack, null, 4, 2, TimeSpan.FromMilliseconds(80))
+        {
+            DataFilesRestored = 1,
+            PlayersRestored = 1,
+            ModDataKeysRestored = 3,
+            MapRegionsRestored = 2,
+        };
+        FailureReport report = FailureArtifactWriter.Write(Failure("X.Isolated", "Isolated") with { IsolationReport = isolation });
+
+        using JsonDocument run = JsonDocument.Parse(File.ReadAllText(Path.Combine(report.Directory, "run.json")));
+        JsonElement json = run.RootElement.GetProperty("isolationReport");
+        Assert.Equal("RolledBack", json.GetProperty("kind").GetString());
+        Assert.Equal(4, json.GetProperty("chunksRestored").GetInt32());
+        Assert.Equal(1, json.GetProperty("dataFilesRestored").GetInt32());
+        Assert.Equal(1, json.GetProperty("playersRestored").GetInt32());
+        Assert.Equal(3, json.GetProperty("modDataKeysRestored").GetInt32());
+        Assert.Equal(2, json.GetProperty("mapRegionsRestored").GetInt32());
+    }
+
+    [Fact]
     public void Write_NeverReusesAFolder()
     {
         string first = FailureArtifactWriter.Write(Failure("X.Again", "Again")).Directory;

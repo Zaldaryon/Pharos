@@ -146,6 +146,22 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime, IScenarioLifecy
     protected virtual bool IsTestListener(Delegate handler) => ListenerWatermark.DeclaredIn(handler, IsolationLog.TestAssemblies(GetType()));
 
     /// <summary>
+    /// Whether a rollback puts back the mod data stored under <paramref name="key"/>: in the save
+    /// game (<c>SaveGame.StoreData</c>), in a map region, or in the joined player's data
+    /// (<c>IServerPlayer.SetModdata</c>). A refused key keeps its value from test to test. By
+    /// default, every key. Runs on the server's game thread; what it throws fails the rollback.
+    /// </summary>
+    protected virtual bool RestoreModData(string key) => true;
+
+    /// <summary>
+    /// Whether a rollback puts back the top-level <paramref name="key"/> of the joined player's
+    /// entity <c>WatchedAttributes</c> or <c>Attributes</c>, such as <c>health</c>, <c>hunger</c>,
+    /// <c>stats</c> or a mod's own key. A refused key keeps its value from test to test. By default,
+    /// every key. Runs on the server's game thread; what it throws fails the rollback.
+    /// </summary>
+    protected virtual bool RestorePlayerAttribute(string key) => true;
+
+    /// <summary>
     /// Gets the world configuration options for this scenario. Defaults to the class-level
     /// <see cref="ServerWorldAttribute"/> when there is one, and to the
     /// <see cref="ServerWorldOptions"/> defaults otherwise. Override to customize world settings
@@ -695,7 +711,8 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime, IScenarioLifecy
             int listeners = RollbackParticipants.Remove(server, _serverListeners, IsTestListener)
                 + RollbackParticipants.Remove(client, _clientListeners, IsTestListener);
 
-            int chunks = server.RestoreSnapshot(_baseline);
+            WorldRestoreResult restored = server.RestoreSnapshot(_baseline, new WorldRestoreFilter(RestoreModData, RestorePlayerAttribute));
+            int chunks = restored.ChunksRestored;
 
             // The client has the world again once the server has sent every restored chunk.
             bool sent = await session.StepUntilAsync(
@@ -707,6 +724,10 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime, IScenarioLifecy
             // the two disagree on where the player is, and the server refuses interactions it
             // judges out of range.
             bool home = await PlayerIsHomeAsync(server, client, session).ConfigureAwait(false);
+
+            // The restored entity reaches the client with the next physics tick. Until it has, the
+            // client may still see the player dead, or with the test's health.
+            bool synced = await session.StepUntilAsync(() => PlayerStateSynced(server, client), maxFrames: 600).ConfigureAwait(false);
 
             // The restored calendar went out with the restore; the client must have it before the
             // next test, and before mods are told. A client that ignored the server's calendar
@@ -735,6 +756,7 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime, IScenarioLifecy
             if (!sent) return (null, "the server did not send the restored chunks within 600 frames");
             if (calendar != null) return (null, calendar);
             if (!home) return (null, "the player did not get back to where it stood within 600 frames");
+            if (!synced) return (null, "the client did not get the player's restored health and life within 600 frames");
             if (!session.IsConnected || !client.IsJoined) return (null, "the client was disconnected during the rollback");
 
             int files;
@@ -755,12 +777,43 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime, IScenarioLifecy
                 ?? RollbackParticipants.Try(nameof(OnRollbackRestored), OnRollbackRestored);
             if (failure != null) return (null, failure);
 
-            return (new IsolationReport(IsolationKind.RolledBack, null, chunks, listeners, System.Diagnostics.Stopwatch.GetElapsedTime(start)) { DataFilesRestored = files }, null);
+            return (new IsolationReport(IsolationKind.RolledBack, null, chunks, listeners, System.Diagnostics.Stopwatch.GetElapsedTime(start))
+            {
+                DataFilesRestored = files,
+                PlayersRestored = restored.PlayersRestored,
+                ModDataKeysRestored = restored.ModDataKeysRestored,
+                MapRegionsRestored = restored.MapRegionsRestored,
+            }, null);
         }
         catch (Exception ex)
         {
             return (null, $"the rollback threw {ex.GetType().Name}: {ex.Message}");
         }
+    }
+
+    /// <summary>
+    /// Whether the server has sent the joined player's whole restored tree and the client sees the
+    /// player alive or dead as the server does, with the server's health, and without the death
+    /// dialog once alive.
+    /// </summary>
+    private bool PlayerStateSynced(EmbeddedServerHost server, HeadlessClient client)
+    {
+        // Until the server has sent the whole restored tree, the client cannot have it.
+        (bool Alive, float? Health)? onServer = server.RunOnGameThread(() =>
+            server.Server.GetClientByPlayername(PlayerName)?.Player?.Entity is { WatchedAttributes.AllDirty: false } entity
+                ? (entity.Alive, entity.WatchedAttributes.GetTreeAttribute("health")?.TryGetFloat("currenthealth"))
+                : ((bool, float?)?)null);
+        if (onServer is not { } expected) return false;
+
+        return client.RunOnClientThread(() =>
+        {
+            if (client.Client.EntityPlayer is not { } entity || entity.Alive != expected.Alive) return false;
+
+            float? health = entity.WatchedAttributes.GetTreeAttribute("health")?.TryGetFloat("currenthealth");
+            if (health.HasValue != expected.Health.HasValue || (health.HasValue && Math.Abs(health.Value - expected.Health!.Value) > 0.001f)) return false;
+
+            return !expected.Alive || !client.Client.api.Gui.OpenedGuis.Any(g => g.GetType().Name == "GuiDialogDead");
+        });
     }
 
     /// <summary>

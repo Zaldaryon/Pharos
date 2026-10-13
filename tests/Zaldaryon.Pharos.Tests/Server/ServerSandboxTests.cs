@@ -519,11 +519,13 @@ public class ServerSandboxTests : IDisposable
     public void EmbeddedServerHost_HasRestoreSnapshotMethod()
     {
         Type type = typeof(EmbeddedServerHost);
-        MethodInfo? method = type.GetMethod("RestoreSnapshot", BindingFlags.Public | BindingFlags.Instance);
+        MethodInfo? method = type.GetMethod("RestoreSnapshot", BindingFlags.Public | BindingFlags.Instance, [typeof(WorldSnapshot)]);
+        MethodInfo? filtered = type.GetMethod("RestoreSnapshot", BindingFlags.Public | BindingFlags.Instance, [typeof(WorldSnapshot), typeof(WorldRestoreFilter)]);
 
         Assert.NotNull(method);
-        Assert.Single(method.GetParameters());
-        Assert.Equal(typeof(WorldSnapshot), method.GetParameters()[0].ParameterType);
+        Assert.Equal(typeof(int), method.ReturnType);
+        Assert.NotNull(filtered);
+        Assert.Equal(typeof(WorldRestoreResult), filtered.ReturnType);
     }
 
     #endregion

@@ -54,18 +54,33 @@ public sealed record IsolationReport(IsolationKind Kind, string? Reason, int Chu
     /// <summary>How many seeded data files and mod configs the rollback put back. See <see cref="DataFilesAttribute"/>.</summary>
     public int DataFilesRestored { get; init; }
 
+    /// <summary>
+    /// How many connected players the rollback put back: their entity state (health, satiety, body
+    /// temperature, stats), spawn point, role, privileges, mod data, game mode, inventories and
+    /// position.
+    /// </summary>
+    public int PlayersRestored { get; init; }
+
+    /// <summary>How many save-game mod data keys (<c>SaveGame.StoreData</c>) the rollback added back, changed back or removed.</summary>
+    public int ModDataKeysRestored { get; init; }
+
+    /// <summary>How many loaded map regions had their mod data put back by the rollback.</summary>
+    public int MapRegionsRestored { get; init; }
+
     /// <inheritdoc />
     public override string ToString()
     {
         string ms = Duration.TotalMilliseconds.ToString("0", CultureInfo.InvariantCulture) + " ms";
         return Kind switch
         {
-            IsolationKind.RolledBack => $"rolled back ({ChunksRestored} chunks, {ListenersRemoved} listeners removed, {(DataFilesRestored > 0 ? $"{DataFilesRestored} data file{(DataFilesRestored == 1 ? "" : "s")} restored, " : "")}{ms})",
+            IsolationKind.RolledBack => $"rolled back ({ChunksRestored} chunks, {Count(PlayersRestored, "player")}{Count(ModDataKeysRestored, "mod data key")}{Count(MapRegionsRestored, "map region")}{ListenersRemoved} listeners removed, {(DataFilesRestored > 0 ? $"{DataFilesRestored} data file{(DataFilesRestored == 1 ? "" : "s")} restored, " : "")}{ms})",
             IsolationKind.Recycled => "recycled",
             IsolationKind.FirstBoot => $"booted ({ms})",
             _ => Reason != null ? $"booted again: {Reason} ({ms})" : $"booted again ({ms})",
         };
     }
+
+    private static string Count(int count, string what) => count > 0 ? $"{count} {what}{(count == 1 ? "" : "s")}, " : "";
 }
 
 /// <summary>A test whose world could not be rolled back, in a class with <see cref="ServerWorldAttribute.StrictIsolation"/>.</summary>
