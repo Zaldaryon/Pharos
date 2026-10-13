@@ -19,6 +19,7 @@ public sealed class ClientTestPlayer : IClientTestPlayer
     private readonly PlayerInventoryAccessor _inventory;
     private readonly PlayerGuiController _gui;
     private readonly ClientVitals _vitals;
+    private readonly ClientDeath _death;
 
     private readonly Vec3d _fallbackMotion = new();
 
@@ -34,6 +35,7 @@ public sealed class ClientTestPlayer : IClientTestPlayer
         _inventory = new PlayerInventoryAccessor(game);
         _gui = new PlayerGuiController(game);
         _vitals = new ClientVitals(game);
+        _death = new ClientDeath(game);
     }
 
     private static Func<ClientMain> Fixed(ClientMain client) => () => client;
@@ -136,4 +138,19 @@ public sealed class ClientTestPlayer : IClientTestPlayer
     /// those read as null.
     /// </summary>
     public ClientVitals Vitals => _vitals;
+
+    /// <summary>
+    /// The client's side of dying and coming back: whether the death screen is up, and the Respawn
+    /// button on it. See <see cref="ClientDeath"/>.
+    /// </summary>
+    public ClientDeath Death => _death;
+
+    /// <summary>
+    /// Points the death screen at the client's GUI driver, once the client has built one.
+    /// </summary>
+    internal ClientTestPlayer UseGuiDriver(System.Func<UI.GuiDriver?> ui)
+    {
+        _death.UseGuiDriver(ui);
+        return this;
+    }
 }

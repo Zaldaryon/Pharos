@@ -69,4 +69,10 @@ public interface IClientTestPlayer
     /// what the server decided.
     /// </summary>
     ClientVitals Vitals { get; }
+
+    /// <summary>
+    /// Gets the client's side of dying and coming back: whether the death screen is up, and the
+    /// Respawn button on it.
+    /// </summary>
+    ClientDeath Death { get; }
 }
