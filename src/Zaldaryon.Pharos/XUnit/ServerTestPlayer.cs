@@ -276,6 +276,95 @@ public sealed class ServerTestPlayer : IServerTestPlayer, IDisposable
     }
 
     /// <summary>
+    /// Damages the player by <paramref name="amount"/> through <c>Entity.ReceiveDamage</c>, so
+    /// armour, resistances and every behaviour and mod hook the game runs for a real hit runs too.
+    /// Then lets the server tick, so a hit that killed the player has been dealt with.
+    /// </summary>
+    /// <remarks>
+    /// The game refuses damage while the player is in its invulnerability frames, unless the
+    /// <see cref="DamageInfo"/> asks to ignore them. Damage of
+    /// <see cref="EnumDamageType.Heal"/> heals instead, and is the way to bring a player back up.
+    /// </remarks>
+    /// <param name="amount">How much damage, in health points.</param>
+    /// <param name="damage">How it damages, what caused it, and how hard. See <see cref="DamageInfo"/>.</param>
+    /// <param name="ticks">How many server ticks to run afterwards.</param>
+    /// <exception cref="InvalidOperationException">The player is not joined, or has no entity.</exception>
+    public Task DamageAsync(float amount, DamageInfo? damage = null, int ticks = 2)
+    {
+        EntityPlayer? entity = _player?.Entity
+            ?? throw new InvalidOperationException($"'{PlayerName ?? _playerUid}' has no entity: it has not joined.");
+
+        DamageSource source = (damage ?? DamageInfo.Blunt).ToDamageSource(entity);
+        OnGameThread(() => entity.ReceiveDamage(source, amount));
+        Tick(ticks);
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Kills the player, as <c>EntityPlayer.Die</c> does when health runs out: the death reason is
+    /// set, <c>OnEntityDeath</c> fires and a real client opens its death screen.
+    /// </summary>
+    /// <remarks>
+    /// Health is not touched, so the player keeps whatever it had; a test that wants the death to
+    /// come from damage uses <see cref="DamageAsync"/>. A living player dies with a full health bar
+    /// only this way, which is what the <c>/kill</c> command does.
+    /// </remarks>
+    /// <param name="damage">What the death is credited to. See <see cref="DamageInfo"/>.</param>
+    /// <param name="ticks">How many server ticks to run afterwards.</param>
+    /// <exception cref="InvalidOperationException">The player is not joined, or has no entity.</exception>
+    /// <exception cref="InvalidOperationException">The player is already dead.</exception>
+    public Task KillAsync(DamageInfo? damage = null, int ticks = 2)
+    {
+        EntityPlayer entity = _player?.Entity
+            ?? throw new InvalidOperationException($"'{PlayerName ?? _playerUid}' has no entity: it has not joined.");
+
+        if (!entity.Alive) throw new InvalidOperationException($"'{PlayerName ?? _playerUid}' is already dead.");
+
+        DamageInfo info = damage ?? new DamageInfo(EnumDamageType.Injury, EnumDamageSource.Suicide);
+        OnGameThread(() => entity.Die(EnumDespawnReason.Death, info.ToDamageSource(entity)));
+        Tick(ticks);
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Asks the server to respawn the player, by sending the packet a real client sends when its
+    /// player clicks Respawn on the death screen. The server triggers <c>PlayerRespawn</c> and puts
+    /// the player back at its spawn point, which is the bed or gear it last set, or a random spot
+    /// around its spawn.
+    /// </summary>
+    /// <remarks>
+    /// A living player is left alone: the server ignores the packet, and so does this, rather than
+    /// reporting a respawn that never happened. In a client-server scenario use
+    /// <c>Player.RespawnAsync()</c> instead, which clicks the client's own button and so covers the
+    /// path a player takes.
+    /// </remarks>
+    /// <param name="maxTicks">How many ticks to wait for the player to be alive again.</param>
+    /// <param name="ct">Cancels the wait.</param>
+    /// <exception cref="InvalidOperationException">The player is not joined, or has no connection of its own.</exception>
+    /// <exception cref="InvalidOperationException">The player is not dead.</exception>
+    /// <exception cref="TimeoutException">The player was still dead after <paramref name="maxTicks"/> ticks.</exception>
+    public async Task RespawnAsync(int maxTicks = 200, CancellationToken ct = default)
+    {
+        HeadlessPlayerConnection connection = _connection
+            ?? throw new InvalidOperationException("Only a joined player can respawn: a player bound to a server without a connection has no client to click Respawn.");
+        EntityPlayer entity = _player?.Entity
+            ?? throw new InvalidOperationException($"'{PlayerName ?? _playerUid}' has no entity: it has not joined.");
+
+        if (entity.Alive) throw new InvalidOperationException($"'{PlayerName ?? _playerUid}' is not dead.");
+
+        OnGameThread(connection.RequestRespawn);
+
+        for (int tick = 0; tick < maxTicks; tick++)
+        {
+            ct.ThrowIfCancellationRequested();
+            Tick(1);
+            if (entity.Alive) return;
+        }
+
+        throw new TimeoutException($"'{PlayerName ?? _playerUid}' was still dead after {maxTicks} ticks.");
+    }
+
+    /// <summary>
     /// Binds the player to a live server player without a connection of its own.
     /// </summary>
     internal void Bind(IServerPlayer player, ServerMain server, EmbeddedServerHost? host = null)
@@ -384,4 +473,14 @@ public sealed class ServerTestPlayer : IServerTestPlayer, IDisposable
     }
 
     private T OnGameThread<T>(Func<T> func) => _host is null ? func() : _host.RunOnGameThread(func);
+
+    /// <summary>
+    /// Runs the server forward, so an effect the game applies on its next tick has been applied.
+    /// A player bound to a server it does not own has no clock to move.
+    /// </summary>
+    private void Tick(int count)
+    {
+        if (count <= 0 || _host is null) return;
+        _host.Ticks(count);
+    }
 }
