@@ -123,6 +123,10 @@ internal sealed class HeadlessPlayerConnection
     /// </summary>
     public void RequestRespawn() => Send(new Packet_Client { Id = 12 });
 
+    /// <summary>Sends a normal client packet through this player's in-memory TCP connection.</summary>
+    /// <remarks>Runs on the server's game thread.</remarks>
+    public void SendClientPacket(Packet_Client packet) => Send(packet);
+
     /// <summary>
     /// Tells the server the player is leaving, as a real client does when it quits.
     /// </summary>

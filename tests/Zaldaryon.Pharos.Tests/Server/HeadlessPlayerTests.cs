@@ -4,6 +4,7 @@ using Vintagestory.API.MathTools;
 using Vintagestory.API.Server;
 using Vintagestory.Server;
 using Xunit;
+using Zaldaryon.Pharos.Assertions;
 using Zaldaryon.Pharos.Bootstrap;
 using Zaldaryon.Pharos.XUnit;
 
@@ -175,6 +176,40 @@ public class EngineClientWithHeadlessPlayerTests : ClientServerScenarioBase
 
         Assert.True(seen, "The rendering client never received the other player and its entity");
         Assert.Equal(2, Server!.Clients.Values.Count(c => c.State == EnumClientState.Playing));
+    }
+
+    [ClientServerScenario]
+    public async Task HeadlessPlayer_BreakingABlockUpdatesTheRenderingClient()
+    {
+        await Session!.StepFramesAsync(60);
+        BlockPos blockPos = Client!.RunOnClientThread(() =>
+        {
+            EntityPos pos = Client.Client.EntityPlayer.Pos;
+            return new BlockPos((int)Math.Floor(pos.X) + 2, (int)Math.Floor(pos.Y) - 1, (int)Math.Floor(pos.Z), 0);
+        });
+        int graniteId = ServerHost!.RunOnGameThread(() => ServerHost.Server.Api.World
+            .GetBlock(new AssetLocation("game:rock-granite"))!.BlockId);
+        ServerHost.RunOnGameThread(() => ServerHost.Server.Api.World.BlockAccessor.SetBlock(graniteId, blockPos));
+
+        bool blockArrived = await StepUntilAsync(
+            () => Client.RunOnClientThread(() => Client.Client.World.BlockAccessor.GetBlock(blockPos).BlockId == graniteId),
+            maxFrames: 300);
+        Assert.True(blockArrived, "The rendering client never received the block before Bob broke it");
+
+        ServerTestPlayer bob = await CreateTestPlayerAsync("Bob");
+        Vec3d alicePosition = Client.RunOnClientThread(() => Client.Client.EntityPlayer.Pos.XYZ.Clone());
+        await bob.TeleportTo(alicePosition.X, alicePosition.Y, alicePosition.Z);
+        ServerHost.RunOnGameThread(() => bob.Player!.WorldData.CurrentGameMode = EnumGameMode.Creative);
+
+        BotResult result = await bob.Bot.BreakBlockAsync(blockPos);
+        Assert.True(result.Accepted, result.Error?.Code ?? result.Reason);
+
+        bool clientSawBreak = await Session.StepUntilAsync(
+            () => Client.RunOnClientThread(() => Client.Client.World.BlockAccessor.GetBlock(blockPos).BlockId == 0),
+            maxFrames: 300);
+        Assert.True(clientSawBreak, "The server broke the block, but Alice's rendering client did not receive the update");
+        Assert.Equal(0, ServerHost.RunOnGameThread(() => ServerHost.Server.Api.World.BlockAccessor.GetBlock(blockPos).BlockId));
+        ClientServerAssert.ClientServerBlockSynced(Session, blockPos);
     }
 
     [ClientServerScenario]

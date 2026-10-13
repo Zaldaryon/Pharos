@@ -32,6 +32,7 @@ internal sealed class HeadlessPlayers
     private readonly List<ServerTestPlayer> _players = [];
     private readonly object _lock = new();
     private DummyUdpNetClient? _udpDrain;
+    private HeadlessUdpNetServer? _udpIngress;
 
     public HeadlessPlayers(EmbeddedServerHost host)
     {
@@ -64,6 +65,15 @@ internal sealed class HeadlessPlayers
             if (server.GetClientByPlayername(playerName) != null)
             {
                 throw new InvalidOperationException($"A player named '{playerName}' is already connected.");
+            }
+
+            // A headless player tunnels position packets through its TCP client connection.
+            // The normal embedded server has no UDP listener in slot 1, so provide only the
+            // receive queue needed by the game's ServerUdpNetwork packet handler.
+            if (server.UdpSockets[1] is null)
+            {
+                _udpIngress ??= new HeadlessUdpNetServer();
+                server.UdpSockets[1] = _udpIngress;
             }
 
             return HeadlessPlayerConnection.Open(server, playerName, playerUid);

@@ -54,6 +54,7 @@ public sealed class ServerTestPlayer : IServerTestPlayer, IDisposable
 
         _playerUid = playerUid;
         Vitals = new PlayerVitals(this, () => _host, () => _player?.Entity);
+        Bot = new HeadlessPlayerBot(this);
     }
 
     /// <summary>
@@ -69,6 +70,9 @@ public sealed class ServerTestPlayer : IServerTestPlayer, IDisposable
 
     /// <inheritdoc />
     public EntityPlayer? Entity => _player?.Entity;
+
+    /// <inheritdoc />
+    public HeadlessPlayerBot Bot { get; }
 
     /// <inheritdoc />
     public IMountableSeat? MountedOn => Entity?.MountedOn;
@@ -471,6 +475,16 @@ public sealed class ServerTestPlayer : IServerTestPlayer, IDisposable
         _player = player;
         _server = server;
     }
+
+    internal EmbeddedServerHost RequireBotHost() => _host
+        ?? throw new InvalidOperationException("A headless bot action requires a player joined to an embedded server.");
+
+    internal HeadlessPlayerConnection RequireBotConnection() => _connection
+        ?? throw new InvalidOperationException("A headless bot action requires the player's own client connection.");
+
+    internal T RunBotOnGameThread<T>(Func<T> action) => OnGameThread(action);
+
+    internal void RunBotOnGameThread(Action action) => OnGameThread(action);
 
     /// <summary>
     /// Takes the packets the server queued for this player. Called on the game thread every tick.
