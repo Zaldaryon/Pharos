@@ -83,12 +83,48 @@ Assert.True(settled);
 // Block at pos is the same on client and server
 ClientServerAssert.ClientServerBlockSynced(Session, pos);
 
-// Client player position matches server entity position
+// Client player position matches server entity
 ClientServerAssert.PlayerPositionSynced(Session, maxDistance: 0.1);
 
 // Client inventory slot matches server store
 ClientServerAssert.InventorySynced(Session, "hotbar");
+
+// The client's copy of the player's survival state matches the server's
+ClientServerAssert.VitalsSynced(Session, PlayerName);
 ```
+
+### Survival state on both sides
+
+`Player.Vitals` is what the client holds of its own player's survival state, and `ServerPlayer` is the same player as the server sees it. Change one and assert the client caught up:
+
+```csharp
+[ClientServerScenario]
+public async Task Wetting_ThePlayer_ReachesTheClient()
+{
+    ServerPlayer.Vitals.Set(wetness: 0.6f);
+
+    await StepUntilAsync(() => WetnessReachedTheClient(), maxFrames: 600);
+    Assert.Equal(0.6f, Player!.Vitals.Wetness!.Value, 2);
+
+    bool WetnessReachedTheClient()
+    {
+        try
+        {
+            ClientServerAssert.VitalsSynced(Session!, PlayerName, values: VitalsValues.Wetness);
+            return true;
+        }
+        catch (PharosAssertException ex)
+        {
+            _lastFailure = ex.Message;
+            return false;
+        }
+    }
+}
+```
+
+Only health and wetness are compared by default. Oxygen, air and body temperature are worked out on each side for itself and the server never sends them, so a client never catches up with those; ask for them by name with `values: VitalsValues.Oxygen` or `VitalsValues.BodyTemperature` when a test wants to see them differ. The failure message names what differs and what it compared.
+
+`ServerPlayer` is bound to the player's server-side object and has no connection of its own: it is there to change what the client will be told next, not to play. Players a test joins with `CreateTestPlayerAsync` are the ones with a real connection.
 
 ## Packet Tracing
 
@@ -101,7 +137,7 @@ public async Task ChatMessage_SendsCorrectPacket()
     var tracer = new PacketTracer();
     tracer.StartTracing();
 
-    await ExecuteCommandAsPlayer(Player.ServerPlayer, "/say hello");
+    await ExecuteCommandAsPlayer(ServerPlayer, "/say hello");
     Session.StepFrames(10);
 
     tracer.StopTracing();

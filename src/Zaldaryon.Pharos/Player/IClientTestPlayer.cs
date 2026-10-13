@@ -63,4 +63,10 @@ public interface IClientTestPlayer
     /// Gets the GUI controller for programmatically opening and closing dialogs and interfaces.
     /// </summary>
     IPlayerGuiController Gui { get; }
+
+    /// <summary>
+    /// Gets the client's copy of the player's survival state, for asserting that a client shows
+    /// what the server decided.
+    /// </summary>
+    ClientVitals Vitals { get; }
 }
