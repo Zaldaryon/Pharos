@@ -63,6 +63,7 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime, IScenarioLifecy
     private DataFileBaseline? _clientFiles;
     private ClientServerPoolKey? _poolKey;
     private readonly List<ServerTestPlayer> _testPlayers = [];
+    private ServerTestPlayer? _serverPlayer;
 
     /// <summary>
     /// Gets the headless client instance.
@@ -956,6 +957,38 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime, IScenarioLifecy
         ServerTestPlayer player = await host.JoinPlayerAsync(playerName).ConfigureAwait(false);
         _testPlayers.Add(player);
         return player;
+    }
+
+    /// <summary>
+    /// The joined player's server-side counterpart: the same player as the server sees it, with no
+    /// connection of its own, so a test can change what the client will be told next.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="Player"/> is the client's copy and <see cref="ServerPlayer"/> the server's, which
+    /// is what <c>ClientServerAssert.VitalsSynced</c> compares. It has no connection, so
+    /// <c>Disconnect</c> does nothing; the scenario owns the connection.
+    /// </remarks>
+    /// <exception cref="InvalidOperationException">The client has not joined yet.</exception>
+    protected ServerTestPlayer ServerPlayer
+    {
+        get
+        {
+            if (_serverPlayer is not null) return _serverPlayer;
+
+            EmbeddedServerHost host = _serverHost ?? throw new InvalidOperationException("Session is not initialized. Call InitializeAsync first.");
+            string uid = _client?.Client?.player?.PlayerUID
+                ?? throw new InvalidOperationException("The client has not joined yet: it has no player.");
+
+            Vintagestory.API.Server.IServerPlayer? joined = host.Server.Clients.Values
+                .Select(c => c.Player)
+                .FirstOrDefault(p => p.PlayerUID == uid);
+
+            if (joined is null) throw new InvalidOperationException($"The player '{uid}' is not connected to the server.");
+
+            _serverPlayer = new ServerTestPlayer(uid);
+            _serverPlayer.Bind(joined, host.Server, host);
+            return _serverPlayer;
+        }
     }
 
     /// <summary>

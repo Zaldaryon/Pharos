@@ -53,6 +53,7 @@ public sealed class ServerTestPlayer : IServerTestPlayer, IDisposable
         }
 
         _playerUid = playerUid;
+        Vitals = new PlayerVitals(this, () => _host, () => _player?.Entity);
     }
 
     /// <summary>
@@ -68,6 +69,13 @@ public sealed class ServerTestPlayer : IServerTestPlayer, IDisposable
 
     /// <inheritdoc />
     public EntityPlayer? Entity => _player?.Entity;
+
+    /// <summary>
+    /// The player's survival state: health, hunger and the nutrients it feeds, oxygen and body
+    /// temperature. Every value it reads and writes goes through the game's own survival
+    /// behaviours, so what the game derives from them is the game's own.
+    /// </summary>
+    public PlayerVitals Vitals { get; }
 
     /// <inheritdoc />
     public string PlayerUID => _playerUid;
@@ -270,10 +278,11 @@ public sealed class ServerTestPlayer : IServerTestPlayer, IDisposable
     /// <summary>
     /// Binds the player to a live server player without a connection of its own.
     /// </summary>
-    internal void Bind(IServerPlayer player, ServerMain server)
+    internal void Bind(IServerPlayer player, ServerMain server, EmbeddedServerHost? host = null)
     {
         _player = player;
         _server = server;
+        _host = host;
 
         RoleCode = _roleCode;
     }

@@ -5,6 +5,7 @@ using Vintagestory.API.Common;
 using Vintagestory.API.Server;
 using Vintagestory.Server;
 using Xunit;
+using Zaldaryon.Pharos.Server;
 using Zaldaryon.Pharos.XUnit;
 
 namespace Zaldaryon.Pharos.Tests.XUnit;
@@ -378,9 +379,10 @@ public class ServerTestPlayerTests
         Assert.NotNull(method);
 
         var parameters = method.GetParameters();
-        Assert.Equal(2, parameters.Length);
+        Assert.Equal(3, parameters.Length);
         Assert.Equal(typeof(IServerPlayer), parameters[0].ParameterType);
         Assert.Equal(typeof(ServerMain), parameters[1].ParameterType);
+        Assert.Equal(typeof(EmbeddedServerHost), parameters[2].ParameterType);
     }
 
     [Fact]
