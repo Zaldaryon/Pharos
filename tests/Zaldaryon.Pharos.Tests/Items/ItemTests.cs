@@ -46,7 +46,29 @@ public class ItemTooltipTests
         }
         finally
         {
-            File.Delete(path);
+            DeleteTempFile(path);
+        }
+    }
+
+    /// <summary>
+    /// Deletes a file under the temp folder, retrying briefly. Windows Defender opens a file the
+    /// moment it is written and holds it for a moment after, which is longer than the encoder's
+    /// own handle lives. A delete that throws out of a finally block turns a passing test red and
+    /// hides whatever the body reported, and a stray file under the temp folder costs nothing.
+    /// </summary>
+    private static void DeleteTempFile(string path)
+    {
+        for (int attempt = 0; attempt < 10; attempt++)
+        {
+            try
+            {
+                File.Delete(path);
+                return;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                Thread.Sleep(50);
+            }
         }
     }
 }

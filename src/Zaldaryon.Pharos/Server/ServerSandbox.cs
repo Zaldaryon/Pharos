@@ -219,22 +219,30 @@ public sealed class ServerSandbox : IDisposable
             return true;
         }
 
+        return WithBackoff(maxRetries, initialDelayMs, () => Directory.Delete(RootPath, recursive: true));
+    }
+
+    /// <summary>
+    /// Runs a delete, retrying with exponential backoff for as long as the target is locked, and
+    /// reports whether it worked. A target that is still locked when the retries run out is
+    /// reported as false rather than thrown: on Windows the server's own log handle and the
+    /// runner's antivirus both let go after the server stops, and a sandbox left on disk costs
+    /// less than a teardown that fails the test.
+    /// </summary>
+    private static bool WithBackoff(int maxRetries, int initialDelayMs, Action delete)
+    {
         int delayMs = initialDelayMs;
 
         for (int attempt = 0; attempt <= maxRetries; attempt++)
         {
             try
             {
-                Directory.Delete(RootPath, recursive: true);
+                delete();
                 return true;
             }
-            catch (IOException) when (attempt < maxRetries)
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
-                Thread.Sleep(delayMs);
-                delayMs *= 2; // Exponential backoff
-            }
-            catch (UnauthorizedAccessException) when (attempt < maxRetries)
-            {
+                if (attempt >= maxRetries) return false;
                 Thread.Sleep(delayMs);
                 delayMs *= 2;
             }
@@ -271,31 +279,8 @@ public sealed class ServerSandbox : IDisposable
         return failedCount;
     }
 
-    private static bool TryDeleteFile(string path, int maxRetries, int initialDelayMs)
-    {
-        int delayMs = initialDelayMs;
-
-        for (int attempt = 0; attempt <= maxRetries; attempt++)
-        {
-            try
-            {
-                File.Delete(path);
-                return true;
-            }
-            catch (IOException) when (attempt < maxRetries)
-            {
-                Thread.Sleep(delayMs);
-                delayMs *= 2;
-            }
-            catch (UnauthorizedAccessException) when (attempt < maxRetries)
-            {
-                Thread.Sleep(delayMs);
-                delayMs *= 2;
-            }
-        }
-
-        return false;
-    }
+    private static bool TryDeleteFile(string path, int maxRetries, int initialDelayMs) =>
+        WithBackoff(maxRetries, initialDelayMs, () => File.Delete(path));
 
     private static string SanitizeFileName(string name)
     {
@@ -332,8 +317,10 @@ public sealed class ServerSandbox : IDisposable
 
         if (_deleteOnDispose && !_retained)
         {
-            // Best-effort cleanup with retries
-            Cleanup(maxRetries: 3, initialDelayMs: 50);
+            // Best-effort cleanup. The 350 ms this used to allow was not enough on Windows, where
+            // the server's log handle outlives its shutdown and the runner's antivirus opens the
+            // files it just wrote.
+            Cleanup(maxRetries: 5, initialDelayMs: 100);
         }
     }
 }
