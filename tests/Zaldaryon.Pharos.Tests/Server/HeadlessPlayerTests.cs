@@ -1,4 +1,6 @@
 using Vintagestory.API.Common;
+using Vintagestory.API.Common.Entities;
+using Vintagestory.API.MathTools;
 using Vintagestory.API.Server;
 using Vintagestory.Server;
 using Xunit;
@@ -100,6 +102,51 @@ public class HeadlessPlayerTests : ServerScenarioBase
 
         await Assert.ThrowsAsync<InvalidOperationException>(() => CreateTestPlayerAsync("Alice"));
     }
+
+    [ServerScenario]
+    public async Task MountAndUnmountAsync_UseTheEntityMountSystem()
+    {
+        ServerTestPlayer player = await CreateTestPlayerAsync("Rider");
+        Host!.RunOnGameThread(() => player.Player!.WorldData.CurrentGameMode = EnumGameMode.Survival);
+        string boatCode = Host.RunOnGameThread(() => Api!.World.EntityTypes
+            .Select(type => type.Code.ToString())
+            .First(code => code.Contains(":boat-raft-", StringComparison.Ordinal)));
+        Entity boat = this.SpawnEntity(boatCode, player.Entity!.Pos.XYZ.AddCopy(2, 0, 0));
+
+        Assert.True(await player.MountAsync(boat), $"The boat {boatCode} did not accept the player");
+        Assert.NotNull(player.MountedOn);
+        Assert.Equal(boat.EntityId, player.MountedOn!.Entity.EntityId);
+
+        Assert.True(await player.UnmountAsync());
+        Assert.Null(player.MountedOn);
+    }
+
+    [ServerScenario]
+    public async Task SleepAsync_UsesTheBedHandlerAndNightSkip()
+    {
+        ServerTestPlayer player = await CreateTestPlayerAsync("Sleeper");
+        Host!.RunOnGameThread(() =>
+        {
+            player.Player!.WorldData.CurrentGameMode = EnumGameMode.Survival;
+            object? tiredness = player.Entity!.GetBehavior("tiredness");
+            Assert.NotNull(tiredness);
+            tiredness!.GetType().GetProperty("Tiredness")!.SetValue(tiredness, 12f);
+        });
+
+        BlockPos bedPos = player.Entity!.Pos.AsBlockPos.AddCopy(2, 0, 0);
+        this.SetBlock(bedPos, "game:bed-wood-head-north");
+        Assert.IsAssignableFrom<IMountableSeat>(this.GetBlockEntity(bedPos));
+        Host.Calendar.SetTime(22);
+        double before = Host.Calendar.TotalHours;
+
+        Assert.True(await player.SleepAsync(bedPos), "The real bed interaction did not mount the player");
+        Assert.NotNull(player.MountedOn);
+        Assert.True((bool)player.Entity!.GetBehavior("tiredness")!.GetType().GetProperty("IsSleeping")!.GetValue(
+            player.Entity.GetBehavior("tiredness"))!);
+
+        await Host.WaitForNightSkipAsync(TimeSpan.FromSeconds(30));
+        Assert.True(Host.Calendar.TotalHours > before + 0.1, "The calendar did not advance while all players slept");
+    }
 }
 
 [Collection("Sequential")]
@@ -128,5 +175,91 @@ public class EngineClientWithHeadlessPlayerTests : ClientServerScenarioBase
 
         Assert.True(seen, "The rendering client never received the other player and its entity");
         Assert.Equal(2, Server!.Clients.Values.Count(c => c.State == EnumClientState.Playing));
+    }
+
+    [ClientServerScenario]
+    public async Task BedInteraction_MountsClientAndSneakUnmounts()
+    {
+        await Session!.StepFramesAsync(60);
+        BlockPos bedPos = Client!.RunOnClientThread(() => Client.Client.EntityPlayer!.Pos.AsBlockPos.AddCopy(2, 0, 0));
+        string playerName = Client!.RunOnClientThread(() => Client.Client.player.PlayerName);
+        ServerHost!.RunOnGameThread(() =>
+        {
+            IServerPlayer player = ServerHost.Server.GetClientByPlayername(playerName)!.Player;
+            player.WorldData.CurrentGameMode = EnumGameMode.Survival;
+            object tiredness = player.Entity!.GetBehavior("tiredness")!;
+            tiredness.GetType().GetProperty("Tiredness")!.SetValue(tiredness, 12f);
+            Block bed = ServerHost.Server.Api.World.GetBlock(new AssetLocation("game:bed-wood-head-north"))!;
+            ServerHost.Server.Api.World.BlockAccessor.SetBlock(bed.BlockId, bedPos);
+        });
+        Client.RunOnClientThread(() =>
+        {
+            object tiredness = Client.Client.EntityPlayer.GetBehavior("tiredness")!;
+            tiredness.GetType().GetProperty("Tiredness")!.SetValue(tiredness, 12f);
+        });
+        bool replicated = await Session.StepUntilAsync(() => Client.RunOnClientThread(() =>
+            Client.Client.World.BlockAccessor.GetBlockEntity(bedPos) is IMountableSeat), maxFrames: 300);
+        Assert.True(replicated, "The client did not receive the bed and its seat");
+
+        Assert.True(await Session.Blocks.UseAsync(bedPos), "The client did not use the bed");
+        bool mounted = await Session.StepUntilAsync(() =>
+            Session.Player.MountedOn is not null
+            && ServerHost.RunOnGameThread(() => ServerHost.Server.GetClientByPlayername(playerName)?.Entityplayer?.MountedOn is not null),
+            maxFrames: 120);
+        Assert.True(mounted, "The bed did not mount and sync the rendering client through the block interaction packet");
+
+        Client.Controls.Press(Zaldaryon.Pharos.Player.PlayerAction.Sneak);
+        try
+        {
+            await Session.StepFramesAsync(10);
+            Assert.Null(Session.Player.MountedOn);
+            Assert.Null(ServerHost.RunOnGameThread(() => ServerHost.Server.GetClientByPlayername(playerName)?.Entityplayer?.MountedOn));
+        }
+        finally
+        {
+            Client.Controls.Release(Zaldaryon.Pharos.Player.PlayerAction.Sneak);
+        }
+
+        Vec3d boatPosition = Client.RunOnClientThread(() => Client.Client.EntityPlayer.Pos.XYZ.AddCopy(-3, 0, 0));
+        string boatCode = ServerHost.RunOnGameThread(() => ServerHost.Server.Api.World.EntityTypes
+            .Select(type => type.Code.ToString())
+            .First(code => code.Contains(":boat-raft-", StringComparison.Ordinal)));
+        Entity boat = ServerHost.RunOnGameThread(() =>
+        {
+            EntityProperties type = ServerHost.Server.Api.World.GetEntityType(new AssetLocation(boatCode))!;
+            Entity entity = ServerHost.Server.Api.World.ClassRegistry.CreateEntity(type);
+            entity.Pos.SetPos(boatPosition);
+            ServerHost.Server.Api.World.SpawnEntity(entity);
+            return entity;
+        });
+        bool boatReplicated = await Session.StepUntilAsync(
+            () => Client.RunOnClientThread(() => Client.Client.World.GetEntityById(boat.EntityId) is not null),
+            maxFrames: 300);
+        Assert.True(boatReplicated, $"The client did not receive {boatCode}");
+
+        IMountableSeat boatSeat = ServerHost.RunOnGameThread(() =>
+        {
+            IServerPlayer player = ServerHost.Server.GetClientByPlayername(playerName)!.Player;
+            IMountableSeat seat = boat.GetInterface<IMountable>()!.Seats.First();
+            Assert.True(player.Entity!.TryMount(seat));
+            return seat;
+        });
+        bool boatMounted = await Session.StepUntilAsync(
+            () => Session.Player.MountedOn?.Entity?.EntityId == boat.EntityId,
+            maxFrames: 120);
+        Assert.True(boatMounted, "The boat mount did not sync to the rendering client");
+
+        Client.Controls.Press(Zaldaryon.Pharos.Player.PlayerAction.Forward);
+        try
+        {
+            await Session.StepFramesAsync(10);
+            Assert.True(ServerHost.RunOnGameThread(() => boatSeat.Controls.Forward),
+                "The client's forward control did not reach the mounted boat seat");
+        }
+        finally
+        {
+            Client.Controls.Release(Zaldaryon.Pharos.Player.PlayerAction.Forward);
+            await Session.StepFramesAsync(2);
+        }
     }
 }

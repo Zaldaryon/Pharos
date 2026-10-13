@@ -70,6 +70,9 @@ public sealed class ServerTestPlayer : IServerTestPlayer, IDisposable
     /// <inheritdoc />
     public EntityPlayer? Entity => _player?.Entity;
 
+    /// <inheritdoc />
+    public IMountableSeat? MountedOn => Entity?.MountedOn;
+
     /// <summary>
     /// The player's survival state: health, hunger and the nutrients it feeds, oxygen and body
     /// temperature. Every value it reads and writes goes through the game's own survival
@@ -182,6 +185,88 @@ public sealed class ServerTestPlayer : IServerTestPlayer, IDisposable
 
         OnGameThread(() => _player.Entity.TeleportToDouble(x, y, z));
         return Task.CompletedTask;
+    }
+
+    /// <inheritdoc />
+    public Task<bool> MountAsync(Entity mountable)
+    {
+        ArgumentNullException.ThrowIfNull(mountable);
+        EntityPlayer entity = Entity
+            ?? throw new InvalidOperationException($"'{PlayerName ?? _playerUid}' has no entity: it has not joined.");
+        IMountable provider = mountable.GetInterface<IMountable>()
+            ?? throw new ArgumentException($"Entity {mountable.EntityId} does not provide mountable seats.", nameof(mountable));
+        IMountableSeat? seat = provider.Seats.FirstOrDefault(candidate => candidate.CanMount(entity));
+        if (seat is null) return Task.FromResult(false);
+
+        return Task.FromResult(OnGameThread(() => entity.TryMount(seat)));
+    }
+
+    /// <inheritdoc />
+    public Task<bool> MountAsync(BlockPos seatBlockPos)
+    {
+        ArgumentNullException.ThrowIfNull(seatBlockPos);
+        EntityPlayer entity = Entity
+            ?? throw new InvalidOperationException($"'{PlayerName ?? _playerUid}' has no entity: it has not joined.");
+        IWorldAccessor world = Api?.World
+            ?? throw new InvalidOperationException("The player is not attached to a server world.");
+
+        return Task.FromResult(OnGameThread(() =>
+        {
+            BlockEntity? blockEntity = world.BlockAccessor.GetBlockEntity(seatBlockPos);
+            IMountableSeat? seat = blockEntity as IMountableSeat;
+            if (seat is null && blockEntity is IMountable provider)
+            {
+                seat = provider.Seats.FirstOrDefault(candidate => candidate.CanMount(entity));
+            }
+
+            return seat is not null && entity.TryMount(seat);
+        }));
+    }
+
+    /// <inheritdoc />
+    public Task<bool> UnmountAsync()
+    {
+        EntityPlayer entity = Entity
+            ?? throw new InvalidOperationException($"'{PlayerName ?? _playerUid}' has no entity: it has not joined.");
+        return Task.FromResult(OnGameThread(entity.TryUnmount));
+    }
+
+    /// <inheritdoc />
+    public async Task<bool> SleepAsync(BlockPos bedPos, int maxTicks = 20, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(bedPos);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxTicks);
+
+        EntityPlayer entity = Entity
+            ?? throw new InvalidOperationException($"'{PlayerName ?? _playerUid}' has no entity: it has not joined.");
+        IServerPlayer player = _player
+            ?? throw new InvalidOperationException("The player is not attached to a server.");
+        ICoreServerAPI api = Api
+            ?? throw new InvalidOperationException("The player is not attached to a server world.");
+
+        bool accepted = OnGameThread(() =>
+        {
+            Block block = api.World.BlockAccessor.GetBlock(bedPos);
+            BlockSelection selection = new(bedPos.Copy(), BlockFacing.UP, block)
+            {
+                HitPosition = new Vintagestory.API.MathTools.Vec3d(0.5, 0.5, 0.5),
+            };
+
+            // This is the same handler the server invokes for a client's bed-use packet. In
+            // particular, BlockBed enforces claim access, tiredness and temporal-storm rules.
+            return block.OnBlockInteractStart(api.World, player, selection);
+        });
+
+        if (!accepted) return false;
+
+        for (int tick = 0; tick < maxTicks; tick++)
+        {
+            ct.ThrowIfCancellationRequested();
+            Tick(1);
+            if (entity.MountedOn is not null) return true;
+        }
+
+        return false;
     }
 
     /// <inheritdoc />

@@ -1,4 +1,6 @@
 using Vintagestory.API.Common;
+using Vintagestory.API.Common.Entities;
+using Vintagestory.API.MathTools;
 using Vintagestory.API.Server;
 
 namespace Zaldaryon.Pharos.XUnit;
@@ -23,6 +25,11 @@ public interface IServerTestPlayer
     /// May be null if the player is not spawned or not connected.
     /// </summary>
     EntityPlayer? Entity { get; }
+
+    /// <summary>
+    /// Gets the seat this player is mounted on, or null when the player is not mounted.
+    /// </summary>
+    IMountableSeat? MountedOn { get; }
 
     /// <summary>
     /// Gets the unique player identifier.
@@ -54,6 +61,21 @@ public interface IServerTestPlayer
     /// <param name="z">The Z coordinate.</param>
     /// <returns>A task that completes when the teleport is finished.</returns>
     Task TeleportTo(double x, double y, double z);
+
+    /// <summary>Mounts the first available seat on an entity through the game's mount system.</summary>
+    Task<bool> MountAsync(Entity mountable);
+
+    /// <summary>Mounts the seat supplied by a block entity at <paramref name="seatBlockPos"/>.</summary>
+    Task<bool> MountAsync(BlockPos seatBlockPos);
+
+    /// <summary>Unmounts the player through the game's mount system.</summary>
+    Task<bool> UnmountAsync();
+
+    /// <summary>
+    /// Uses a bed through the block's real interaction handler. The game decides whether the
+    /// player is allowed to sleep, including tiredness, claims, and temporal storms.
+    /// </summary>
+    Task<bool> SleepAsync(BlockPos bedPos, int maxTicks = 20, CancellationToken ct = default);
 
     /// <summary>
     /// Gives the player an item with the specified code.

@@ -1,5 +1,6 @@
 using Vintagestory.API.Client;
 using Vintagestory.API.Common;
+using Vintagestory.API.Common.Entities;
 using Vintagestory.API.MathTools;
 
 namespace Zaldaryon.Pharos.Player;
@@ -23,6 +24,9 @@ public interface IClientTestPlayer
     /// Gets the underlying Vintage Story EntityPlayer instance, or null if not yet spawned.
     /// </summary>
     EntityPlayer? RawEntity { get; }
+
+    /// <summary>Gets the seat this client player is mounted on, or null when unmounted.</summary>
+    IMountableSeat? MountedOn { get; }
 
     /// <summary>
     /// Gets or sets the player entity's absolute world coordinates.
