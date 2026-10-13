@@ -18,6 +18,7 @@ public sealed class ClientTestPlayer : IClientTestPlayer
     private readonly PlayerCameraController _camera;
     private readonly PlayerInventoryAccessor _inventory;
     private readonly PlayerGuiController _gui;
+    private readonly ClientVitals _vitals;
 
     private readonly Vec3d _fallbackMotion = new();
 
@@ -32,6 +33,7 @@ public sealed class ClientTestPlayer : IClientTestPlayer
         _camera = new PlayerCameraController(game);
         _inventory = new PlayerInventoryAccessor(game);
         _gui = new PlayerGuiController(game);
+        _vitals = new ClientVitals(game);
     }
 
     private static Func<ClientMain> Fixed(ClientMain client) => () => client;
@@ -127,4 +129,11 @@ public sealed class ClientTestPlayer : IClientTestPlayer
     public IPlayerInventoryAccessor Inventory => _inventory;
 
     public IPlayerGuiController Gui => _gui;
+
+    /// <summary>
+    /// The client's copy of the player's survival state, as the server last sent it: health,
+    /// oxygen and body temperature. The client does not keep satiety or the nutrient levels, so
+    /// those read as null.
+    /// </summary>
+    public ClientVitals Vitals => _vitals;
 }
