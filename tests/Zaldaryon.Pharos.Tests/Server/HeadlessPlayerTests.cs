@@ -181,8 +181,8 @@ public class EngineClientWithHeadlessPlayerTests : ClientServerScenarioBase
     public async Task BedInteraction_MountsClientAndSneakUnmounts()
     {
         await Session!.StepFramesAsync(60);
-        BlockPos bedPos = Client.RunOnClientThread(() => Client.Client.EntityPlayer.Pos.AsBlockPos.AddCopy(2, 0, 0));
-        string playerName = Client.RunOnClientThread(() => Client.Client.player.PlayerName);
+        BlockPos bedPos = Client!.RunOnClientThread(() => Client.Client.EntityPlayer!.Pos.AsBlockPos.AddCopy(2, 0, 0));
+        string playerName = Client!.RunOnClientThread(() => Client.Client.player.PlayerName);
         ServerHost!.RunOnGameThread(() =>
         {
             IServerPlayer player = ServerHost.Server.GetClientByPlayername(playerName)!.Player;
