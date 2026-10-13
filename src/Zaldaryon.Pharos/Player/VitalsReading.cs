@@ -52,11 +52,12 @@ public sealed record DamageOverTime(
 /// Which values of a <see cref="VitalsReading"/> a comparison looks at.
 /// </summary>
 /// <remarks>
-/// The game does not send every value to the client. Health and wetness are watched attributes the
-/// server pushes; oxygen, air and body temperature the survival mod works out on each side for
-/// itself, so a headless client holds its own and never catches up with the server's. Comparing
-/// those by default would fail on every session, so <see cref="SyncedByDefault"/> leaves them out
-/// and a test that sets them asks for them by name.
+/// The game does not keep every value in step between the two sides. Health and wetness are watched
+/// attributes the server pushes and the client shows as sent. Oxygen, air and body temperature the
+/// survival mod works out on each side for itself, from the calendar and the climate, so the two
+/// drift and a client may hold its own value for a while after the server moved. Comparing those by
+/// default would fail on most sessions, so <see cref="SyncedByDefault"/> leaves them out and a test
+/// that sets them asks for them by name.
 /// </remarks>
 [Flags]
 public enum VitalsValues
