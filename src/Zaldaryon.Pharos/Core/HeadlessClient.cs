@@ -66,6 +66,7 @@ public sealed class HeadlessClient : IDisposable
     {
         ClientMain previous = _game;
         Network.ModNetworkLog.Carry(previous, game);
+        _events?.MoveTo(game);
         _game = game;
         _screen = screen;
         SessionNumber++;
@@ -341,6 +342,14 @@ public sealed class HeadlessClient : IDisposable
     public Inspection.TickListenerInspector TickListeners => _tickListeners ??= new Inspection.TickListenerInspector(this);
 
     private Inspection.TickListenerInspector? _tickListeners;
+
+    /// <summary>
+    /// Records the client's game events, such as entities spawning and despawning, to assert on.
+    /// Engine mode, in a game. See <see cref="Zaldaryon.Pharos.Events.ClientEventRecorder"/>.
+    /// </summary>
+    public global::Zaldaryon.Pharos.Events.ClientEventRecorder Events => _events ??= new global::Zaldaryon.Pharos.Events.ClientEventRecorder(this);
+
+    private global::Zaldaryon.Pharos.Events.ClientEventRecorder? _events;
 
     /// <summary>
     /// How many particles the client has alive, and what it spawns. Engine mode only. See

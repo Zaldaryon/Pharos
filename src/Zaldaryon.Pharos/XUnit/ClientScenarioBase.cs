@@ -271,6 +271,8 @@ public abstract class ClientScenarioBase : IAsyncLifetime, IScenarioLifecycle
             return Task.CompletedTask;
         }
 
+        Events.LeftOpenLogs.Close(null, Client);
+
         // The recording started for the failure artifacts must not run on into the next test.
         if (_recordingForArtifacts && Client is { IsDisposed: false } recorded)
         {

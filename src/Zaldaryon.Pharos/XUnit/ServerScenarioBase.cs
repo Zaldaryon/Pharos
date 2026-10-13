@@ -301,6 +301,7 @@ public abstract class ServerScenarioBase : IAsyncLifetime, IScenarioLifecycle
         }
 
         IsolationException? isolationFailure = null;
+        Events.LeftOpenLogs.Close(_host, null);
         try
         {
             // A virtual clock the test left in use ends before the world is rolled back.
