@@ -84,6 +84,44 @@ Task WaitForConditionAsync(Func<bool> condition, int maxTicks = 300);
 dying and players respawning, as typed records to assert on and wait for. See
 [Game events](inspection-api.md#game-events-record-and-assert).
 
+### Entities, AI and pathfinding
+
+`Host.Entities` creates entities on the server game thread and waits on their lifecycle or position.
+The existing `SpawnEntity` helper also creates and registers the entity on that thread.
+
+```csharp
+Entity wolf = await Host.Entities.SpawnAsync("game:wolf-male", pos, entity =>
+    entity.WatchedAttributes.SetString("test-owner", "scenario"));
+
+IReadOnlyList<string> active = Host.Entities.ActiveTasks(wolf);
+Host.Entities.StartTask(wolf, "seekentity");
+Host.Entities.StopTask(wolf, "seekentity");
+
+await Host.Entities.WaitUntilAtAsync(wolf, Player.Entity!.Pos.XYZ, radius: 2, maxTicks: 600);
+EntityDied death = await Host.Entities.WaitForDeathAsync(wolf, maxTicks: 600);
+EntityDespawned despawn = await Host.Entities.WaitForDespawnAsync(wolf, maxTicks: 600);
+```
+
+`ActiveTasks` reports a configured task ID, or the task's registered code when its configuration
+has no ID. `StartTask` and `StopTask` accept either value. If a task code matches more than one
+configured task, give those tasks unique IDs in the entity definition before controlling them.
+`StartTask` calls the task's game readiness predicate first and throws if it is not ready, such as
+when a seek task has no target. It also throws when a game execution callback vetoes the start.
+All AI task access runs on the game thread.
+
+`PathfindAsync(from, to, entityCode)` submits the request to Vintage Story's async pathfinding
+system, using the entity type's collision box and configured AI creature type. If `from` and `to`
+are in the same block, the result contains that position as a single waypoint. `PathfindResult.Found`
+and `Waypoints` contain the result. When the game returns no route, `Reason` says that no route was
+found. The game does not expose a more specific failure reason.
+
+`CanSpawnAt(entityCode, pos)` checks the configured runtime light level, surface requirement,
+climate, forestation, Y range, allowed inside block, support block, and aquatic habitat size. Its
+climate check samples temperature and rainfall at the game's sea-level reference altitude, while
+forestation uses the requested position. It reports the first failed check. This is a local
+conditions check, not a full natural spawn round: it does not check spawn chance, group caps,
+companion selection, entity collision, or distance from players.
+
 ## Lifecycle
 
 `ServerScenarioBase` implements `IAsyncLifetime`. Before each test it boots an embedded server in a fresh sandbox from `WorldOptions`, which defaults to the class-level `[ServerWorld]`. It stages every `[ServerMods]` path from the class and the assembly into the sandbox's `Mods` folder first. After the test it stops the server, or keeps it for the next test (see below).
@@ -456,14 +494,10 @@ In a `ClientServerScenarioBase`, kill the joined player with `ServerPlayer.Damag
 [ServerScenario]
 public async Task EntityMovesToTarget()
 {
-    var entity = SpawnEntity("game:wolf-male", new Vec3d(0, 64, 0));
+    Entity entity = await Host.Entities.SpawnAsync("game:wolf-male", new Vec3d(0, 64, 0));
+    Vec3d target = new(10, 64, 10);
 
-    await Host.TickUntilAsync(
-        () => entity.Pos.DistanceTo(new Vec3d(10, 64, 10)) < 1.0,
-        maxTicks: 600
-    );
-
-    Assert.True(entity.Pos.DistanceTo(new Vec3d(10, 64, 10)) < 1.0);
+    await Host.Entities.WaitUntilAtAsync(entity, target, radius: 1, maxTicks: 600);
 }
 ```
 

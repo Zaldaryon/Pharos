@@ -18,6 +18,26 @@ public class ClientServerAssertTests
     #region ClientServerBlockSynced Tests
 
     [Fact]
+    public void EntitySynced_HasEntityIdAndToleranceParameters()
+    {
+        var method = typeof(ClientServerAssert).GetMethod("EntitySynced", PublicStatic, new[] { typeof(ClientServerLoopbackSession), typeof(long), typeof(double) });
+        Assert.NotNull(method);
+        Assert.Equal(typeof(void), method.ReturnType);
+    }
+
+    [Fact]
+    public void EntitySynced_NullSession_ThrowsArgumentNullException()
+    {
+        Assert.Throws<ArgumentNullException>(() => ClientServerAssert.EntitySynced(null!, 1));
+    }
+
+    [Fact]
+    public void WatchedAttributeSynced_NullSession_ThrowsArgumentNullException()
+    {
+        Assert.Throws<ArgumentNullException>(() => ClientServerAssert.WatchedAttributeSynced(null!, 1, "health"));
+    }
+
+    [Fact]
     public void ClientServerBlockSynced_HasCorrectSignature()
     {
         var method = typeof(ClientServerAssert).GetMethod("ClientServerBlockSynced", PublicStatic, new[] { typeof(ClientServerLoopbackSession), typeof(BlockPos) });

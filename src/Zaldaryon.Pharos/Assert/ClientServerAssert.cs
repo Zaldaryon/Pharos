@@ -1,3 +1,6 @@
+using System.IO;
+using Vintagestory.API.Common.Entities;
+using Vintagestory.API.Datastructures;
 using Vintagestory.API.MathTools;
 using Vintagestory.API.Server;
 using Zaldaryon.Pharos.Player;
@@ -17,6 +20,99 @@ namespace Zaldaryon.Pharos.Assertions;
 /// </remarks>
 public static class ClientServerAssert
 {
+    /// <summary>Asserts that a loaded entity has the same code, life state, and position on both sides.</summary>
+    /// <param name="session">The connected client-server session.</param>
+    /// <param name="entityId">The entity's shared ID.</param>
+    /// <param name="tolerance">Maximum distance between the two positions.</param>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="tolerance"/> is negative or not finite.</exception>
+    /// <exception cref="InvalidOperationException">The session or either world is unavailable.</exception>
+    /// <exception cref="PharosAssertException">The entity is missing on a side or its state differs.</exception>
+    public static void EntitySynced(ClientServerLoopbackSession session, long entityId, double tolerance = 0.1)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        if (!double.IsFinite(tolerance) || tolerance < 0)
+            throw new ArgumentOutOfRangeException(nameof(tolerance), tolerance, "Tolerance must be finite and non-negative.");
+        EnsureConnected(session);
+
+        EmbeddedServerHost host = session.NativeServer ?? throw new InvalidOperationException("The session has no embedded server.");
+        EntitySyncState? server = host.RunOnGameThread<EntitySyncState?>(() =>
+        {
+            Entity? entity = host.Server.GetEntityById(entityId);
+            return entity is null ? null : EntitySyncState.From(entity);
+        });
+        EntitySyncState? client = session.Client.RunOnClientThread<EntitySyncState?>(() =>
+        {
+            var world = session.Client.Client.World ?? throw new InvalidOperationException("Client world is not loaded.");
+            Entity? entity = world.GetEntityById(entityId);
+            return entity is null ? null : EntitySyncState.From(entity);
+        });
+
+        if (server is null || client is null)
+        {
+            throw new PharosAssertException($"Entity {entityId} is {(server is null && client is null ? "missing on both sides" : server is null ? "missing on the server" : "missing on the client")}.");
+        }
+        EntitySyncState serverState = server.Value;
+        EntitySyncState clientState = client.Value;
+        if (!string.Equals(serverState.Code, clientState.Code, StringComparison.Ordinal))
+        {
+            throw new PharosAssertException($"Entity {entityId} has code '{serverState.Code}' on the server and '{clientState.Code}' on the client.");
+        }
+        if (serverState.Alive != clientState.Alive)
+        {
+            throw new PharosAssertException($"Entity {entityId} is {(serverState.Alive ? "alive" : "dead")} on the server and {(clientState.Alive ? "alive" : "dead")} on the client.");
+        }
+        if (serverState.Dimension != clientState.Dimension)
+        {
+            throw new PharosAssertException($"Entity {entityId} is in dimension {serverState.Dimension} on the server and dimension {clientState.Dimension} on the client.");
+        }
+
+        double distance = serverState.Position.DistanceTo(clientState.Position);
+        if (distance > tolerance)
+        {
+            throw new PharosAssertException(
+                $"Entity {entityId} is at {serverState.Position} on the server and {clientState.Position} on the client. " +
+                $"Distance {distance:F4} exceeds tolerance {tolerance:F4}.");
+        }
+    }
+
+    /// <summary>Asserts that one watched attribute has the same serialized value on both sides.</summary>
+    /// <param name="session">The connected client-server session.</param>
+    /// <param name="entityId">The entity's shared ID.</param>
+    /// <param name="path">The attribute key, or a dot-separated path into nested watched attributes.</param>
+    /// <exception cref="ArgumentException"><paramref name="path"/> is empty or contains an empty segment.</exception>
+    /// <exception cref="InvalidOperationException">The session or either world is unavailable.</exception>
+    /// <exception cref="PharosAssertException">The entity or attribute is missing on a side, or its value differs.</exception>
+    public static void WatchedAttributeSynced(ClientServerLoopbackSession session, long entityId, string path)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        string[] segments = path.Split('.');
+        if (segments.Any(string.IsNullOrWhiteSpace)) throw new ArgumentException("Attribute path cannot contain empty segments.", nameof(path));
+        EnsureConnected(session);
+
+        EmbeddedServerHost host = session.NativeServer ?? throw new InvalidOperationException("The session has no embedded server.");
+        byte[]? server = host.RunOnGameThread(() =>
+        {
+            Entity? entity = host.Server.GetEntityById(entityId);
+            return entity is null ? null : ReadWatchedAttribute(entity, segments);
+        });
+        byte[]? client = session.Client.RunOnClientThread(() =>
+        {
+            var world = session.Client.Client.World ?? throw new InvalidOperationException("Client world is not loaded.");
+            Entity? entity = world.GetEntityById(entityId);
+            return entity is null ? null : ReadWatchedAttribute(entity, segments);
+        });
+
+        if (server is null || client is null)
+        {
+            throw new PharosAssertException($"Watched attribute '{path}' for entity {entityId} is {(server is null && client is null ? "missing on both sides" : server is null ? "missing on the server" : "missing on the client")}.");
+        }
+        if (!server.AsSpan().SequenceEqual(client))
+        {
+            throw new PharosAssertException($"Watched attribute '{path}' for entity {entityId} differs between client and server.");
+        }
+    }
+
     /// <summary>
     /// Asserts that the block at the specified position is synchronized between client and server.
     /// </summary>
@@ -259,6 +355,32 @@ public static class ClientServerAssert
 
     #region Private Helpers
 
+    private static void EnsureConnected(ClientServerLoopbackSession session)
+    {
+        if (!session.IsConnected)
+        {
+            throw new InvalidOperationException("Session is not connected. Wait for player to join before asserting synchronization.");
+        }
+    }
+
+    private static byte[]? ReadWatchedAttribute(Entity entity, IReadOnlyList<string> path)
+    {
+        IAttribute current = entity.WatchedAttributes;
+        foreach (string segment in path)
+        {
+            if (current is not ITreeAttribute tree || !tree.TryGetAttribute(segment, out current!)) return null;
+        }
+
+        using MemoryStream stream = new();
+        using (BinaryWriter writer = new(stream, System.Text.Encoding.UTF8, leaveOpen: true))
+        {
+            writer.Write(current.GetAttributeId());
+            current.ToBytes(writer);
+            writer.Flush();
+        }
+        return stream.ToArray();
+    }
+
     private static int GetClientBlockId(ClientServerLoopbackSession session, BlockPos pos)
     {
         var clientWorld = session.Client.Client.World;
@@ -382,4 +504,13 @@ public static class ClientServerAssert
     /// Represents a snapshot of an inventory slot's contents.
     /// </summary>
     private readonly record struct InventorySlotInfo(int ItemId, int StackSize);
+
+    private readonly record struct EntitySyncState(string? Code, bool Alive, int Dimension, Vec3d Position)
+    {
+        public static EntitySyncState From(Entity entity)
+        {
+            Vec3d position = entity.Pos.XYZ;
+            return new EntitySyncState(entity.Code?.ToString(), entity.Alive, entity.Pos.Dimension, new Vec3d(position.X, position.Y, position.Z));
+        }
+    }
 }

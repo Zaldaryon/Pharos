@@ -50,6 +50,10 @@
       <HintPath>$(VintageStoryPath)/VintagestoryLib.dll</HintPath>
       <Private>true</Private>
     </Reference>
+    <Reference Include="VSEssentials">
+      <HintPath>$(VintageStoryPath)/Mods/VSEssentials.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
     <Reference Include="OpenTK.Windowing.Desktop">
       <HintPath>$(VintageStoryPath)/Lib/OpenTK.Windowing.Desktop.dll</HintPath>
       <Private>true</Private>

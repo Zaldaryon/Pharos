@@ -91,7 +91,15 @@ ClientServerAssert.InventorySynced(Session, "hotbar");
 
 // The client's copy of the player's survival state matches the server's
 ClientServerAssert.VitalsSynced(Session, PlayerName);
+
+// A tracked entity and one of its watched attributes match the server
+ClientServerAssert.EntitySynced(Session, entity.EntityId, tolerance: 0.1);
+ClientServerAssert.WatchedAttributeSynced(Session, entity.EntityId, "health");
 ```
+
+`EntitySynced` compares entity code, alive state, and position. `WatchedAttributeSynced` compares
+one existing attribute, including a nested path such as `health.currenthealth`, by its serialized
+value. Step the session until the server has sent the entity and its changed watched attributes.
 
 ### Survival state on both sides
 
