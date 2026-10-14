@@ -434,6 +434,7 @@ public abstract class ServerScenarioBase : IAsyncLifetime, IScenarioLifecycle
         private IDisposable? _tracking;
         private ListenerWatermark? _listeners;
         private DataFileBaseline? _dataFiles;
+        private LandClaimDriver.LandClaimBaseline? _landClaims;
 
         public DataFileSet Files { get; } = files;
 
@@ -447,6 +448,7 @@ public abstract class ServerScenarioBase : IAsyncLifetime, IScenarioLifecycle
             _baseline = Host.TakeSnapshot();
             _tracking = Host.RunOnGameThread(() => _baseline.TrackChunksLoadedLater(Host));
             _dataFiles = Host.RunOnGameThread(() => DataFileBaseline.Capture(Sandbox.RootPath, Files, EnumAppSide.Server));
+            _landClaims = Host.LandClaims.Capture();
         }
 
         /// <summary>Notes the listeners that live as long as the server; later ones are the tests'.</summary>
@@ -469,6 +471,7 @@ public abstract class ServerScenarioBase : IAsyncLifetime, IScenarioLifecycle
                     ?? RollbackParticipants.Try("The rollback", () => chunks = (restored = Host.RestoreSnapshot(_baseline, filter)).ChunksRestored)
                     ?? (Host.IsRunning ? null : "the server stopped during the rollback")
                     ?? RollbackParticipants.Try("Restoring the data files", () => files = Host.RunOnGameThread(() => _dataFiles?.Restore() ?? 0))
+                    ?? RollbackParticipants.Try("Restoring the land claims", () => _landClaims?.Restore())
                     ?? RollbackParticipants.Try("Clearing the logs", Host.Logs.Clear)
                     ?? RollbackParticipants.Try($"A {RollbackEvents.Restored} handler", () => RollbackParticipants.Push(Host, RollbackEvents.Restored, test, chunks));
             });

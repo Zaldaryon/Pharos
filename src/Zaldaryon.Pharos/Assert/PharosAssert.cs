@@ -4,6 +4,7 @@ using Zaldaryon.Pharos.Graphics;
 using Zaldaryon.Pharos.Memory;
 using Zaldaryon.Pharos.Timing;
 using Zaldaryon.Pharos.Visual;
+using Zaldaryon.Pharos.XUnit;
 
 namespace Zaldaryon.Pharos.Assertions;
 
@@ -564,6 +565,30 @@ public static class PharosAssert
             throw new PharosAssertException(
                 $"Expected mod '{modId}' to be detected, but it was not in ActiveMockMods. " +
                 $"Active mods: [{string.Join(", ", snapshot.ActiveMockMods)}].");
+        }
+    }
+
+    /// <summary>
+    /// Asserts that the server refused a player action and sent the given in-game error code.
+    /// </summary>
+    /// <param name="result">The bot result for the action.</param>
+    /// <param name="code">The in-game error code the server should send, such as <c>noprivilege-buildbreak-landclaimed</c>.</param>
+    /// <exception cref="PharosAssertException">Thrown when the action was accepted or the server sent a different code.</exception>
+    public static void Denied(BotResult result, string code)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+        ArgumentException.ThrowIfNullOrWhiteSpace(code);
+
+        if (result.Accepted)
+        {
+            throw new PharosAssertException($"Expected the action to be denied with '{code}', but the server accepted it.");
+        }
+
+        string? sent = result.Error?.Code;
+        if (!string.Equals(sent, code, StringComparison.Ordinal))
+        {
+            throw new PharosAssertException(
+                $"Expected the action to be denied with '{code}', but the server sent '{sent ?? result.Reason ?? "no error"}'.");
         }
     }
 

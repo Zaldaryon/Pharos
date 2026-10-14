@@ -114,6 +114,11 @@ public sealed partial class EmbeddedServerHost : IDisposable, IAsyncDisposable
 
     private WorldPhysicsDriver? _world;
 
+    /// <summary>Land claims on the server: adds, reads and removes them, and restores them with the world.</summary>
+    public LandClaimDriver LandClaims => _landClaims ??= new LandClaimDriver(this);
+
+    private LandClaimDriver? _landClaims;
+
     /// <summary>
     /// Records the server's game events, such as blocks placed and entities dying, to assert on.
     /// See <see cref="Zaldaryon.Pharos.Events.ServerEventRecorder"/>.
