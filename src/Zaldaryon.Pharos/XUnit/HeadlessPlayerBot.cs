@@ -162,7 +162,29 @@ public sealed class HeadlessPlayerBot
     }
 
     /// <summary>Uses a block through the server's block-use interaction packet.</summary>
-    public async Task<BotResult> UseBlockAsync(BlockPos position, BlockFacing? face = null, int maxTicks = 10, CancellationToken ct = default)
+    public Task<BotResult> UseBlockAsync(BlockPos position, BlockFacing? face = null, int maxTicks = 10, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(position);
+        return HandUseAsync(position, face, EnumHandInteract.BlockInteract, EnumHandInteractNw.StartBlockUse, EnumHandInteractNw.StopBlockUse, "block use", maxTicks, ct);
+    }
+
+    /// <summary>
+    /// Uses the item in the active hotbar slot on a block, the way a right click with a held item does: a plantable
+    /// seed on farmland, for example. The server runs the item's held interaction and the bot waits for it to finish.
+    /// </summary>
+    /// <param name="position">The block the item is used on.</param>
+    /// <param name="face">The face the item is used on. The top face by default.</param>
+    /// <param name="maxTicks">The most server ticks to wait for the interaction.</param>
+    /// <param name="ct">Cancellation token.</param>
+    public Task<BotResult> UseHeldItemOnBlockAsync(BlockPos position, BlockFacing? face = null, int maxTicks = 10, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(position);
+        return HandUseAsync(position, face, EnumHandInteract.HeldItemInteract, EnumHandInteractNw.StartHeldItemUse, EnumHandInteractNw.StopHeldItemUse, "held item use", maxTicks, ct);
+    }
+
+    private static string Capitalize(string text) => char.ToUpperInvariant(text[0]) + text[1..];
+
+    private async Task<BotResult> HandUseAsync(BlockPos position, BlockFacing? face, EnumHandInteract useType, EnumHandInteractNw start, EnumHandInteractNw stop, string what, int maxTicks, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(position);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxTicks);
@@ -177,17 +199,17 @@ public sealed class HeadlessPlayerBot
             }
 
             int errorsBefore = _owner.Received.IngameErrors.Count;
-            SendBlockUsePacket(position, hitFace, EnumHandInteractNw.StartBlockUse);
+            SendHandUsePacket(position, hitFace, useType, start);
 
             BotResult? operation = null;
             Exception? operationFailure = null;
             try
             {
                 operation = await WaitForAsync(
-                    () => RequireEntity().Controls.HandUse == EnumHandInteract.BlockInteract,
+                    () => RequireEntity().Controls.HandUse == useType,
                     maxTicks,
                     errorsBefore,
-                    $"The server did not accept block use at {position}.",
+                    $"The server did not accept {what} at {position}.",
                     ct).ConfigureAwait(false);
             }
             catch (Exception ex)
@@ -199,13 +221,13 @@ public sealed class HeadlessPlayerBot
             Exception? cleanupFailure = null;
             try
             {
-                SendBlockUsePacket(position, hitFace, EnumHandInteractNw.StopBlockUse);
+                SendHandUsePacket(position, hitFace, useType, stop);
                 int cleanupErrorsBefore = _owner.Received.IngameErrors.Count;
                 cleanup = await WaitForAsync(
                     () => RequireEntity().Controls.HandUse == EnumHandInteract.None,
                     maxTicks: 4,
                     cleanupErrorsBefore,
-                    $"The server did not stop block use at {position}.",
+                    $"The server did not stop {what} at {position}.",
                     CancellationToken.None).ConfigureAwait(false);
             }
             catch (Exception ex)
@@ -216,7 +238,7 @@ public sealed class HeadlessPlayerBot
             if (cleanupFailure is not null)
             {
                 if (operationFailure is not null)
-                    throw new AggregateException("Block use failed and the server hand-use state could not be cleared.", operationFailure, cleanupFailure);
+                    throw new AggregateException($"{Capitalize(what)} failed and the server hand-use state could not be cleared.", operationFailure, cleanupFailure);
                 throw new InvalidOperationException("The server hand-use state could not be cleared.", cleanupFailure);
             }
 
@@ -225,7 +247,7 @@ public sealed class HeadlessPlayerBot
                 if (operationFailure is not null)
                 {
                     throw new AggregateException(
-                        "Block use failed and the server hand-use state remained active.",
+                        $"{Capitalize(what)} failed and the server hand-use state remained active.",
                         operationFailure,
                         new InvalidOperationException(cleanup?.Reason ?? cleanup?.Error?.Message ?? "The server did not clear HandUse."));
                 }
@@ -242,12 +264,12 @@ public sealed class HeadlessPlayerBot
         }
     }
 
-    private void SendBlockUsePacket(BlockPos position, BlockFacing face, EnumHandInteractNw interaction) => Send(new Packet_Client
+    private void SendHandUsePacket(BlockPos position, BlockFacing face, EnumHandInteract useType, EnumHandInteractNw interaction) => Send(new Packet_Client
     {
         Id = 25,
         HandInteraction = new Packet_ClientHandInteraction
         {
-            UseType = (int)EnumHandInteract.BlockInteract,
+            UseType = (int)useType,
             MouseButton = (int)EnumMouseButton.Right,
             X = position.X,
             Y = position.Y,
@@ -257,7 +279,7 @@ public sealed class HeadlessPlayerBot
             HitY = CollectibleNet.SerializeDoublePrecise(0.5),
             HitZ = CollectibleNet.SerializeDoublePrecise(0.5),
             EnumHandInteract = (int)interaction,
-            FirstEvent = interaction == EnumHandInteractNw.StartBlockUse ? 1 : 0,
+            FirstEvent = interaction is EnumHandInteractNw.StartBlockUse or EnumHandInteractNw.StartHeldItemUse ? 1 : 0,
         },
     });
 

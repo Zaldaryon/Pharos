@@ -139,6 +139,16 @@ public sealed partial class EmbeddedServerHost : IDisposable, IAsyncDisposable
 
     private GroupDriver? _groups;
 
+    /// <summary>Climate at a position, and climate overrides for a region, restored by rollback.</summary>
+    public ClimateDriver Climate => _climate ??= new ClimateDriver(this);
+
+    private ClimateDriver? _climate;
+
+    /// <summary>Farmland and crops: planting, reading the soil and crop, and growing them through the calendar.</summary>
+    public FarmingDriver Farming => _farming ??= new FarmingDriver(this);
+
+    private FarmingDriver? _farming;
+
     /// <summary>
     /// Records the server's game events, such as blocks placed and entities dying, to assert on.
     /// See <see cref="Zaldaryon.Pharos.Events.ServerEventRecorder"/>.
