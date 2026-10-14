@@ -2,6 +2,7 @@ using Vintagestory.API.Common;
 using Vintagestory.API.Common.Entities;
 using Vintagestory.API.MathTools;
 using Vintagestory.API.Server;
+using Zaldaryon.Pharos.Assertions;
 using Zaldaryon.Pharos.Server;
 using Zaldaryon.Pharos.XUnit;
 using Xunit;
@@ -59,6 +60,29 @@ public sealed class LandClaimDriverTests : ServerScenarioBase
         Assert.Equal(before, restored);
         Assert.Equal(before, Host.LandClaims.All.Count);
         Assert.Empty(Host.LandClaims.At(pos));
+    }
+
+    [ServerScenario]
+    public async Task StrangerCannotBreakBlockInsideAClaim()
+    {
+        ServerTestPlayer owner = await CreateTestPlayerAsync("ClaimOwnerDenied");
+        ServerTestPlayer stranger = await CreateTestPlayerAsync("ClaimStranger");
+        BlockPos pos = NextTo(owner);
+        int stone = Host!.RunOnGameThread(() =>
+        {
+            Block rock = Api!.World.GetBlock(new AssetLocation("game:rock-granite"))!;
+            Api.World.BlockAccessor.SetBlock(rock.BlockId, pos);
+            return rock.BlockId;
+        });
+        Host.LandClaims.Add(owner, Box(pos));
+        // Test players join as admin, who may break anywhere. A survival player's role is what claims restrict.
+        stranger.RoleCode = "suplayer";
+        await stranger.TeleportTo(pos.X + 0.5, pos.Y, pos.Z + 2.5);
+
+        BotResult result = await stranger.Bot.BreakBlockAsync(pos);
+
+        PharosAssert.Denied(result, "noprivilege-buildbreak-landclaimed");
+        Assert.Equal(stone, Host.RunOnGameThread(() => Api!.World.BlockAccessor.GetBlock(pos).BlockId));
     }
 
     private static BlockPos NextTo(ServerTestPlayer player)
