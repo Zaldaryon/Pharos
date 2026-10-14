@@ -297,9 +297,10 @@ var pings = Host.ModPackets<MyPing>(alice, "mymod");
 
 `player.Bot` sends the same client packets as the game client. The embedded server runs its normal
 movement, block, inventory and entity interaction handlers, so permissions and mod callbacks still
-apply. Every action returns a `BotResult`: `Accepted` reports the observed server-side result,
-`Error` contains a new in-game error from the server, and `Reason` describes a refusal without an
-in-game message.
+apply. Every action returns a `BotResult`: `Accepted` reports the observed server-side result; for
+entity actions, it means the matching attack or use event reached the bot's observer. Check entity
+state separately when the effect depends on the entity or a mod handler. `Error` contains a new
+in-game error from the server, and `Reason` describes a refusal without an in-game message.
 
 ```csharp
 ServerTestPlayer bob = await CreateTestPlayerAsync("Bob");
