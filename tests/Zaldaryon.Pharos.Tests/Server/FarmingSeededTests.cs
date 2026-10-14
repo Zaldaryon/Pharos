@@ -8,6 +8,8 @@ using Xunit;
 namespace Zaldaryon.Pharos.Tests.Server;
 
 /// <summary>The crop stage time is randomised by ±10% with the game's own static random source, so a fixed world seed fixes it.</summary>
+// The crop's random draw is static, shared by every host in the process, so this class runs alone.
+[Collection("Sequential")]
 [ServerWorld(seed: 4242)]
 public sealed class FarmingSeededTests : ServerScenarioBase
 {
