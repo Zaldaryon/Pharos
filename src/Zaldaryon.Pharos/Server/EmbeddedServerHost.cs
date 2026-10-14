@@ -134,6 +134,11 @@ public sealed partial class EmbeddedServerHost : IDisposable, IAsyncDisposable
 
     private ReinforcementDriver? _reinforcement;
 
+    /// <summary>Player groups: creating them, adding members, and finding them. Groups a test creates are removed by rollback.</summary>
+    public GroupDriver Groups => _groups ??= new GroupDriver(this);
+
+    private GroupDriver? _groups;
+
     /// <summary>
     /// Records the server's game events, such as blocks placed and entities dying, to assert on.
     /// See <see cref="Zaldaryon.Pharos.Events.ServerEventRecorder"/>.
