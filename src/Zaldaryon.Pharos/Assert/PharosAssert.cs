@@ -569,6 +569,29 @@ public static class PharosAssert
     }
 
     /// <summary>
+    /// Asserts that a processor's output holds the expected item or block and quantity, such as a firepit's output
+    /// slot, a quern's output, or a barrel's liquid after its sealing time.
+    /// </summary>
+    /// <param name="output">The code and quantity the processor holds, or null when it holds nothing.</param>
+    /// <param name="code">The expected code, such as <c>game:fish-cooked</c>.</param>
+    /// <param name="quantity">The expected stack size.</param>
+    /// <exception cref="PharosAssertException">Thrown when the output is empty, or differs in code or quantity.</exception>
+    public static void Produces((string Code, int Quantity)? output, string code, int quantity)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(code);
+        if (output is null)
+        {
+            throw new PharosAssertException($"Expected the processor to produce {quantity} x {code}, but its output is empty.");
+        }
+
+        if (!string.Equals(output.Value.Code, code, StringComparison.Ordinal) || output.Value.Quantity != quantity)
+        {
+            throw new PharosAssertException(
+                $"Expected the processor to produce {quantity} x {code}, but it produced {output.Value.Quantity} x {output.Value.Code}.");
+        }
+    }
+
+    /// <summary>
     /// Asserts that the server refused a player action and sent the given in-game error code.
     /// </summary>
     /// <param name="result">The bot result for the action.</param>
