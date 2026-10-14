@@ -119,6 +119,26 @@ public sealed partial class EmbeddedServerHost : IDisposable, IAsyncDisposable
 
     private LandClaimDriver? _landClaims;
 
+    /// <summary>Whether players can damage each other on the server, restored with the world.</summary>
+    public PvpDriver Pvp => _pvp ??= new PvpDriver(this);
+
+    private PvpDriver? _pvp;
+
+    /// <summary>The server's player roles, and assigning them to test players.</summary>
+    public RoleDriver Roles => _roles ??= new RoleDriver(this);
+
+    private RoleDriver? _roles;
+
+    /// <summary>Block reinforcement through the survival mod. Placed reinforcements are cleared by rollback.</summary>
+    public ReinforcementDriver Reinforcement => _reinforcement ??= new ReinforcementDriver(this);
+
+    private ReinforcementDriver? _reinforcement;
+
+    /// <summary>Player groups: creating them, adding members, and finding them. Groups a test creates are removed by rollback.</summary>
+    public GroupDriver Groups => _groups ??= new GroupDriver(this);
+
+    private GroupDriver? _groups;
+
     /// <summary>
     /// Records the server's game events, such as blocks placed and entities dying, to assert on.
     /// See <see cref="Zaldaryon.Pharos.Events.ServerEventRecorder"/>.
