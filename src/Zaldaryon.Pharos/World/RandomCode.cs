@@ -106,6 +106,20 @@ internal static partial class RandomCode
                 continue;
             }
 
+            // A static constructor runs the first time the type is used, which can be after seeding. It would then
+            // replace a seeded field with an unseeded one. Running it now makes the field's value the one seeding reseeds.
+            if (fields.Any(IsRandomField))
+            {
+                try
+                {
+                    RuntimeHelpers.RunClassConstructor(type.TypeHandle);
+                }
+                catch (Exception)
+                {
+                    // A constructor that fails leaves its fields as they are; the field is reported as it is.
+                }
+            }
+
             foreach (FieldInfo field in fields)
             {
                 if (field.IsLiteral || !IsRandomField(field)) continue;

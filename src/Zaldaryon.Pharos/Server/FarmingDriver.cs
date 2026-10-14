@@ -133,6 +133,55 @@ public sealed class FarmingDriver
         return (Farmland(pos).CropStage, played);
     }
 
+    /// <summary>
+    /// Uses a fertilizer on a farmland block the way a player does: the player holds the fertilizer and right-clicks
+    /// the field, and the field takes its nutrients into the slow-release stock and consumes one from the player.
+    /// </summary>
+    /// <param name="player">The joined player who fertilizes.</param>
+    /// <param name="pos">The farmland block position.</param>
+    /// <param name="fertilizerCode">The fertilizer item code, such as <c>game:compost</c>.</param>
+    /// <returns>True when the field took the fertilizer.</returns>
+    public bool Fertilize(ServerTestPlayer player, BlockPos pos, string fertilizerCode)
+    {
+        ArgumentNullException.ThrowIfNull(player);
+        ArgumentNullException.ThrowIfNull(pos);
+        ArgumentException.ThrowIfNullOrWhiteSpace(fertilizerCode);
+        player.GiveItem(fertilizerCode);
+        return _host.RunOnGameThread(() =>
+        {
+            IPlayer byPlayer = player.Player ?? throw new InvalidOperationException($"{player.PlayerUID} has not joined the server.");
+            object field = ServerApi.World.BlockAccessor.GetBlockEntity(pos)
+                ?? throw new InvalidOperationException($"There is no farmland at {pos}.");
+            return (bool)(field.GetType().GetMethod("OnBlockInteract")!.Invoke(field, [byPlayer]) ?? false);
+        });
+    }
+
+    /// <summary>
+    /// Plays game time forward for several fields together, an hour at a time. Each hour the calendar advances and
+    /// every field's tick listeners run, so fields that share a calendar grow and wet at the game's own rate.
+    /// </summary>
+    /// <param name="fields">The farmland block positions.</param>
+    /// <param name="span">The game time to play.</param>
+    /// <param name="ct">Cancellation token.</param>
+    public async Task PlayAsync(IEnumerable<BlockPos> fields, TimeSpan span, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(fields);
+        ArgumentOutOfRangeException.ThrowIfLessThan(span, TimeSpan.Zero);
+        BlockPos[] positions = fields.Select(field => field.Copy()).ToArray();
+        TimeSpan played = TimeSpan.Zero;
+        while (played < span)
+        {
+            ct.ThrowIfCancellationRequested();
+            TimeSpan step = span - played < TimeSpan.FromHours(1) ? span - played : TimeSpan.FromHours(1);
+            _host.Calendar.Advance(step);
+            foreach (BlockPos field in positions)
+            {
+                await _host.TickListeners.FastForwardAsync(field, TimeSpan.FromMilliseconds(9000), ct: ct);
+            }
+            played += step;
+        }
+    }
+
     private ICoreServerAPI ServerApi => (ICoreServerAPI)_host.Server.Api;
 
     /// <summary>The stage is the number at the end of the crop's code, such as 3 for <c>game:crop-carrot-3</c>.</summary>
