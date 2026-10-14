@@ -438,6 +438,7 @@ public abstract class ServerScenarioBase : IAsyncLifetime, IScenarioLifecycle
         private PvpDriver.Baseline? _pvp;
         private ReinforcementDriver.Baseline? _reinforcement;
         private GroupDriver.Baseline? _groups;
+        private ClimateDriver.Baseline? _climate;
 
         public DataFileSet Files { get; } = files;
 
@@ -455,6 +456,7 @@ public abstract class ServerScenarioBase : IAsyncLifetime, IScenarioLifecycle
             _pvp = Host.Pvp.Capture();
             _reinforcement = Host.Reinforcement.Capture();
             _groups = Host.Groups.Capture();
+            _climate = Host.Climate.Capture();
         }
 
         /// <summary>Notes the listeners that live as long as the server; later ones are the tests'.</summary>
@@ -481,6 +483,7 @@ public abstract class ServerScenarioBase : IAsyncLifetime, IScenarioLifecycle
                     ?? RollbackParticipants.Try("Restoring the PvP setting", () => _pvp?.Restore())
                     ?? RollbackParticipants.Try("Clearing the test's reinforcements", () => _reinforcement?.Restore())
                     ?? RollbackParticipants.Try("Removing the test's groups", () => _groups?.Restore())
+                    ?? RollbackParticipants.Try("Ending the test's climate overrides", () => _climate?.Restore())
                     ?? RollbackParticipants.Try("Clearing the logs", Host.Logs.Clear)
                     ?? RollbackParticipants.Try($"A {RollbackEvents.Restored} handler", () => RollbackParticipants.Push(Host, RollbackEvents.Restored, test, chunks));
             });
