@@ -109,11 +109,16 @@ internal sealed class HeadlessPlayerConnection
     /// Sends a chat line on the general chat group, as the chat box does. A leading slash makes
     /// the server run it as a command.
     /// </summary>
-    public void Chat(string message) =>
+    public void Chat(string message) => Chat(message, GlobalConstants.GeneralChatGroup);
+
+    /// <summary>Sends a chat message to a chat group: the general chat, or a player group's uid.</summary>
+    /// <param name="message">The message text.</param>
+    /// <param name="groupId">The chat group id.</param>
+    public void Chat(string message, int groupId) =>
         Send(new Packet_Client
         {
             Id = 4,
-            Chatline = new Packet_ChatLine { Message = message, Groupid = GlobalConstants.GeneralChatGroup },
+            Chatline = new Packet_ChatLine { Message = message, Groupid = groupId },
         });
 
     /// <summary>

@@ -369,6 +369,25 @@ public sealed class ServerTestPlayer : IServerTestPlayer, IDisposable
         return Task.CompletedTask;
     }
 
+    /// <summary>Sends a chat message to a player group this player is in, through the same client packet a real client uses.</summary>
+    /// <param name="message">The message text.</param>
+    /// <param name="group">The group to send to.</param>
+    /// <param name="ticks">Server ticks to run after sending, so the server handles the message.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="message"/> or <paramref name="group"/> is null.</exception>
+    /// <exception cref="InvalidOperationException">The player has not joined.</exception>
+    public Task SayAsync(string message, PlayerGroup group, int ticks = 2)
+    {
+        ArgumentNullException.ThrowIfNull(message);
+        ArgumentNullException.ThrowIfNull(group);
+        HeadlessPlayerConnection connection = _connection
+            ?? throw new InvalidOperationException("Only a joined player can chat.");
+
+        int groupId = group.Uid;
+        OnGameThread(() => connection.Chat(message, groupId));
+        _host!.Ticks(ticks);
+        return Task.CompletedTask;
+    }
+
     /// <summary>
     /// Damages the player by <paramref name="amount"/> through <c>Entity.ReceiveDamage</c>, so
     /// armour, resistances and every behaviour and mod hook the game runs for a real hit runs too.

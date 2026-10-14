@@ -52,6 +52,21 @@ public sealed class GroupDriverTests : ServerScenarioBase
     }
 
     [ServerScenario]
+    public async Task GroupChat_ReachesMembersAndNoOneElse()
+    {
+        ServerTestPlayer owner = await CreateTestPlayerAsync("ChatGroupOwner");
+        ServerTestPlayer member = await CreateTestPlayerAsync("ChatGroupMember");
+        ServerTestPlayer outsider = await CreateTestPlayerAsync("ChatGroupOut");
+        PlayerGroup group = Host!.Groups.Create("chatters", owner, member);
+
+        await owner.SayAsync("hello crew", group, ticks: 40);
+
+        // The server prefixes the sender's name, wrapped in markup, so the text is matched at the end.
+        Assert.Contains(member.Received.Chat, line => line.Message.EndsWith("hello crew", StringComparison.Ordinal) && line.GroupId == group.Uid);
+        Assert.DoesNotContain(outsider.Received.Chat, line => line.Message.Contains("hello crew", StringComparison.Ordinal));
+    }
+
+    [ServerScenario]
     public async Task GroupMember_CanBreakInsideAClaimThatPermitsTheGroup()
     {
         ServerTestPlayer owner = await CreateTestPlayerAsync("ClaimGroupOwner");
