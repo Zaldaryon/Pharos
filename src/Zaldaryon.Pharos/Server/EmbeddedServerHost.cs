@@ -119,6 +119,11 @@ public sealed partial class EmbeddedServerHost : IDisposable, IAsyncDisposable
 
     private LandClaimDriver? _landClaims;
 
+    /// <summary>Whether players can damage each other on the server, restored with the world.</summary>
+    public PvpDriver Pvp => _pvp ??= new PvpDriver(this);
+
+    private PvpDriver? _pvp;
+
     /// <summary>
     /// Records the server's game events, such as blocks placed and entities dying, to assert on.
     /// See <see cref="Zaldaryon.Pharos.Events.ServerEventRecorder"/>.

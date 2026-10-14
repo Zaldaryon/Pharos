@@ -435,6 +435,7 @@ public abstract class ServerScenarioBase : IAsyncLifetime, IScenarioLifecycle
         private ListenerWatermark? _listeners;
         private DataFileBaseline? _dataFiles;
         private LandClaimDriver.LandClaimBaseline? _landClaims;
+        private PvpDriver.Baseline? _pvp;
 
         public DataFileSet Files { get; } = files;
 
@@ -449,6 +450,7 @@ public abstract class ServerScenarioBase : IAsyncLifetime, IScenarioLifecycle
             _tracking = Host.RunOnGameThread(() => _baseline.TrackChunksLoadedLater(Host));
             _dataFiles = Host.RunOnGameThread(() => DataFileBaseline.Capture(Sandbox.RootPath, Files, EnumAppSide.Server));
             _landClaims = Host.LandClaims.Capture();
+            _pvp = Host.Pvp.Capture();
         }
 
         /// <summary>Notes the listeners that live as long as the server; later ones are the tests'.</summary>
@@ -472,6 +474,7 @@ public abstract class ServerScenarioBase : IAsyncLifetime, IScenarioLifecycle
                     ?? (Host.IsRunning ? null : "the server stopped during the rollback")
                     ?? RollbackParticipants.Try("Restoring the data files", () => files = Host.RunOnGameThread(() => _dataFiles?.Restore() ?? 0))
                     ?? RollbackParticipants.Try("Restoring the land claims", () => _landClaims?.Restore())
+                    ?? RollbackParticipants.Try("Restoring the PvP setting", () => _pvp?.Restore())
                     ?? RollbackParticipants.Try("Clearing the logs", Host.Logs.Clear)
                     ?? RollbackParticipants.Try($"A {RollbackEvents.Restored} handler", () => RollbackParticipants.Push(Host, RollbackEvents.Restored, test, chunks));
             });
