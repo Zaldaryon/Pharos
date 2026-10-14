@@ -109,6 +109,11 @@ public sealed partial class EmbeddedServerHost : IDisposable, IAsyncDisposable
 
     private ServerEntityDriver? _entities;
 
+    /// <summary>Waits for and reads the server's world physics: light, liquids, falling blocks and relighting.</summary>
+    public WorldPhysicsDriver World => _world ??= new WorldPhysicsDriver(this);
+
+    private WorldPhysicsDriver? _world;
+
     /// <summary>
     /// Records the server's game events, such as blocks placed and entities dying, to assert on.
     /// See <see cref="Zaldaryon.Pharos.Events.ServerEventRecorder"/>.

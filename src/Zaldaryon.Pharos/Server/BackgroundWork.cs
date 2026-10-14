@@ -128,10 +128,10 @@ internal static class BackgroundWork
     /// idle. Polls from the calling thread, which must not be the server's game thread.
     /// </summary>
     /// <exception cref="TimeoutException">A system still had work after <paramref name="timeout"/>.</exception>
-    public static async Task WaitAsync(ServerMain server, TimeSpan timeout, CancellationToken ct)
+    public static async Task WaitAsync(ServerMain server, TimeSpan timeout, CancellationToken ct, Kind? only = null)
     {
         Install();
-        List<Probe> probes = Probes(server);
+        List<Probe> probes = Probes(server).Where(p => only is not { } kind || p.Kind == kind).ToList();
         Stopwatch waited = Stopwatch.StartNew();
         while (true)
         {
@@ -258,6 +258,8 @@ internal static class BackgroundWork
     {
         private long _required = Started(kind) + 1;
         private int _queued;
+
+        public Kind Kind { get; } = kind;
 
         public bool Idle { get; private set; }
 
