@@ -195,27 +195,27 @@ public sealed class ServerTestPlayer : IServerTestPlayer, IDisposable
     public Task<bool> MountAsync(Entity mountable)
     {
         ArgumentNullException.ThrowIfNull(mountable);
-        EntityPlayer entity = Entity
-            ?? throw new InvalidOperationException($"'{PlayerName ?? _playerUid}' has no entity: it has not joined.");
-        IMountable provider = mountable.GetInterface<IMountable>()
-            ?? throw new ArgumentException($"Entity {mountable.EntityId} does not provide mountable seats.", nameof(mountable));
-        IMountableSeat? seat = provider.Seats.FirstOrDefault(candidate => candidate.CanMount(entity));
-        if (seat is null) return Task.FromResult(false);
-
-        return Task.FromResult(OnGameThread(() => entity.TryMount(seat)));
+        return Task.FromResult(OnGameThread(() =>
+        {
+            EntityPlayer entity = Entity
+                ?? throw new InvalidOperationException($"'{PlayerName ?? _playerUid}' has no entity: it has not joined.");
+            IMountable provider = mountable.GetInterface<IMountable>()
+                ?? throw new ArgumentException($"Entity {mountable.EntityId} does not provide mountable seats.", nameof(mountable));
+            IMountableSeat? seat = provider.Seats.FirstOrDefault(candidate => candidate.CanMount(entity));
+            return seat is not null && entity.TryMount(seat);
+        }));
     }
 
     /// <inheritdoc />
     public Task<bool> MountAsync(BlockPos seatBlockPos)
     {
         ArgumentNullException.ThrowIfNull(seatBlockPos);
-        EntityPlayer entity = Entity
-            ?? throw new InvalidOperationException($"'{PlayerName ?? _playerUid}' has no entity: it has not joined.");
-        IWorldAccessor world = Api?.World
-            ?? throw new InvalidOperationException("The player is not attached to a server world.");
-
         return Task.FromResult(OnGameThread(() =>
         {
+            EntityPlayer entity = Entity
+                ?? throw new InvalidOperationException($"'{PlayerName ?? _playerUid}' has no entity: it has not joined.");
+            IWorldAccessor world = Api?.World
+                ?? throw new InvalidOperationException("The player is not attached to a server world.");
             BlockEntity? blockEntity = world.BlockAccessor.GetBlockEntity(seatBlockPos);
             IMountableSeat? seat = blockEntity as IMountableSeat;
             if (seat is null && blockEntity is IMountable provider)
@@ -230,9 +230,12 @@ public sealed class ServerTestPlayer : IServerTestPlayer, IDisposable
     /// <inheritdoc />
     public Task<bool> UnmountAsync()
     {
-        EntityPlayer entity = Entity
-            ?? throw new InvalidOperationException($"'{PlayerName ?? _playerUid}' has no entity: it has not joined.");
-        return Task.FromResult(OnGameThread(entity.TryUnmount));
+        return Task.FromResult(OnGameThread(() =>
+        {
+            EntityPlayer entity = Entity
+                ?? throw new InvalidOperationException($"'{PlayerName ?? _playerUid}' has no entity: it has not joined.");
+            return entity.TryUnmount();
+        }));
     }
 
     /// <inheritdoc />
@@ -241,15 +244,15 @@ public sealed class ServerTestPlayer : IServerTestPlayer, IDisposable
         ArgumentNullException.ThrowIfNull(bedPos);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxTicks);
 
-        EntityPlayer entity = Entity
-            ?? throw new InvalidOperationException($"'{PlayerName ?? _playerUid}' has no entity: it has not joined.");
-        IServerPlayer player = _player
-            ?? throw new InvalidOperationException("The player is not attached to a server.");
-        ICoreServerAPI api = Api
-            ?? throw new InvalidOperationException("The player is not attached to a server world.");
-
+        IMountableSeat? bedSeat = null;
         bool accepted = OnGameThread(() =>
         {
+            IServerPlayer player = _player
+                ?? throw new InvalidOperationException("The player is not attached to a server.");
+            ICoreServerAPI api = Api
+                ?? throw new InvalidOperationException("The player is not attached to a server world.");
+            if (Entity?.MountedOn is not null) return false;
+
             Block block = api.World.BlockAccessor.GetBlock(bedPos);
             BlockSelection selection = new(bedPos.Copy(), BlockFacing.UP, block)
             {
@@ -258,7 +261,9 @@ public sealed class ServerTestPlayer : IServerTestPlayer, IDisposable
 
             // This is the same handler the server invokes for a client's bed-use packet. In
             // particular, BlockBed enforces claim access, tiredness and temporal-storm rules.
-            return block.OnBlockInteractStart(api.World, player, selection);
+            bool handled = block.OnBlockInteractStart(api.World, player, selection);
+            if (handled) bedSeat = Entity?.MountedOn;
+            return handled && bedSeat is not null;
         });
 
         if (!accepted) return false;
@@ -267,7 +272,7 @@ public sealed class ServerTestPlayer : IServerTestPlayer, IDisposable
         {
             ct.ThrowIfCancellationRequested();
             Tick(1);
-            if (entity.MountedOn is not null) return true;
+            if (OnGameThread(() => ReferenceEquals(Entity?.MountedOn, bedSeat))) return true;
         }
 
         return false;

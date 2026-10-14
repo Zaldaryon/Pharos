@@ -6,6 +6,7 @@ using Vintagestory.Server;
 using Xunit;
 using Zaldaryon.Pharos.Assertions;
 using Zaldaryon.Pharos.Bootstrap;
+using Zaldaryon.Pharos.Network;
 using Zaldaryon.Pharos.XUnit;
 
 namespace Zaldaryon.Pharos.Tests.Server;
@@ -123,9 +124,87 @@ public class HeadlessPlayerTests : ServerScenarioBase
     }
 
     [ServerScenario]
+    public async Task MountAsync_BlockPositionUsesTheSeatAtThatPosition()
+    {
+        ServerTestPlayer player = await CreateTestPlayerAsync("SeatRider");
+        BlockPos bedPos = player.Entity!.Pos.AsBlockPos.AddCopy(2, 0, 0);
+        this.SetBlock(bedPos, "game:bed-wood-head-north");
+
+        Assert.True(await player.MountAsync(bedPos), "The player did not mount the bed seat at the supplied position");
+        Assert.Same(this.GetBlockEntity(bedPos), player.MountedOn);
+        Assert.True(await player.UnmountAsync());
+        Assert.Null(player.MountedOn);
+    }
+
+    [ServerScenario]
     public async Task SleepAsync_UsesTheBedHandlerAndNightSkip()
     {
         ServerTestPlayer player = await CreateTestPlayerAsync("Sleeper");
+        ServerTestPlayer creative = await CreateTestPlayerAsync("CreativeSleeper");
+        Host!.RunOnGameThread(() =>
+        {
+            player.Player!.WorldData.CurrentGameMode = EnumGameMode.Survival;
+            creative.Player!.WorldData.CurrentGameMode = EnumGameMode.Creative;
+            foreach (ServerTestPlayer testPlayer in new[] { player, creative })
+            {
+                object? tiredness = testPlayer.Entity!.GetBehavior("tiredness");
+                Assert.NotNull(tiredness);
+                tiredness!.GetType().GetProperty("Tiredness")!.SetValue(tiredness, 12f);
+            }
+        });
+
+        BlockPos bedPos = player.Entity!.Pos.AsBlockPos.AddCopy(2, 0, 0);
+        BlockPos creativeBedPos = bedPos.AddCopy(4, 0, 0);
+        this.SetBlock(bedPos, "game:bed-wood-head-north");
+        BlockPos feetPos = bedPos.AddCopy(BlockFacing.NORTH);
+        this.SetBlock(feetPos, "game:bed-wood-feet-north");
+        this.SetBlock(creativeBedPos, "game:bed-wood-head-north");
+        Assert.IsAssignableFrom<IMountableSeat>(this.GetBlockEntity(bedPos));
+        Assert.Null(this.GetBlockEntity(feetPos));
+        Assert.IsAssignableFrom<IMountableSeat>(this.GetBlockEntity(creativeBedPos));
+        Host.Calendar.SetTime(22);
+        double before = Host.Calendar.TotalHours;
+
+        Assert.True(await player.SleepAsync(feetPos), "The real bed interaction through the feet block did not mount the player");
+        Assert.Same(this.GetBlockEntity(bedPos), player.MountedOn);
+        Assert.NotNull(player.MountedOn);
+        Assert.True((bool)player.Entity!.GetBehavior("tiredness")!.GetType().GetProperty("IsSleeping")!.GetValue(
+            player.Entity.GetBehavior("tiredness"))!);
+
+        await Assert.ThrowsAsync<TimeoutException>(() => Host.WaitForNightSkipTicksAsync(maxTicks: 5));
+        await Assert.ThrowsAsync<TimeoutException>(() => Host.WaitForNightSkipAsync(timeout: TimeSpan.FromMilliseconds(1)));
+
+        double whileAwake = Host.Calendar.TotalHours;
+        int changedEligibilityAndTime = 0;
+        long eligibilityListener = Host.RunOnGameThread(() => Api!.Event.RegisterGameTickListener(_ =>
+        {
+            if (Interlocked.Exchange(ref changedEligibilityAndTime, 1) == 0)
+            {
+                Host.Calendar.Advance(TimeSpan.FromMinutes(6));
+                creative.Player!.WorldData.CurrentGameMode = EnumGameMode.Spectator;
+            }
+        }, 0));
+        try
+        {
+            await Assert.ThrowsAsync<TimeoutException>(() => Host.WaitForNightSkipTicksAsync(maxTicks: 1));
+        }
+        finally
+        {
+            Host.RunOnGameThread(() => Api!.Event.UnregisterGameTickListener(eligibilityListener));
+        }
+        Assert.Equal(1, Volatile.Read(ref changedEligibilityAndTime));
+        Assert.True(Host.Calendar.TotalHours >= whileAwake + 0.1, "The test did not advance the calendar while a Creative player was awake");
+        Host.RunOnGameThread(() => creative.Player!.WorldData.CurrentGameMode = EnumGameMode.Creative);
+
+        Assert.True(await creative.SleepAsync(creativeBedPos), "The Creative player's real bed interaction did not mount the player");
+        await Host.WaitForNightSkipTicksAsync(maxTicks: 120);
+        Assert.True(Host.Calendar.TotalHours > before + 0.1, "The calendar did not advance while all players slept");
+    }
+
+    [ServerScenario]
+    public async Task WaitForNightSkipTicks_ObservesCalendarAdvanceOnFinalTick()
+    {
+        ServerTestPlayer player = await CreateTestPlayerAsync("LastTickSleeper");
         Host!.RunOnGameThread(() =>
         {
             player.Player!.WorldData.CurrentGameMode = EnumGameMode.Survival;
@@ -136,17 +215,27 @@ public class HeadlessPlayerTests : ServerScenarioBase
 
         BlockPos bedPos = player.Entity!.Pos.AsBlockPos.AddCopy(2, 0, 0);
         this.SetBlock(bedPos, "game:bed-wood-head-north");
-        Assert.IsAssignableFrom<IMountableSeat>(this.GetBlockEntity(bedPos));
         Host.Calendar.SetTime(22);
+        Assert.True(await player.SleepAsync(bedPos));
         double before = Host.Calendar.TotalHours;
 
-        Assert.True(await player.SleepAsync(bedPos), "The real bed interaction did not mount the player");
-        Assert.NotNull(player.MountedOn);
-        Assert.True((bool)player.Entity!.GetBehavior("tiredness")!.GetType().GetProperty("IsSleeping")!.GetValue(
-            player.Entity.GetBehavior("tiredness"))!);
+        int advanced = 0;
+        long listener = Host.RunOnGameThread(() => Api!.Event.RegisterGameTickListener(_ =>
+        {
+            if (Interlocked.Exchange(ref advanced, 1) == 0)
+                Host.Calendar.Advance(TimeSpan.FromMinutes(6));
+        }, 0));
+        try
+        {
+            await Host.WaitForNightSkipTicksAsync(maxTicks: 1);
+        }
+        finally
+        {
+            Host.RunOnGameThread(() => Api!.Event.UnregisterGameTickListener(listener));
+        }
 
-        await Host.WaitForNightSkipAsync(TimeSpan.FromSeconds(30));
-        Assert.True(Host.Calendar.TotalHours > before + 0.1, "The calendar did not advance while all players slept");
+        Assert.Equal(1, Volatile.Read(ref advanced));
+        Assert.True(Host.Calendar.TotalHours >= before + 0.1, "The night-skip wait missed the calendar advance from its final server tick");
     }
 }
 
@@ -254,47 +343,156 @@ public class EngineClientWithHeadlessPlayerTests : ClientServerScenarioBase
         {
             Client.Controls.Release(Zaldaryon.Pharos.Player.PlayerAction.Sneak);
         }
+    }
 
-        Vec3d boatPosition = Client.RunOnClientThread(() => Client.Client.EntityPlayer.Pos.XYZ.AddCopy(-3, 0, 0));
-        string boatCode = ServerHost.RunOnGameThread(() => ServerHost.Server.Api.World.EntityTypes
-            .Select(type => type.Code.ToString())
-            .First(code => code.Contains(":boat-raft-", StringComparison.Ordinal)));
-        Entity boat = ServerHost.RunOnGameThread(() =>
+    [ClientServerScenario]
+    public async Task BoatInteraction_MountsSteersAndMovesTheBoat()
+    {
+        await Session!.StepFramesAsync(60);
+        Vec3d playerPosition = Client!.RunOnClientThread(() => Client.Client.EntityPlayer.Pos.XYZ.Clone());
+        string playerName = Client.RunOnClientThread(() => Client.Client.player.PlayerName);
+        Entity boat = ServerHost!.RunOnGameThread(() =>
         {
-            EntityProperties type = ServerHost.Server.Api.World.GetEntityType(new AssetLocation(boatCode))!;
+            ICoreServerAPI api = (ICoreServerAPI)ServerHost.Server.Api;
+            int waterId = api.World.GetBlock(new AssetLocation("game:water-still-7"))!.BlockId;
+            int waterY = (int)Math.Floor(playerPosition.Y);
+            int centerX = (int)Math.Floor(playerPosition.X);
+            int centerZ = (int)Math.Floor(playerPosition.Z) + 2;
+            for (int x = centerX - 1; x <= centerX + 1; x++)
+            for (int z = centerZ - 1; z <= centerZ + 1; z++)
+            {
+                api.World.BlockAccessor.SetBlock(waterId, new BlockPos(x, waterY, z));
+            }
+
+            IServerPlayer player = ServerHost.Server.GetClientByPlayername(playerName)!.Player;
+            ItemSlot slot = player.InventoryManager.ActiveHotbarSlot;
+            slot.Itemstack = null;
+            slot.MarkDirty();
+
+            string boatCode = api.World.EntityTypes
+                .Select(type => type.Code.ToString())
+                .First(code => code.Contains(":boat-raft-", StringComparison.Ordinal));
+            EntityProperties type = api.World.GetEntityType(new AssetLocation(boatCode))!;
             Entity entity = ServerHost.Server.Api.World.ClassRegistry.CreateEntity(type);
-            entity.Pos.SetPos(boatPosition);
-            ServerHost.Server.Api.World.SpawnEntity(entity);
+            entity.Pos.SetPos(centerX + 0.5, waterY + 0.45, centerZ + 0.5);
+            api.World.SpawnEntity(entity);
             return entity;
         });
+
         bool boatReplicated = await Session.StepUntilAsync(
             () => Client.RunOnClientThread(() => Client.Client.World.GetEntityById(boat.EntityId) is not null),
             maxFrames: 300);
-        Assert.True(boatReplicated, $"The client did not receive {boatCode}");
-
-        IMountableSeat boatSeat = ServerHost.RunOnGameThread(() =>
-        {
-            IServerPlayer player = ServerHost.Server.GetClientByPlayername(playerName)!.Player;
-            IMountableSeat seat = boat.GetInterface<IMountable>()!.Seats.First();
-            Assert.True(player.Entity!.TryMount(seat));
-            return seat;
-        });
-        bool boatMounted = await Session.StepUntilAsync(
-            () => Session.Player.MountedOn?.Entity?.EntityId == boat.EntityId,
+        Assert.True(boatReplicated, "The client did not receive the boat");
+        bool withinInteractionRange = ServerHost.RunOnGameThread(() =>
+            ServerHost.Server.GetClientByPlayername(playerName)!.Player.IsInInteractionRangeOf(boat));
+        Assert.True(withinInteractionRange, "The boat is outside the server's interaction range");
+        bool emptyHandReplicated = await Session.StepUntilAsync(
+            () => Client.RunOnClientThread(() => Client.Client.player.InventoryManager.ActiveHotbarSlot.Itemstack is null),
             maxFrames: 120);
-        Assert.True(boatMounted, "The boat mount did not sync to the rendering client");
-
-        Client.Controls.Press(Zaldaryon.Pharos.Player.PlayerAction.Forward);
+        Assert.True(emptyHandReplicated, "The client did not receive the empty active slot needed to use the boat");
+        Assert.True(await Session.Entities.AimAtAsync(boat), "The rendering client could not select the boat");
+        string selectionBeforeClick = Client.RunOnClientThread(() =>
+        {
+            EntitySelection? entitySelection = Client.Client.EntitySelection;
+            BlockSelection? blockSelection = Client.Client.BlockSelection;
+            return $"mouse grabbed {Client.Client.MouseGrabbed}; entity {entitySelection?.Entity?.EntityId} box {entitySelection?.SelectionBoxIndex} hit {entitySelection?.HitPosition}; block {blockSelection?.Position}";
+        });
+        List<string> observedInteractions = [];
+        string clientPlayerUid = Client.RunOnClientThread(() => Client.Client.player.PlayerUID);
+        int? selectedSeat = null;
+        int? entityInteractionMode = null;
+        IServerEventAPI events = (IServerEventAPI)ServerHost.Server.Api.Event;
+        OnInteractDelegate handler = (Entity interacted, IPlayer byPlayer, ItemSlot slot, Vec3d hit, int mode, ref EnumHandling handling) =>
+        {
+            observedInteractions.Add($"{byPlayer.PlayerName}/{byPlayer.PlayerUID}: entity {interacted.EntityId}, mode {mode}, seat {byPlayer.CurrentEntitySelection?.SelectionBoxIndex}");
+            if (byPlayer.PlayerName == playerName && interacted.EntityId == boat.EntityId)
+            {
+                selectedSeat = byPlayer.CurrentEntitySelection?.SelectionBoxIndex;
+                entityInteractionMode = mode;
+            }
+        };
+        Client.PacketRecorder.Start();
+        ServerHost.RunOnGameThread(() => events.OnPlayerInteractEntity += handler);
+        Client.NetworkDegradation.Configure(new DegradedNetworkProfile(LatencyMs: 200));
+        int framesBeforeUse = Session.FrameCount;
+        bool boatMounted = false;
         try
         {
-            await Session.StepFramesAsync(10);
-            Assert.True(ServerHost.RunOnGameThread(() => boatSeat.Controls.Forward),
-                "The client's forward control did not reach the mounted boat seat");
+            bool interactionDispatched = await Session.Entities.UseAsync(boat);
+            Assert.True(interactionDispatched,
+                $"The rendering client did not receive entity interaction confirmation (client {clientPlayerUid}, events {string.Join("; ", observedInteractions)})");
+            Assert.True(Session.FrameCount - framesBeforeUse >= 12,
+                "The entity interaction returned before its 200 ms client-to-server delay elapsed");
+            boatMounted = await Session.StepUntilAsync(
+                () => Session.Player.MountedOn?.Entity?.EntityId == boat.EntityId
+                    && ServerHost.RunOnGameThread(() => ServerHost.Server.GetClientByPlayername(playerName)?.Entityplayer?.MountedOn?.Entity?.EntityId == boat.EntityId),
+                maxFrames: 120);
+        }
+        finally
+        {
+            Client.NetworkDegradation.Configure(DegradedNetworkProfile.None);
+            Client.PacketRecorder.Stop();
+            ServerHost.RunOnGameThread(() => events.OnPlayerInteractEntity -= handler);
+        }
+        int[] outboundPackets = Client.PacketRecorder.GetRecordedPackets()
+            .Where(packet => packet.Direction == PacketDirection.Outbound)
+            .Select(packet => packet.PacketId)
+            .ToArray();
+        Assert.Contains(17, outboundPackets);
+        Assert.True(
+            observedInteractions.Any(interaction => interaction.Contains($"entity {boat.EntityId}", StringComparison.Ordinal)),
+            $"The server did not dispatch an entity interaction (client selection: {selectionBeforeClick}; outbound packets: {string.Join(",", outboundPackets)}; events {string.Join("; ", observedInteractions)})");
+        Assert.Equal((int)EnumInteractMode.Interact, entityInteractionMode);
+        Assert.True(boatMounted, $"The real boat interaction did not mount and sync the rendering client (selection: {selectionBeforeClick}; server seat {selectedSeat}; outbound packets: {string.Join(",", outboundPackets)}; events {string.Join("; ", observedInteractions)})");
+
+        ServerHost.RunOnGameThread(() =>
+        {
+            IServerPlayer player = ServerHost.Server.GetClientByPlayername(playerName)!.Player;
+            Item paddle = ServerHost.Server.Api.World.Items.First(item => item.Attributes?.IsTrue("paddlingTool") == true);
+            ItemSlot slot = player.InventoryManager.ActiveHotbarSlot;
+            slot.Itemstack = new ItemStack(paddle);
+            slot.MarkDirty();
+        });
+        bool paddleReplicated = await Session.StepUntilAsync(
+            () => Client.RunOnClientThread(() => Client.Client.player.InventoryManager.ActiveHotbarSlot.Itemstack?.Collectible.Attributes?.IsTrue("paddlingTool") == true),
+            maxFrames: 120);
+        Assert.True(paddleReplicated, "The client's active slot did not receive the paddle");
+
+        IMountableSeat boatSeat = ServerHost.RunOnGameThread(() =>
+            ServerHost.Server.GetClientByPlayername(playerName)?.Entityplayer?.MountedOn
+            ?? throw new InvalidOperationException("The server player is not mounted on a boat seat"));
+        Vec3d boatStart = ServerHost.RunOnGameThread(() => boat.Pos.XYZ.Clone());
+        Client.Controls.Press(Zaldaryon.Pharos.Player.PlayerAction.Forward);
+        bool forwardReachedSeat = false;
+        bool boatMovedHorizontally = false;
+        try
+        {
+            forwardReachedSeat = await Session.StepUntilAsync(
+                () => ServerHost.RunOnGameThread(() => boatSeat.Controls.Forward),
+                maxFrames: 120);
+            boatMovedHorizontally = await Session.StepUntilAsync(
+                () => ServerHost.RunOnGameThread(() =>
+                {
+                    double dx = boat.Pos.X - boatStart.X;
+                    double dz = boat.Pos.Z - boatStart.Z;
+                    return Math.Sqrt(dx * dx + dz * dz) > 0.1;
+                }),
+                maxFrames: 120);
         }
         finally
         {
             Client.Controls.Release(Zaldaryon.Pharos.Player.PlayerAction.Forward);
             await Session.StepFramesAsync(2);
         }
+
+        double horizontalDistance = ServerHost.RunOnGameThread(() =>
+        {
+            double dx = boat.Pos.X - boatStart.X;
+            double dz = boat.Pos.Z - boatStart.Z;
+            return Math.Sqrt(dx * dx + dz * dz);
+        });
+        Assert.True(forwardReachedSeat, "The client's forward control did not reach the mounted boat seat");
+        Assert.True(boatMovedHorizontally, $"The boat did not move horizontally while the client's forward control was held; moved {horizontalDistance:0.###} blocks");
+        Assert.True(horizontalDistance > 0.1, $"The boat did not move horizontally under the real client control; moved {horizontalDistance:0.###} blocks");
     }
 }
