@@ -129,6 +129,11 @@ public sealed partial class EmbeddedServerHost : IDisposable, IAsyncDisposable
 
     private RoleDriver? _roles;
 
+    /// <summary>Block reinforcement through the survival mod. Placed reinforcements are cleared by rollback.</summary>
+    public ReinforcementDriver Reinforcement => _reinforcement ??= new ReinforcementDriver(this);
+
+    private ReinforcementDriver? _reinforcement;
+
     /// <summary>
     /// Records the server's game events, such as blocks placed and entities dying, to assert on.
     /// See <see cref="Zaldaryon.Pharos.Events.ServerEventRecorder"/>.
