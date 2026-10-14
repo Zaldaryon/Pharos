@@ -58,19 +58,34 @@ internal static class ClimatePatches
 
     private static void AfterNowValues([HarmonyArgument(0)] BlockPos pos, ref ClimateCondition __result) => Apply(pos, ref __result);
 
-    private static void AfterLerpedValues([HarmonyArgument(0)] BlockPos pos, ref ClimateCondition __result) => Apply(pos, ref __result);
+    // This overload writes into the condition the caller passed and returns that same object, so the override
+    // must change the argument too. The farmland's fast-forward reads the argument, not the return value.
+    private static void AfterLerpedValues([HarmonyArgument(0)] BlockPos pos, [HarmonyArgument(1)] ClimateCondition conds, ref ClimateCondition __result)
+    {
+        if (conds is null) return;
+        ClimateOverrideRule? rule = RuleFor(pos);
+        if (rule is null) return;
+        if (rule.Temperature is { } temperature) conds.Temperature = temperature;
+        if (rule.Rainfall is { } rainfall) conds.Rainfall = rainfall;
+        __result = conds;
+    }
 
     private static void AfterSmoothedValues([HarmonyArgument(0)] BlockPos pos, ref ClimateCondition __result) => Apply(pos, ref __result);
 
-    private static void Apply(BlockPos pos, ref ClimateCondition result)
+    private static ClimateOverrideRule? RuleFor(BlockPos pos)
     {
-        if (result is null || pos is null) return;
-        ClimateOverrideRule? rule;
+        if (pos is null) return null;
         lock (s_lock)
         {
-            if (s_rules.Count == 0) return;
-            rule = s_rules.LastOrDefault(candidate => candidate.Region.Contains(pos));
+            if (s_rules.Count == 0) return null;
+            return s_rules.LastOrDefault(candidate => candidate.Region.Contains(pos));
         }
+    }
+
+    private static void Apply(BlockPos pos, ref ClimateCondition result)
+    {
+        if (result is null) return;
+        ClimateOverrideRule? rule = RuleFor(pos);
         if (rule is null) return;
 
         ClimateCondition copy = new();
