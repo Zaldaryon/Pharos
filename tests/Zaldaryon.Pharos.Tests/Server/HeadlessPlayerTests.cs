@@ -7,6 +7,7 @@ using Xunit;
 using Zaldaryon.Pharos.Assertions;
 using Zaldaryon.Pharos.Bootstrap;
 using Zaldaryon.Pharos.Network;
+using Zaldaryon.Pharos.Server;
 using Zaldaryon.Pharos.XUnit;
 
 namespace Zaldaryon.Pharos.Tests.Server;
@@ -175,6 +176,7 @@ public class HeadlessPlayerTests : ServerScenarioBase
         await Assert.ThrowsAsync<TimeoutException>(() => Host.WaitForNightSkipAsync(timeout: TimeSpan.FromMilliseconds(1)));
 
         double whileAwake = Host.Calendar.TotalHours;
+        using VirtualClock clock = Host.UseVirtualClock(tickMs: 50);
         int changedEligibilityAndTime = 0;
         long eligibilityListener = Host.RunOnGameThread(() => Api!.Event.RegisterGameTickListener(_ =>
         {
@@ -219,6 +221,7 @@ public class HeadlessPlayerTests : ServerScenarioBase
         Assert.True(await player.SleepAsync(bedPos));
         double before = Host.Calendar.TotalHours;
 
+        using VirtualClock clock = Host.UseVirtualClock(tickMs: 50);
         int advanced = 0;
         long listener = Host.RunOnGameThread(() => Api!.Event.RegisterGameTickListener(_ =>
         {
