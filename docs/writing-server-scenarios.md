@@ -322,9 +322,27 @@ Assert.True(used.Accepted && moved.Accepted);
 The bot can also place a block with `PlaceBlockAsync`, attack or use an entity with
 `AttackEntityAsync` and `UseEntityAsync`, and press or release a control with `SetControlAsync`.
 `WalkToAsync` sends position updates at 20 ticks per second, follows one straight line, and can
-step up one block. It does not find a route around a taller wall or other obstruction. A block
-placement needs a block in the active hotbar slot, and a container inventory must be opened before
-`MoveSlotAsync` can move items into it.
+step up one block. It accepts speeds up to five blocks per second to keep each position step short,
+and releases Forward if the walk is cancelled. `UseBlockAsync` sends both the start and stop
+packets, so the player's hand-use control is clear when it returns. The bot does not find a route
+around a taller wall or other obstruction. A block placement needs a block in the active hotbar
+slot, and a container inventory must be opened before `MoveSlotAsync` can move items into it.
+
+### Engine-client entity interactions
+
+In a `ClientServerScenarioBase`, `Session.Entities` aims the rendering client at an entity and sends
+the engine's normal right-click entity interaction packet for its current selection. `UseAsync`
+waits for the matching server interaction event. `maxFrames` covers both aiming and server event
+confirmation. The embedded server processes its normal entity handlers, so the test can assert the
+resulting mount state on both sides:
+
+```csharp
+Entity boat = this.SpawnEntity("game:boat-raft-aged", nearClient);
+Assert.True(await Session!.Entities.UseAsync(boat));
+Assert.True(await Session.StepUntilAsync(
+    () => Session.Player.MountedOn?.Entity?.EntityId == boat.EntityId
+        && ServerHost!.RunOnGameThread(() => ServerHost.Server.GetClientByPlayername(PlayerName)?.Entityplayer?.MountedOn?.Entity?.EntityId == boat.EntityId)));
+```
 
 ### Player vitals
 
@@ -494,6 +512,11 @@ await Host.WaitForBackgroundWorkAsync();      // relight, random ticks, spawner,
 - **Cost:** Pharos patches the server's time reads once per process, before anything boots, whether or not a test uses the clock. That takes about 0.4 s, and longer in a process where nothing has used Harmony yet. Without a clock, the patched reads return what the game's stopwatch says.
 
 ## Calendar and Weather
+
+`Host.WaitForNightSkipAsync` uses the game's eligibility rule: every online player in `Playing`
+state except Spectators must be sleeping, and the calendar must advance by at least six in-game
+minutes after all eligible players are asleep. Its `timeout` is a deterministic budget converted
+at 20 server ticks per second. Use `WaitForNightSkipTicksAsync` to set that budget directly.
 
 `Host.Calendar` reads and sets the world's calendar. The game's clock follows the wall clock: while players are connected it moves 30 game seconds per real second, and with nobody connected it stands still. A test that needs exact times freezes it first:
 

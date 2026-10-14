@@ -181,7 +181,8 @@ jobs:
           xvfb-run -a "$RUNNER_TEMP/pharos-tool/pharos" smoke --mod "$TEST_MODS/pharostestmod" --frames 300 \
             --command "/time set day" --strict --artifacts "$GITHUB_WORKSPACE/artifacts/pharos/tool-smoke"
           set +e
-          xvfb-run -a "$RUNNER_TEMP/pharos-tool/pharos" smoke --mod "$TEST_MODS/pharosbrokenmod" --strict \
+          # Keep the auth file outside xvfb-run's auto-cleanup directory so cleanup preserves the CLI exit code.
+          xvfb-run -a -f "$RUNNER_TEMP/pharosbrokenmod.Xauthority" "$RUNNER_TEMP/pharos-tool/pharos" smoke --mod "$TEST_MODS/pharosbrokenmod" --strict \
             --artifacts "$RUNNER_TEMP/broken-smoke"
           code=$?
           set -e

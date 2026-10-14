@@ -62,6 +62,13 @@ public sealed partial class ClientServerLoopbackSession : IDisposable
     private LiveBlockInteraction? _blocks;
 
     /// <summary>
+    /// Aims at and uses entities through the engine-mode client's normal in-world interaction.
+    /// </summary>
+    public LiveEntityInteraction Entities => _entities ??= new LiveEntityInteraction(this);
+
+    private LiveEntityInteraction? _entities;
+
+    /// <summary>
     /// Holds <paramref name="action"/> for <paramref name="frames"/> lockstep frames, then releases
     /// it: walk, jump, sneak or sprint as a player holding the key would.
     /// </summary>
