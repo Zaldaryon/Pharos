@@ -149,6 +149,11 @@ public sealed partial class EmbeddedServerHost : IDisposable, IAsyncDisposable
 
     private FarmingDriver? _farming;
 
+    /// <summary>Firepits and barrels: filling them, reading their state, and running their processing for a span of game time.</summary>
+    public ProcessingDriver Processing => _processing ??= new ProcessingDriver(this);
+
+    private ProcessingDriver? _processing;
+
     /// <summary>
     /// Records the server's game events, such as blocks placed and entities dying, to assert on.
     /// See <see cref="Zaldaryon.Pharos.Events.ServerEventRecorder"/>.
