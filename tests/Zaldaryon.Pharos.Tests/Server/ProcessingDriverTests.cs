@@ -26,6 +26,8 @@ public sealed class ProcessingDriverTests : ServerScenarioBase
         await firepit.RunAsync(TimeSpan.FromSeconds(60));
         FirepitState done = firepit.State;
         Assert.Equal("game:fish-cooked", done.Output?.Code);
+        // The fish's smelting ratio is 1, so one raw fish cooks into one.
+        Assert.Equal(1, done.Output?.Quantity);
         Assert.False(done.Burning, "The one piece of firewood should have burned out by now.");
     }
 
