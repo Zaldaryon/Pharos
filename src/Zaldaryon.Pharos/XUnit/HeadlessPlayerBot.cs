@@ -1,3 +1,4 @@
+using System.Runtime.ExceptionServices;
 using Vintagestory.API.Common;
 using Vintagestory.API.Common.Entities;
 using Vintagestory.API.MathTools;
@@ -9,7 +10,7 @@ using Zaldaryon.Pharos.Server;
 namespace Zaldaryon.Pharos.XUnit;
 
 /// <summary>The result of asking the server to handle a headless player's action.</summary>
-/// <param name="Accepted">Whether the requested server-side state change was observed.</param>
+/// <param name="Accepted">Whether the server confirmed the requested state change or dispatched the interaction event.</param>
 /// <param name="Error">The in-game error sent by the server when the action was refused.</param>
 /// <param name="Reason">Why the action was refused when the server sent no in-game error.</param>
 public sealed record BotResult(bool Accepted, ReceivedIngameMessage? Error = null, string? Reason = null);
@@ -22,8 +23,10 @@ public sealed class HeadlessPlayerBot
 {
     private const double PositionTolerance = 0.12;
     private const int TicksPerSecond = 20;
+    private const double MaxWalkSpeed = 5;
 
     private readonly ServerTestPlayer _owner;
+    private readonly SemaphoreSlim _interactionGate = new(1, 1);
     private int _movementTick;
 
     internal HeadlessPlayerBot(ServerTestPlayer owner) => _owner = owner;
@@ -44,6 +47,7 @@ public sealed class HeadlessPlayerBot
             MoveKeyChange = new Packet_MoveKeyChange { Key = (int)action, Down = pressed ? 1 : 0 },
         };
 
+        ct.ThrowIfCancellationRequested();
         Send(packet);
         return WaitForAsync(
             () => CurrentControls()[action] == pressed,
@@ -158,38 +162,104 @@ public sealed class HeadlessPlayerBot
     }
 
     /// <summary>Uses a block through the server's block-use interaction packet.</summary>
-    public Task<BotResult> UseBlockAsync(BlockPos position, BlockFacing? face = null, int maxTicks = 10, CancellationToken ct = default)
+    public async Task<BotResult> UseBlockAsync(BlockPos position, BlockFacing? face = null, int maxTicks = 10, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(position);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxTicks);
         BlockFacing hitFace = face ?? BlockFacing.UP;
-        int errorsBefore = _owner.Received.IngameErrors.Count;
-        Send(new Packet_Client
+        ct.ThrowIfCancellationRequested();
+        await _interactionGate.WaitAsync(ct).ConfigureAwait(false);
+        try
         {
-            Id = 25,
-            HandInteraction = new Packet_ClientHandInteraction
+            if (_owner.RunBotOnGameThread(() => RequireEntity().Controls.HandUse != EnumHandInteract.None))
             {
-                UseType = (int)EnumHandInteract.BlockInteract,
-                MouseButton = (int)EnumMouseButton.Right,
-                X = position.X,
-                Y = position.Y,
-                Z = position.Z,
-                OnBlockFace = hitFace.Index,
-                HitX = CollectibleNet.SerializeDoublePrecise(0.5),
-                HitY = CollectibleNet.SerializeDoublePrecise(0.5),
-                HitZ = CollectibleNet.SerializeDoublePrecise(0.5),
-                EnumHandInteract = (int)EnumHandInteractNw.StartBlockUse,
-                FirstEvent = 1,
-            },
-        });
+                return new(false, null, "The player is already using a block or item.");
+            }
 
-        return WaitForAsync(
-            () => RequireEntity().Controls.HandUse == EnumHandInteract.BlockInteract,
-            maxTicks,
-            errorsBefore,
-            $"The server did not accept block use at {position}.",
-            ct);
+            int errorsBefore = _owner.Received.IngameErrors.Count;
+            SendBlockUsePacket(position, hitFace, EnumHandInteractNw.StartBlockUse);
+
+            BotResult? operation = null;
+            Exception? operationFailure = null;
+            try
+            {
+                operation = await WaitForAsync(
+                    () => RequireEntity().Controls.HandUse == EnumHandInteract.BlockInteract,
+                    maxTicks,
+                    errorsBefore,
+                    $"The server did not accept block use at {position}.",
+                    ct).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                operationFailure = ex;
+            }
+
+            BotResult? cleanup = null;
+            Exception? cleanupFailure = null;
+            try
+            {
+                SendBlockUsePacket(position, hitFace, EnumHandInteractNw.StopBlockUse);
+                int cleanupErrorsBefore = _owner.Received.IngameErrors.Count;
+                cleanup = await WaitForAsync(
+                    () => RequireEntity().Controls.HandUse == EnumHandInteract.None,
+                    maxTicks: 4,
+                    cleanupErrorsBefore,
+                    $"The server did not stop block use at {position}.",
+                    CancellationToken.None).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                cleanupFailure = ex;
+            }
+
+            if (cleanupFailure is not null)
+            {
+                if (operationFailure is not null)
+                    throw new AggregateException("Block use failed and the server hand-use state could not be cleared.", operationFailure, cleanupFailure);
+                throw new InvalidOperationException("The server hand-use state could not be cleared.", cleanupFailure);
+            }
+
+            if (cleanup is not { Accepted: true })
+            {
+                if (operationFailure is not null)
+                {
+                    throw new AggregateException(
+                        "Block use failed and the server hand-use state remained active.",
+                        operationFailure,
+                        new InvalidOperationException(cleanup?.Reason ?? cleanup?.Error?.Message ?? "The server did not clear HandUse."));
+                }
+                return cleanup ?? new BotResult(false, null, "The server did not confirm block-use cleanup.");
+            }
+
+            if (operationFailure is not null) ExceptionDispatchInfo.Capture(operationFailure).Throw();
+
+            return operation!;
+        }
+        finally
+        {
+            _interactionGate.Release();
+        }
     }
+
+    private void SendBlockUsePacket(BlockPos position, BlockFacing face, EnumHandInteractNw interaction) => Send(new Packet_Client
+    {
+        Id = 25,
+        HandInteraction = new Packet_ClientHandInteraction
+        {
+            UseType = (int)EnumHandInteract.BlockInteract,
+            MouseButton = (int)EnumMouseButton.Right,
+            X = position.X,
+            Y = position.Y,
+            Z = position.Z,
+            OnBlockFace = face.Index,
+            HitX = CollectibleNet.SerializeDoublePrecise(0.5),
+            HitY = CollectibleNet.SerializeDoublePrecise(0.5),
+            HitZ = CollectibleNet.SerializeDoublePrecise(0.5),
+            EnumHandInteract = (int)interaction,
+            FirstEvent = interaction == EnumHandInteractNw.StartBlockUse ? 1 : 0,
+        },
+    });
 
     /// <summary>
     /// Moves items between two inventories the server has opened for this player through packet 8.
@@ -264,69 +334,106 @@ public sealed class HeadlessPlayerBot
 
     /// <summary>Asks the server to use an entity through packet 17.</summary>
     public Task<BotResult> UseEntityAsync(Entity entity, int maxTicks = 10, CancellationToken ct = default) =>
-        InteractWithEntityAsync(entity, mouseButton: 1, maxTicks, ct);
+        InteractWithEntityAsync(entity, mode: (int)EnumInteractMode.Interact, maxTicks, ct);
 
     /// <summary>Asks the server to attack an entity through packet 17.</summary>
     public Task<BotResult> AttackEntityAsync(Entity entity, int maxTicks = 10, CancellationToken ct = default) =>
-        InteractWithEntityAsync(entity, mouseButton: 0, maxTicks, ct);
+        InteractWithEntityAsync(entity, mode: (int)EnumInteractMode.Attack, maxTicks, ct);
 
-    private async Task<BotResult> InteractWithEntityAsync(Entity entity, int mouseButton, int maxTicks, CancellationToken ct)
+    private async Task<BotResult> InteractWithEntityAsync(Entity entity, int mode, int maxTicks, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(entity);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxTicks);
-        Vec3d hit = new(entity.SelectionBox.MidX, entity.SelectionBox.MidY, entity.SelectionBox.MidZ);
-        int errorsBefore = _owner.Received.IngameErrors.Count;
-        int observed = 0;
-        IServerEventAPI events = (IServerEventAPI)_owner.RequireBotHost().Server.Api.Event;
-        OnInteractDelegate handler = (Entity interactedEntity, IPlayer byPlayer, ItemSlot slot, Vec3d hitPosition, int mode, ref EnumHandling handling) =>
-        {
-            if (interactedEntity.EntityId == entity.EntityId && byPlayer.PlayerUID == _owner.PlayerUID)
-            {
-                Interlocked.Exchange(ref observed, 1);
-            }
-        };
-
-        _owner.RunBotOnGameThread(() => events.OnPlayerInteractEntity += handler);
+        ct.ThrowIfCancellationRequested();
+        await _interactionGate.WaitAsync(ct).ConfigureAwait(false);
         try
         {
-            Send(new Packet_Client
+            ct.ThrowIfCancellationRequested();
+            // EntitySelection.HitPosition and packet 17 coordinates are entity-local offsets.
+            Vec3d hit = _owner.RunBotOnGameThread(() => new Vec3d(
+                entity.SelectionBox.MidX,
+                entity.SelectionBox.MidY,
+                entity.SelectionBox.MidZ));
+            int errorsBefore = _owner.Received.IngameErrors.Count;
+            int observed = 0;
+            IServerEventAPI events = _owner.RunBotOnGameThread(
+                () => (IServerEventAPI)_owner.RequireBotHost().Server.Api.Event);
+            OnInteractDelegate handler = (Entity interactedEntity, IPlayer byPlayer, ItemSlot slot, Vec3d hitPosition, int eventMode, ref EnumHandling handling) =>
             {
-                Id = 17,
-                EntityInteraction = new Packet_EntityInteraction
+                if (interactedEntity.EntityId == entity.EntityId
+                    && byPlayer.PlayerUID == _owner.PlayerUID
+                    && eventMode == mode)
                 {
-                    MouseButton = mouseButton,
-                    EntityId = entity.EntityId,
-                    OnBlockFace = BlockFacing.UP.Index,
-                    HitX = CollectibleNet.SerializeDoublePrecise(hit.X),
-                    HitY = CollectibleNet.SerializeDoublePrecise(hit.Y),
-                    HitZ = CollectibleNet.SerializeDoublePrecise(hit.Z),
-                    SelectionBoxIndex = 0,
-                },
-            });
+                    Interlocked.Exchange(ref observed, 1);
+                }
+            };
 
-            return await WaitForAsync(
-                () => Volatile.Read(ref observed) != 0,
-                maxTicks,
-                errorsBefore,
-                $"The server refused the {(mouseButton == 0 ? "attack" : "use")} interaction with entity {entity.EntityId}.",
-                ct).ConfigureAwait(false);
+            _owner.RunBotOnGameThread(() =>
+            {
+                // Packet 17 updates the server's current entity selection before dispatching
+                // OnPlayerInteractEntity. Clear stale selection so event handlers see the selection
+                // derived from this interaction packet.
+                ConnectedClient client = _owner.RequireBotHost().Server.GetClientByPlayername(_owner.PlayerName)
+                    ?? throw new InvalidOperationException("The bot player is no longer connected.");
+                client.Entityplayer.EntitySelection = null;
+                events.OnPlayerInteractEntity += handler;
+            });
+            try
+            {
+                Send(new Packet_Client
+                {
+                    Id = 17,
+                    EntityInteraction = new Packet_EntityInteraction
+                    {
+                        // Packet 17 uses protocol modes: vanilla right-use is 1 and attack is 0.
+                        MouseButton = mode,
+                        EntityId = entity.EntityId,
+                        OnBlockFace = BlockFacing.UP.Index,
+                        // The server's entity interaction handler decodes these fields with DeserializeDouble.
+                        HitX = CollectibleNet.SerializeDouble(hit.X),
+                        HitY = CollectibleNet.SerializeDouble(hit.Y),
+                        HitZ = CollectibleNet.SerializeDouble(hit.Z),
+                        SelectionBoxIndex = 0,
+                    },
+                });
+
+                return await WaitForAsync(
+                    () => Volatile.Read(ref observed) != 0,
+                    maxTicks,
+                    errorsBefore,
+                    $"The bot did not observe the requested {(mode == (int)EnumInteractMode.Attack ? "attack" : "use")} interaction with entity {entity.EntityId} within {maxTicks} ticks.",
+                    ct).ConfigureAwait(false);
+            }
+            finally
+            {
+                _owner.RunBotOnGameThread(() => events.OnPlayerInteractEntity -= handler);
+            }
         }
         finally
         {
-            _owner.RunBotOnGameThread(() => events.OnPlayerInteractEntity -= handler);
+            _interactionGate.Release();
         }
     }
 
     /// <summary>
     /// Walks in a straight line to a world position, sending one position packet per simulated
     /// client tick at 20 updates per second. It can step up one block when the direct position is
-    /// blocked. This is a direct walk, not a pathfinder.
+    /// blocked. Speeds above five blocks per second are refused to keep position steps collision-safe.
+    /// This is a direct walk, not a pathfinder.
     /// </summary>
     public async Task<BotResult> WalkToAsync(Vec3d destination, int maxTicks = 600, double speed = 3, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(destination);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxTicks);
-        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(speed);
+        if (!double.IsFinite(destination.X) || !double.IsFinite(destination.Y) || !double.IsFinite(destination.Z))
+        {
+            throw new ArgumentOutOfRangeException(nameof(destination), "Destination coordinates must be finite.");
+        }
+        if (!double.IsFinite(speed) || speed <= 0 || speed > MaxWalkSpeed)
+        {
+            throw new ArgumentOutOfRangeException(nameof(speed), speed, $"Speed must be positive and no greater than {MaxWalkSpeed} blocks per second.");
+        }
+        ct.ThrowIfCancellationRequested();
 
         EmbeddedServerHost host = _owner.RequireBotHost();
         (Vec3d start, float yaw) = _owner.RunBotOnGameThread(() =>
@@ -341,11 +448,11 @@ public sealed class HeadlessPlayerBot
 
         if (Distance(start, destination) <= PositionTolerance) return new(true);
 
-        BotResult control = await SetControlAsync(EnumEntityAction.Forward, true, maxTicks: 4, ct).ConfigureAwait(false);
-        if (!control.Accepted) return control;
-
         try
         {
+            BotResult control = await SetControlAsync(EnumEntityAction.Forward, true, maxTicks: 4, ct).ConfigureAwait(false);
+            if (!control.Accepted) return control;
+
             double stepLength = speed / TicksPerSecond;
             for (int tick = 0; tick < maxTicks; tick++)
             {
@@ -379,7 +486,11 @@ public sealed class HeadlessPlayerBot
         }
         finally
         {
-            await SetControlAsync(EnumEntityAction.Forward, false, maxTicks: 4, ct).ConfigureAwait(false);
+            BotResult released = await SetControlAsync(EnumEntityAction.Forward, false, maxTicks: 4, CancellationToken.None).ConfigureAwait(false);
+            if (!released.Accepted)
+            {
+                throw new InvalidOperationException(released.Reason ?? released.Error?.Message ?? "The server did not release the Forward control.");
+            }
         }
     }
 
@@ -463,13 +574,13 @@ public sealed class HeadlessPlayerBot
     {
         ICoreServerAPI api = _owner.Server?.Api as ICoreServerAPI
             ?? throw new InvalidOperationException("The headless player is not attached to a server API.");
-        Cuboidf selectionBox = entity.SelectionBox;
-        int minX = (int)Math.Floor(position.X + selectionBox.MinX);
-        int maxX = (int)Math.Floor(position.X + selectionBox.MaxX);
-        int minY = (int)Math.Floor(position.Y + selectionBox.MinY);
-        int maxY = (int)Math.Floor(position.Y + selectionBox.MaxY);
-        int minZ = (int)Math.Floor(position.Z + selectionBox.MinZ);
-        int maxZ = (int)Math.Floor(position.Z + selectionBox.MaxZ);
+        Cuboidf playerCollisionBox = entity.CollisionBox;
+        int minX = (int)Math.Floor(position.X + playerCollisionBox.MinX);
+        int maxX = (int)Math.Floor(position.X + playerCollisionBox.MaxX);
+        int minY = (int)Math.Floor(position.Y + playerCollisionBox.MinY);
+        int maxY = (int)Math.Floor(position.Y + playerCollisionBox.MaxY);
+        int minZ = (int)Math.Floor(position.Z + playerCollisionBox.MinZ);
+        int maxZ = (int)Math.Floor(position.Z + playerCollisionBox.MaxZ);
 
         for (int x = minX; x <= maxX; x++)
         for (int y = minY; y <= maxY; y++)
@@ -480,9 +591,9 @@ public sealed class HeadlessPlayerBot
             Cuboidf[]? collisionBoxes = block.GetCollisionBoxes(api.World.BlockAccessor, blockPos);
             if (collisionBoxes is null) continue;
 
-            foreach (Cuboidf collisionBox in collisionBoxes)
+            foreach (Cuboidf blockCollisionBox in collisionBoxes)
             {
-                if (CollisionTester.AabbIntersect(collisionBox, x, y, z, selectionBox, position)) return false;
+                if (CollisionTester.AabbIntersect(blockCollisionBox, x, y, z, playerCollisionBox, position)) return false;
             }
         }
 
