@@ -124,6 +124,11 @@ public sealed partial class EmbeddedServerHost : IDisposable, IAsyncDisposable
 
     private PvpDriver? _pvp;
 
+    /// <summary>The server's player roles, and assigning them to test players.</summary>
+    public RoleDriver Roles => _roles ??= new RoleDriver(this);
+
+    private RoleDriver? _roles;
+
     /// <summary>
     /// Records the server's game events, such as blocks placed and entities dying, to assert on.
     /// See <see cref="Zaldaryon.Pharos.Events.ServerEventRecorder"/>.
