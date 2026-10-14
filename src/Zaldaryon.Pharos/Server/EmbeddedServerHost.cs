@@ -104,6 +104,11 @@ public sealed partial class EmbeddedServerHost : IDisposable, IAsyncDisposable
 
     private ServerTickListenerInspector? _tickListeners;
 
+    /// <summary>Controls and inspects entities in the server world.</summary>
+    public ServerEntityDriver Entities => _entities ??= new ServerEntityDriver(this);
+
+    private ServerEntityDriver? _entities;
+
     /// <summary>
     /// Records the server's game events, such as blocks placed and entities dying, to assert on.
     /// See <see cref="Zaldaryon.Pharos.Events.ServerEventRecorder"/>.

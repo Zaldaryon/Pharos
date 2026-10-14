@@ -141,17 +141,19 @@ public static class ServerWorldHelpers
             throw new InvalidOperationException("Server API is not available. Ensure the server is running.");
         }
 
-        EntityProperties? entityType = api.World.GetEntityType(new AssetLocation(entityCode));
-        if (entityType is null)
+        return OnGameThread(scenario, () =>
         {
-            throw new InvalidOperationException($"Entity code '{entityCode}' could not be resolved.");
-        }
+            EntityProperties? entityType = api.World.GetEntityType(new AssetLocation(entityCode));
+            if (entityType is null)
+            {
+                throw new InvalidOperationException($"Entity code '{entityCode}' could not be resolved.");
+            }
 
-        Entity entity = api.World.ClassRegistry.CreateEntity(entityType);
-        entity.Pos.SetPos(pos);
-
-        OnGameThread(scenario, () => api.World.SpawnEntity(entity));
-        return entity;
+            Entity entity = api.World.ClassRegistry.CreateEntity(entityType);
+            entity.Pos.SetPos(pos);
+            api.World.SpawnEntity(entity);
+            return entity;
+        });
     }
 
     /// <summary>
@@ -220,6 +222,10 @@ public static class ServerWorldHelpers
         ArgumentNullException.ThrowIfNull(scenario);
         ArgumentNullException.ThrowIfNull(entityCode);
         ArgumentNullException.ThrowIfNull(aroundPos);
+        if (!double.IsFinite(radius) || radius < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(radius), radius, "Radius must be finite and non-negative.");
+        }
 
         EmbeddedServerHost? host = GetHost(scenario);
         if (host is null)
@@ -236,7 +242,7 @@ public static class ServerWorldHelpers
         AssetLocation targetCode = new(entityCode);
         Entity? foundEntity = null;
 
-        bool FindEntity()
+        bool FindEntity() => host.RunOnGameThread(() =>
         {
             Entity[] entities = api.World.GetEntitiesAround(aroundPos, (float)radius, (float)radius);
             foreach (Entity entity in entities)
@@ -248,7 +254,7 @@ public static class ServerWorldHelpers
                 }
             }
             return false;
-        }
+        });
 
         bool success = await host.TickUntilAsync(FindEntity, maxTicks, ct).ConfigureAwait(false);
         if (!success || foundEntity is null)
@@ -412,6 +418,12 @@ public static class ServerWorldHelpers
         EmbeddedServerHost? host = GetHost(scenario);
         if (host is null) action();
         else host.RunOnGameThread(action);
+    }
+
+    private static T OnGameThread<T>(ServerScenarioBase scenario, Func<T> action)
+    {
+        EmbeddedServerHost? host = GetHost(scenario);
+        return host is null ? action() : host.RunOnGameThread(action);
     }
 
     private static ICoreServerAPI? GetApi(ServerScenarioBase scenario)
