@@ -320,7 +320,7 @@ public sealed partial class ClientServerLoopbackSession : IDisposable
                 (known ? "The server has the player." : "The server does not have the player."));
         }
 
-        Client.DisconnectSimulator.SimulateReconnectSuccess();
+        Client.DisconnectSimulator.MarkReconnected();
     }
 
     /// <summary>
