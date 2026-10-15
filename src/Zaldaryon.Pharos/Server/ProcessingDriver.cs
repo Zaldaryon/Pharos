@@ -381,6 +381,9 @@ public sealed record QuernState((string Code, int Quantity)? Input, (string Code
 /// <summary>Fills and reads a quern, and grinds by a player holding the quern's handle for a span of game time.</summary>
 public sealed class QuernFacade
 {
+    /// <summary>The quern's selection box for its handle, the top part, as the game numbers it.</summary>
+    private const int QuernHandleBox = 1;
+
     /// <summary>How often the holding player's interaction is renewed in simulated time. The server drops a grinder after one second without one.</summary>
     private static readonly TimeSpan RenewEvery = TimeSpan.FromMilliseconds(200);
 
@@ -459,6 +462,45 @@ public sealed class QuernFacade
         finally
         {
             _host.RunOnGameThread(() => Interact(byPlayer, handle, "OnBlockInteractStop", (float)span.TotalSeconds));
+        }
+    }
+
+    /// <summary>
+    /// Grinds for a span of game time by sending the handle interaction as packets, the way a client does: the start,
+    /// a step every 200 simulated milliseconds while the button stays down, and the stop. Each step is processed by the
+    /// server's tick, and the grinder's tick listener runs over the same simulated time.
+    /// </summary>
+    /// <param name="player">The joined player who holds the handle.</param>
+    /// <param name="span">The game time to hold the handle for.</param>
+    /// <param name="ct">Cancellation token.</param>
+    public async Task GrindThroughPacketsAsync(ServerTestPlayer player, TimeSpan span, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(player);
+        ArgumentOutOfRangeException.ThrowIfLessThan(span, TimeSpan.Zero);
+        // The top part of the quern, above 0.6875 of its height, is the handle's selection box.
+        Vec3d handle = new(0.5, 0.85, 0.5);
+        _host.RunOnGameThread(() => player.Bot.SendBlockUseStart(_pos.Copy(), handle, QuernHandleBox));
+        _host.Tick();
+        await Task.Delay(1, ct).ConfigureAwait(false);
+        try
+        {
+            TimeSpan played = TimeSpan.Zero;
+            while (played < span)
+            {
+                ct.ThrowIfCancellationRequested();
+                TimeSpan slice = span - played < RenewEvery ? span - played : RenewEvery;
+                _host.RunOnGameThread(() => player.Bot.SendBlockUseStep(_pos.Copy(), handle, QuernHandleBox));
+                _host.Tick();
+                await Task.Delay(1, ct).ConfigureAwait(false);
+                await _host.TickListeners.FastForwardAsync(_pos, slice, ct: ct);
+                played += slice;
+            }
+        }
+        finally
+        {
+            _host.RunOnGameThread(() => player.Bot.SendBlockUseStop(_pos.Copy(), handle, QuernHandleBox));
+            _host.Tick();
+            await Task.Delay(1).ConfigureAwait(false);
         }
     }
 

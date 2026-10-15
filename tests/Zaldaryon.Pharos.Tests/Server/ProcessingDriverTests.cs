@@ -193,6 +193,20 @@ public sealed class ProcessingDriverTests : ServerScenarioBase
     }
 
     [ServerScenario]
+    public async Task Quern_GrindsWhenTheHandleIsHeldThroughPackets()
+    {
+        ServerTestPlayer player = await CreateTestPlayerAsync(PlayerNames.Next());
+        BlockPos pos = PlaceBlock(player, "game:quern-granite");
+        QuernFacade quern = Host!.Processing.Quern(pos).Fill("game:grain-spelt", 1);
+
+        await quern.GrindThroughPacketsAsync(player, TimeSpan.FromSeconds(8));
+
+        QuernState done = quern.State;
+        Assert.Null(done.Input);
+        PharosAssert.Produces(done.Output, "game:flour-spelt", 1);
+    }
+
+    [ServerScenario]
     public async Task Quern_GrindsGrainIntoFlourOnlyWhileAPlayerHoldsTheHandle()
     {
         ServerTestPlayer player = await CreateTestPlayerAsync(PlayerNames.Next());
