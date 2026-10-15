@@ -65,6 +65,24 @@ public sealed class ProcessingDriverTests : ServerScenarioBase
     }
 
     [ServerScenario]
+    public async Task Barrel_MeadIsReadyAfterItsFourteenDaysOfSealing()
+    {
+        ServerTestPlayer player = await CreateTestPlayerAsync("BarrelMead");
+        BlockPos pos = PlaceBlock(player, "game:barrel");
+        BarrelFacade barrel = Host!.Processing.Barrel(pos);
+
+        // Honey is 100 portions to the litre, so 0.1 litres of honey is 10 portions, and the mead recipe seals for 336 hours.
+        barrel.Fill(BarrelSlot.Liquid, "game:honeyportion", 10).Seal();
+
+        await barrel.RunAsync(TimeSpan.FromDays(13.5));
+        Assert.NotEqual("game:ciderportion-mead", barrel.State.Liquid?.Code);
+
+        await barrel.RunAsync(TimeSpan.FromDays(1));
+        PharosAssert.Produces(barrel.State.Liquid, "game:ciderportion-mead", 10);
+        Assert.Null(barrel.State.Items);
+    }
+
+    [ServerScenario]
     public async Task Barrel_SpeltCiderIsNotReadyBeforeItsSealingTime()
     {
         ServerTestPlayer player = await CreateTestPlayerAsync("BarrelCider");
