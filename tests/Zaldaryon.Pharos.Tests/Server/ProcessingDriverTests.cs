@@ -198,6 +198,33 @@ public sealed class ProcessingDriverTests : ServerScenarioBase
         Assert.True(perfect, "The dough did not bake to a perfect loaf in the oven's remaining heat.");
     }
 
+    [ServerScenario]
+    public async Task ClayOven_BreadPassesThroughPartbakedThenPerfectThenCharred()
+    {
+        ServerTestPlayer player = await CreateTestPlayerAsync("OvenStages");
+        BlockPos pos = PlaceBlock(player, "game:clayoven-north");
+        OvenFacade oven = Host!.Processing.Oven(pos);
+        player.GiveItem("game:torch-basic-lit-up");
+
+        oven.Fill(OvenSlot.First, "game:firewood", 6).IgniteWithTorch(player, secondsHeld: 5);
+        for (int i = 0; i < 600 && oven.State.Burning; i++) await oven.RunAsync(TimeSpan.FromSeconds(1));
+        oven.RemoveFuel().PutIn("game:dough-spelt");
+
+        // The stages follow the bake levels in the dough's and the bread's baking properties: partbaked to a
+        // quarter, perfect to a half, and charred to three quarters. Record each stage in the order it appears.
+        var order = new List<string>();
+        for (int i = 0; i < 400 && !order.Contains("game:bread-spelt-charred"); i++)
+        {
+            await oven.RunAsync(TimeSpan.FromSeconds(30));
+            foreach (var slot in oven.State.Slots)
+            {
+                if (slot is { Code: { } code } && code.StartsWith("game:bread-spelt-", StringComparison.Ordinal) && !order.Contains(code)) order.Add(code);
+            }
+        }
+
+        Assert.Equal(new[] { "game:bread-spelt-partbaked", "game:bread-spelt-perfect", "game:bread-spelt-charred" }, order);
+    }
+
     private BlockPos PlaceBlock(ServerTestPlayer player, string blockCode)
     {
         Entity entity = player.Entity!;
