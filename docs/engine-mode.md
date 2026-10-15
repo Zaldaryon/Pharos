@@ -287,6 +287,7 @@ Time on the link is the simulated time of the session's frames, so the same seed
 
 - `SimulateKick(message)` and `SimulateServerShutdown()`: the server disconnects the player, and the client receives the server's disconnect message.
 - `SimulateNetworkError(message)`, `SimulateTimeout()` and `SimulateServerCrash()`: the link is cut (`session.IsLinkSevered`), the client's own socket error handler runs ("The connection closed unexpectedly: ..."), and the server drops the player.
+- To crash the server itself, and boot it again on its save, use `session.RestartServerAsync(RestartMode.Crash)`: the server stops without saving, and the client joins the new server as the same player. `RestartMode.Graceful` saves first. A scenario does the same with `RestartServerAsync(mode)`.
 
 A disconnected engine-mode client ends its game session, as in the game. `session.ReconnectAsync()` joins it again as the same player, the way the game's own reconnect does:
 

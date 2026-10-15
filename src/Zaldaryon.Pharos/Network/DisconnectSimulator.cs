@@ -52,6 +52,7 @@ public sealed class DisconnectSimulator
     /// <summary>
     /// Number of reconnect attempts made since the last disconnect.
     /// </summary>
+    [Obsolete("Only counts attempts; it does not reconnect. Use ClientServerLoopbackSession.ReconnectAsync or RestartServerAsync.")]
     public int ReconnectAttempts
     {
         get { lock (_lock) return _reconnectAttempts; }
@@ -60,6 +61,7 @@ public sealed class DisconnectSimulator
     /// <summary>
     /// Maximum number of reconnect attempts allowed before giving up.
     /// </summary>
+    [Obsolete("Only counts attempts; it does not reconnect. Use ClientServerLoopbackSession.ReconnectAsync or RestartServerAsync.")]
     public int MaxReconnectAttempts
     {
         get { lock (_lock) return _maxReconnectAttempts; }
@@ -74,6 +76,7 @@ public sealed class DisconnectSimulator
     /// <summary>
     /// Whether reconnect attempts have been exhausted.
     /// </summary>
+    [Obsolete("Only counts attempts; it does not reconnect. Use ClientServerLoopbackSession.ReconnectAsync or RestartServerAsync.")]
     public bool ReconnectAttemptsExhausted
     {
         get { lock (_lock) return _reconnectAttempts >= _maxReconnectAttempts; }
@@ -140,7 +143,9 @@ public sealed class DisconnectSimulator
     }
 
     /// <summary>
-    /// Simulates a server crash (sudden disconnect with no graceful shutdown).
+    /// Simulates a server crash from the client's side: the client's link is cut, as a sudden disconnect with no graceful shutdown
+    /// does, and the server keeps running. To crash the server itself and boot it again on its save, use
+    /// <c>ClientServerLoopbackSession.RestartServerAsync</c> with <c>RestartMode.Crash</c>.
     /// </summary>
     public DisconnectEvent SimulateServerCrash()
     {
@@ -183,6 +188,7 @@ public sealed class DisconnectSimulator
     /// Attempts to reconnect after a disconnect.
     /// Returns true if reconnection was successful (simulated), false if attempts exhausted.
     /// </summary>
+    [Obsolete("Only counts an attempt; it does not reconnect. Use ClientServerLoopbackSession.ReconnectAsync or RestartServerAsync.")]
     public bool AttemptReconnect()
     {
         lock (_lock)
@@ -213,7 +219,11 @@ public sealed class DisconnectSimulator
     /// <summary>
     /// Simulates a successful reconnection.
     /// </summary>
-    public void SimulateReconnectSuccess()
+    [Obsolete("Only clears the disconnect flag; it does not reconnect. Use ClientServerLoopbackSession.ReconnectAsync or RestartServerAsync.")]
+    public void SimulateReconnectSuccess() => MarkReconnected();
+
+    // Clears the disconnect flag once a session has joined the client again.
+    internal void MarkReconnected()
     {
         lock (_lock)
         {

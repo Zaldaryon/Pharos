@@ -1,3 +1,4 @@
+#pragma warning disable CS0618 // These tests cover the obsolete reconnect counters on purpose.
 using Xunit;
 using Zaldaryon.Pharos.Network;
 

@@ -78,6 +78,20 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime, IScenarioLifecy
     protected EmbeddedServerHost? ServerHost => _serverHost;
 
     /// <summary>
+    /// Restarts the server the client is joined to, on its save, and joins the client to the new server as the same player. The new server
+    /// becomes <see cref="ServerHost"/>, and the scenario disposes it at the end.
+    /// </summary>
+    /// <param name="mode">How the server stops. A crash loses the changes that were not saved.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <exception cref="InvalidOperationException">The session is not running.</exception>
+    protected async Task RestartServerAsync(RestartMode mode = RestartMode.Graceful, CancellationToken ct = default)
+    {
+        ClientServerLoopbackSession session = _session ?? throw new InvalidOperationException("The session is not running.");
+        await session.RestartServerAsync(mode, ct: ct).ConfigureAwait(false);
+        _serverHost = session.NativeServer;
+    }
+
+    /// <summary>
     /// Gets the underlying Vintage Story server instance.
     /// Null if the host is not initialized.
     /// </summary>
