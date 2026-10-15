@@ -366,6 +366,10 @@ public sealed class RecipeDriver
                 if (!IsKnappingSurface(api, pos)) return;
                 if (!Voxels(be)[x, z] || required[x, 0, z]) continue;
                 be.OnReceivedClientPacket(player, UserOverPacket, UserOverData(x, 0, z));
+                if (Voxels(be)[x, z] && IsKnappingSurface(api, pos))
+                {
+                    throw new InvalidOperationException($"The knapping surface at {pos} did not take the voxel ({x}, {z}): the player is out of reach, or the block is claimed.");
+                }
             }
         }
 

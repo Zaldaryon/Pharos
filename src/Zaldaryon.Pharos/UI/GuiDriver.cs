@@ -80,7 +80,11 @@ public sealed class GuiDriver
     /// </summary>
     public CharacterDriver Character => _character ??= new CharacterDriver(_client, this);
 
+    /// <summary>The survival inventory's crafting grid: filling it, taking its output, and closing the inventory.</summary>
+    public CraftingDriver Crafting => _crafting ??= new CraftingDriver(_client, this);
+
     private CharacterDriver? _character;
+    private CraftingDriver? _crafting;
 
     /// <summary>The dialogs currently open, HUD elements included.</summary>
     public IReadOnlyList<GuiDialogInfo> OpenDialogs() => _client.RunOnClientThread(() =>
