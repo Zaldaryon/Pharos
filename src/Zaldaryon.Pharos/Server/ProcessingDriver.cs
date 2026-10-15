@@ -71,8 +71,7 @@ public sealed class FirepitFacade
             ItemSlot target = Inventory()[(int)slot];
             CollectibleObject collectible = ProcessingDriver.CollectibleNamed(ServerApi.World, code);
             target.Itemstack = new ItemStack(collectible, quantity);
-            target.MarkDirty();
-            ProcessingDriver.SyncBlockEntity((BlockEntity)Block());
+            ProcessingDriver.MarkSlot((BlockEntity)Block(), target);
         });
         return this;
     }
@@ -153,6 +152,33 @@ public sealed class FirepitFacade
         return (recipe, output!.Attributes.GetInt("quantityServings", 1));
     });
 
+    /// <summary>
+    /// Listens for the firepit's inventory slots changing, as the game's sync does. The listener gets the slot index.
+    /// Dispose the returned handle to stop listening.
+    /// </summary>
+    /// <param name="onChanged">Called with the index of each changed slot.</param>
+    public IDisposable WatchSlotChanges(Action<int> onChanged)
+    {
+        ArgumentNullException.ThrowIfNull(onChanged);
+        InventoryBase inventory = _host.RunOnGameThread(() => Inventory());
+        return _host.RunOnGameThread(() => new SlotWatch(inventory, onChanged));
+    }
+
+    private sealed class SlotWatch : IDisposable
+    {
+        private readonly InventoryBase _inventory;
+        private readonly Action<int> _onChanged;
+
+        public SlotWatch(InventoryBase inventory, Action<int> onChanged)
+        {
+            _inventory = inventory;
+            _onChanged = onChanged;
+            _inventory.SlotModified += _onChanged;
+        }
+
+        public void Dispose() => _inventory.SlotModified -= _onChanged;
+    }
+
     /// <summary>The pieces of fuel left in the fuel slot.</summary>
     public int FuelLeft => _host.RunOnGameThread(() => Inventory()[(int)FirepitSlot.Fuel].Itemstack?.StackSize ?? 0);
 
@@ -180,8 +206,7 @@ public sealed class FirepitFacade
             {
                 throw new InvalidOperationException($"The fuel slot holds {fuel.Itemstack.Collectible.Code}, not {code}.");
             }
-            fuel.MarkDirty();
-            ProcessingDriver.SyncBlockEntity((BlockEntity)Block());
+            ProcessingDriver.MarkSlot((BlockEntity)Block(), Inventory()[(int)FirepitSlot.Fuel]);
         });
         return this;
     }
@@ -256,8 +281,7 @@ public sealed class BarrelFacade
             ItemSlot target = Inventory()[(int)slot];
             CollectibleObject collectible = ProcessingDriver.CollectibleNamed(ServerApi.World, code);
             target.Itemstack = new ItemStack(collectible, quantity);
-            target.MarkDirty();
-            ProcessingDriver.SyncBlockEntity((BlockEntity)Block());
+            ProcessingDriver.MarkSlot((BlockEntity)Block(), target);
         });
         return this;
     }
@@ -342,8 +366,7 @@ public sealed class QuernFacade
             ItemSlot target = (ItemSlot)ProcessingDriver.Member(Block(), "InputSlot")!;
             CollectibleObject collectible = ProcessingDriver.CollectibleNamed(ServerApi.World, code);
             target.Itemstack = new ItemStack(collectible, quantity);
-            target.MarkDirty();
-            ProcessingDriver.SyncBlockEntity((BlockEntity)Block());
+            ProcessingDriver.MarkSlot((BlockEntity)Block(), target);
         });
         return this;
     }
@@ -466,8 +489,7 @@ public sealed class OvenFacade
             ItemSlot target = ProcessingDriver.InventoryOf(Block())[(int)slot];
             CollectibleObject collectible = ProcessingDriver.CollectibleNamed(ServerApi.World, code);
             target.Itemstack = new ItemStack(collectible, quantity);
-            target.MarkDirty();
-            ProcessingDriver.SyncBlockEntity((BlockEntity)Block());
+            ProcessingDriver.MarkSlot((BlockEntity)Block(), target);
         });
         return this;
     }
@@ -542,8 +564,7 @@ public sealed class OvenFacade
             if ((bool)ProcessingDriver.Member(Block(), "IsBurning")!) throw new InvalidOperationException("The oven is still burning, so its fuel cannot be removed.");
             ItemSlot first = ProcessingDriver.InventoryOf(Block())[0];
             first.Itemstack = null;
-            first.MarkDirty();
-            ProcessingDriver.SyncBlockEntity((BlockEntity)Block());
+            ProcessingDriver.MarkSlot((BlockEntity)Block(), first);
         });
         return this;
     }
@@ -589,6 +610,16 @@ public sealed class ProcessingDriver
 
     /// <summary>Marks a block entity dirty with a sync, so its inventory reaches the clients as the game sends it.</summary>
     internal static void SyncBlockEntity(BlockEntity blockEntity) => blockEntity.MarkDirty(true);
+
+    /// <summary>
+    /// Reports a changed slot the way the game does: the slot's own <c>MarkDirty</c> tells its inventory, which fires the
+    /// slot-modified event that the block entity listens to for syncing. The block entity is then marked dirty with a sync.
+    /// </summary>
+    internal static void MarkSlot(BlockEntity blockEntity, ItemSlot slot)
+    {
+        slot.MarkDirty();
+        SyncBlockEntity(blockEntity);
+    }
 
     /// <summary>The item or block with a code. Containers such as the clay pot are blocks, so both are searched.</summary>
     internal static CollectibleObject CollectibleNamed(IWorldAccessor world, string code)

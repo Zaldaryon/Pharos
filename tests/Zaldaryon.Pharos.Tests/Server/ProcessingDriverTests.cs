@@ -33,6 +33,25 @@ public sealed class ProcessingDriverTests : ServerScenarioBase
     }
 
     [ServerScenario]
+    public async Task Firepit_FillsReportTheChangedSlotToTheGame()
+    {
+        ServerTestPlayer player = await CreateTestPlayerAsync("FirepitSlots");
+        BlockPos pos = PlaceBlock(player, "game:firepit-extinct");
+        FirepitFacade firepit = Host!.Processing.Firepit(pos);
+        var changed = new List<int>();
+
+        using (firepit.WatchSlotChanges(changed.Add))
+        {
+            firepit.Fill(FirepitSlot.Input, "game:fish-raw", 1).Fill(FirepitSlot.Fuel, "game:firewood", 2);
+            firepit.AddFuel("game:firewood", 1);
+        }
+
+        // Each write reaches the game's slot-modified event, which is what syncs a slot to the clients.
+        Assert.Equal(new[] { (int)FirepitSlot.Input, (int)FirepitSlot.Fuel, (int)FirepitSlot.Fuel }, changed);
+        Assert.Equal(3, firepit.FuelLeft);
+    }
+
+    [ServerScenario]
     public async Task Firepit_NeedsALitTorchToCatch()
     {
         ServerTestPlayer player = await CreateTestPlayerAsync("FirepitNoTorch");
