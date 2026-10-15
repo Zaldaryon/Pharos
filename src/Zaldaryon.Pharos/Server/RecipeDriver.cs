@@ -1,6 +1,9 @@
+using System.Collections;
 using Vintagestory.API.Common;
 using Vintagestory.API.Common.Entities;
+using Vintagestory.API.MathTools;
 using Vintagestory.API.Server;
+using Vintagestory.API.Util;
 using Zaldaryon.Pharos.XUnit;
 
 namespace Zaldaryon.Pharos.Server;
@@ -32,6 +35,17 @@ public sealed class RecipeDriver
 {
     // The game's crafting grid is 3 by 3 (InventoryCraftingGrid).
     private const int GridSize = 3;
+    private const string KnappingSurface = "knappingsurface";
+    private const string KnappingEntity = "BlockEntityKnappingSurface";
+    private const string ClayFormBlock = "clayform";
+    private const string ClayFormEntity = "BlockEntityClayForm";
+    private const string ClayItem = "ItemClay";
+    private const string RecipeRegistryType = "Vintagestory.GameContent.RecipeRegistrySystem";
+
+    // The packets a knapping surface reads from the client: select a recipe, then remove a voxel (BEKnappingSurface.cs).
+    private const int SelectRecipePacket = 1001;
+    private const int UserOverPacket = 1002;
+
     private readonly EmbeddedServerHost _host;
 
     internal RecipeDriver(EmbeddedServerHost host) => _host = host;
@@ -119,6 +133,277 @@ public sealed class RecipeDriver
             output,
             matches.Select(recipe => recipe.Name?.ToString() ?? "?").Distinct().ToList(),
             misses);
+    }
+
+    /// <summary>
+    /// Places a knapping surface at a position the way the game's flint item does: the surface gets the material as its base
+    /// and the starting work item, a 10 by 10 block of voxels.
+    /// </summary>
+    /// <param name="pos">Where the surface goes. The block there is replaced.</param>
+    /// <param name="materialCode">The item code of the base material, such as <c>game:flint</c>.</param>
+    /// <exception cref="InvalidOperationException">Called on the game thread, or the game has no knapping surface.</exception>
+    public void PlaceKnappingSurface(BlockPos pos, string materialCode)
+    {
+        ArgumentNullException.ThrowIfNull(pos);
+        ArgumentNullException.ThrowIfNull(materialCode);
+        if (_host.IsOnGameThread) throw new InvalidOperationException("PlaceKnappingSurface waits for the game thread and cannot run on it.");
+        _host.RunOnGameThread(() =>
+        {
+            ICoreServerAPI api = ServerApi;
+            var material = new ItemStack(ProcessingDriver.CollectibleNamed(api.World, materialCode), 1);
+            Block surface = api.World.GetBlock(new AssetLocation(KnappingSurface))
+                ?? throw new InvalidOperationException($"The game has no {KnappingSurface} block.");
+            api.World.BlockAccessor.SetBlock(surface.BlockId, pos);
+            BlockEntity be = api.World.BlockAccessor.GetBlockEntity(pos)
+                ?? throw new InvalidOperationException($"The knapping surface at {pos} has no block entity.");
+            be.GetType().GetField("BaseMaterial")!.SetValue(be, material);
+            be.GetType().GetMethod("CreateInitialWorkItem")!.Invoke(be, null);
+            be.MarkDirty();
+        });
+    }
+
+    /// <summary>
+    /// Completes a knapping or clay forming recipe on the block at a position the way a player does: it selects the recipe, then
+    /// changes one voxel per packet, through the block entity's own packets. The block finishes when its voxels match the recipe.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A knapping surface only removes voxels, so a recipe that needs a voxel the work item lacks cannot finish. That case throws and
+    /// names the voxel. A clay form adds and removes voxels. Each addition takes from the form's voxel budget, and when the budget runs
+    /// out the game takes one clay from the player's hand and adds 25 voxels (ItemClay); this driver does the same, and throws when the
+    /// player holds no clay.
+    /// </para>
+    /// <para>The player must be in reach of the block and must hold the item the game requires: any item for knapping, clay for a clay form.</para>
+    /// </remarks>
+    /// <param name="player">The player who works the block. The block checks the player's reach and permissions.</param>
+    /// <param name="pos">The knapping surface or clay form.</param>
+    /// <param name="outputCode">The code of the recipe's output, such as <c>game:knifeblade-flint</c> or <c>game:bowl-blue-raw</c>.</param>
+    /// <exception cref="ArgumentNullException">A parameter is null.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// The player is not connected or cannot work, the block is neither a knapping surface nor a clay form, no recipe makes
+    /// <paramref name="outputCode"/> from the block's material, or the block cannot finish the recipe.
+    /// </exception>
+    public Task CompleteVoxelRecipeAsync(ServerTestPlayer player, BlockPos pos, string outputCode)
+    {
+        ArgumentNullException.ThrowIfNull(player);
+        ArgumentNullException.ThrowIfNull(pos);
+        ArgumentNullException.ThrowIfNull(outputCode);
+        IServerPlayer serverPlayer = player.Player ?? throw new InvalidOperationException("The player is not connected, so it cannot work the block.");
+        if (_host.IsOnGameThread) throw new InvalidOperationException("CompleteVoxelRecipeAsync waits for the game thread and cannot run on it.");
+        _host.RunOnGameThread(() =>
+        {
+            ICoreServerAPI api = ServerApi;
+            BlockEntity be = api.World.BlockAccessor.GetBlockEntity(pos)
+                ?? throw new InvalidOperationException($"There is no block entity at {pos}.");
+            switch (be.GetType().Name)
+            {
+                case KnappingEntity:
+                    CompleteKnappingOnGameThread(serverPlayer, pos, outputCode);
+                    break;
+                case ClayFormEntity:
+                    CompleteClayformingOnGameThread(serverPlayer, pos, outputCode);
+                    break;
+                default:
+                    throw new InvalidOperationException($"The block at {pos} is a {be.GetType().Name}, which the game does not form from a recipe.");
+            }
+        });
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Places a clay form at a position with the clay the game's clay item puts into it: the form gets the clay as its base material,
+    /// the starting work item, and 25 voxels of budget.
+    /// </summary>
+    /// <param name="pos">Where the form goes. The block there is replaced.</param>
+    /// <param name="clayCode">The item code of the clay, such as <c>game:clay-blue</c>.</param>
+    /// <exception cref="InvalidOperationException">Called on the game thread, or the game has no clay form.</exception>
+    public void PlaceClayForm(BlockPos pos, string clayCode)
+    {
+        ArgumentNullException.ThrowIfNull(pos);
+        ArgumentNullException.ThrowIfNull(clayCode);
+        if (_host.IsOnGameThread) throw new InvalidOperationException("PlaceClayForm waits for the game thread and cannot run on it.");
+        _host.RunOnGameThread(() =>
+        {
+            ICoreServerAPI api = ServerApi;
+            Block form = api.World.GetBlock(new AssetLocation(ClayFormBlock))
+                ?? throw new InvalidOperationException($"The game has no {ClayFormBlock} block.");
+            api.World.BlockAccessor.SetBlock(form.BlockId, pos);
+            BlockEntity be = api.World.BlockAccessor.GetBlockEntity(pos)
+                ?? throw new InvalidOperationException($"The clay form at {pos} has no block entity.");
+            var clay = new ItemStack(ProcessingDriver.CollectibleNamed(api.World, clayCode), 1);
+            be.GetType().GetMethod("PutClay")!.Invoke(be, [new DummySlot(clay)]);
+            be.MarkDirty();
+        });
+    }
+
+    private void CompleteClayformingOnGameThread(IServerPlayer player, BlockPos pos, string outputCode)
+    {
+        ICoreServerAPI api = ServerApi;
+        BlockEntity be = api.World.BlockAccessor.GetBlockEntity(pos)!;
+        ItemSlot hand = player.InventoryManager.ActiveHotbarSlot;
+        if (hand.Itemstack is null || hand.Itemstack.Collectible.GetType().Name != ClayItem)
+        {
+            throw new InvalidOperationException("The player must hold clay to work a clay form.");
+        }
+
+        // The clay tool's mode sets how many voxels one packet changes. Only a single voxel per packet is predictable here.
+        int toolMode = hand.Itemstack.Collectible.GetToolMode(hand, player, new BlockSelection { Position = pos });
+        if (toolMode != 0)
+        {
+            throw new InvalidOperationException($"The clay tool is in mode {toolMode}, which changes more than one voxel per packet. Use mode 0.");
+        }
+
+        ItemStack? material = (ItemStack?)ProcessingDriver.Member(be, "BaseMaterial");
+        object registry = api.ModLoader.GetModSystem(RecipeRegistryType)
+            ?? throw new InvalidOperationException($"The game's {RecipeRegistryType} is not loaded.");
+        object recipe = ((IEnumerable)ProcessingDriver.Member(registry, "ClayFormingRecipes")!).Cast<object>()
+            .FirstOrDefault(r => OutputCodeOf(r) == outputCode && material is not null && IngredientOf(r).SatisfiesAsIngredient(material))
+            ?? throw new InvalidOperationException($"No clay forming recipe makes {outputCode} from {material?.Collectible.Code.ToString() ?? "nothing"}.");
+
+        be.OnReceivedClientPacket(player, SelectRecipePacket, SerializerUtil.Serialize((int)ProcessingDriver.Member(recipe, "RecipeId")!));
+        var required = (bool[,,])ProcessingDriver.Member(recipe, "Voxels")!;
+
+        // Each packet changes the first voxel of the first layer that differs from the recipe. A packet that changes nothing stops the loop.
+        const int MaxPackets = 16 * 16 * 16 * 2;
+        for (int packet = 0; packet < MaxPackets; packet++)
+        {
+            if (api.World.BlockAccessor.GetBlock(pos).Code.Path != ClayFormBlock) return;
+
+            // A copy: the block entity changes its own array when a packet lands, so the comparison below needs the old state.
+            bool[,,] now = (bool[,,])Voxels3(be).Clone();
+            int layer = -1;
+            int x = -1;
+            int z = -1;
+            for (int y = 0; y < 16 && layer < 0; y++)
+            {
+                for (int i = 0; i < 16 && layer < 0; i++)
+                {
+                    for (int j = 0; j < 16; j++)
+                    {
+                        if (now[i, y, j] != required[i, y, j])
+                        {
+                            layer = y;
+                            x = i;
+                            z = j;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (layer < 0) break;
+
+            bool wanted = required[x, layer, z];
+            if (wanted && AvailableVoxels(be) <= 0)
+            {
+                // ItemClay: when the form has no voxels left, one clay from the hand becomes 25 more.
+                if (hand.Itemstack is null || hand.Itemstack.Collectible.GetType().Name != ClayItem)
+                {
+                    throw new InvalidOperationException($"The clay form at {pos} needs more clay to add the voxel ({x}, {layer}, {z}); the player holds none.");
+                }
+
+                hand.TakeOut(1);
+                hand.MarkDirty();
+                SetAvailableVoxels(be, AvailableVoxels(be) + 25);
+            }
+
+            be.OnReceivedClientPacket(player, UserOverPacket, UserOverData(x, layer, z, mouseMode: !wanted));
+            if (Voxels3(be)[x, layer, z] == now[x, layer, z] && api.World.BlockAccessor.GetBlock(pos).Code.Path == ClayFormBlock)
+            {
+                throw new InvalidOperationException($"The clay form at {pos} did not change the voxel ({x}, {layer}, {z}) that {outputCode} needs.");
+            }
+        }
+
+        if (api.World.BlockAccessor.GetBlock(pos).Code.Path == ClayFormBlock)
+        {
+            throw new InvalidOperationException($"The clay form at {pos} did not finish {outputCode}.");
+        }
+    }
+
+    private static bool[,,] Voxels3(BlockEntity be) => (bool[,,])ProcessingDriver.Member(be, "Voxels")!;
+
+    private static int AvailableVoxels(BlockEntity be) => (int)ProcessingDriver.Member(be, "AvailableVoxels")!;
+
+    private static void SetAvailableVoxels(BlockEntity be, int value) => be.GetType().GetField("AvailableVoxels")!.SetValue(be, value);
+
+    private void CompleteKnappingOnGameThread(IServerPlayer player, BlockPos pos, string outputCode)
+    {
+        ICoreServerAPI api = ServerApi;
+        BlockEntity be = api.World.BlockAccessor.GetBlockEntity(pos)
+            ?? throw new InvalidOperationException($"There is no block entity at {pos}.");
+        if (be.GetType().Name != KnappingEntity)
+        {
+            throw new InvalidOperationException($"The block at {pos} is a {be.GetType().Name}, not a knapping surface.");
+        }
+
+        if (player.InventoryManager.ActiveHotbarSlot.Itemstack is null)
+        {
+            throw new InvalidOperationException("The player must hold an item to knap.");
+        }
+
+        ItemStack? material = (ItemStack?)ProcessingDriver.Member(be, "BaseMaterial");
+        object registry = api.ModLoader.GetModSystem(RecipeRegistryType)
+            ?? throw new InvalidOperationException($"The game's {RecipeRegistryType} is not loaded.");
+        object recipe = ((IEnumerable)ProcessingDriver.Member(registry, "KnappingRecipes")!).Cast<object>()
+            .FirstOrDefault(r => OutputCodeOf(r) == outputCode && material is not null && IngredientOf(r).SatisfiesAsIngredient(material))
+            ?? throw new InvalidOperationException($"No knapping recipe makes {outputCode} from {material?.Collectible.Code.ToString() ?? "nothing"}.");
+
+        // The game's packets: select the recipe, then remove one voxel per packet (BEKnappingSurface.OnReceivedClientPacket).
+        be.OnReceivedClientPacket(player, SelectRecipePacket, SerializerUtil.Serialize((int)ProcessingDriver.Member(recipe, "RecipeId")!));
+        var required = (bool[,,])ProcessingDriver.Member(recipe, "Voxels")!;
+
+        for (int x = 0; x < 16; x++)
+        {
+            for (int z = 0; z < 16; z++)
+            {
+                if (!IsKnappingSurface(api, pos)) return;
+                if (!Voxels(be)[x, z] || required[x, 0, z]) continue;
+                be.OnReceivedClientPacket(player, UserOverPacket, UserOverData(x, 0, z));
+            }
+        }
+
+        if (!IsKnappingSurface(api, pos)) return;
+        bool[,] left = Voxels(be);
+        for (int x = 0; x < 16; x++)
+        {
+            for (int z = 0; z < 16; z++)
+            {
+                if (required[x, 0, z] && !left[x, z])
+                {
+                    throw new InvalidOperationException($"The knapping surface at {pos} lacks the voxel ({x}, {z}) that {outputCode} needs. Knapping only removes voxels.");
+                }
+            }
+        }
+
+        throw new InvalidOperationException($"The knapping surface at {pos} did not finish {outputCode}.");
+    }
+
+    private bool IsKnappingSurface(ICoreServerAPI api, BlockPos pos) =>
+        api.World.BlockAccessor.GetBlock(pos).Code.Path == KnappingSurface;
+
+    private static bool[,] Voxels(BlockEntity be) => (bool[,])ProcessingDriver.Member(be, "Voxels")!;
+
+    private static string? OutputCodeOf(object recipe) =>
+        ((JsonItemStack?)ProcessingDriver.Member(recipe, "Output"))?.ResolvedItemstack?.Collectible.Code.ToString();
+
+    private static CraftingRecipeIngredient IngredientOf(object recipe) =>
+        (CraftingRecipeIngredient)ProcessingDriver.Member(recipe, "Ingredient")!;
+
+    // The same packet the game's clients send (BEKnappingSurface.SendUseOverPacket, BEClayForm.SendUseOverPacket): a voxel, the
+    // mouse mode (true removes), and the face. The face is up, so the voxel is taken on its layer.
+    private static byte[] UserOverData(int x, int y, int z, bool mouseMode = true)
+    {
+        using var stream = new MemoryStream();
+        using (var writer = new BinaryWriter(stream))
+        {
+            writer.Write(x);
+            writer.Write(y);
+            writer.Write(z);
+            writer.Write(mouseMode);
+            writer.Write((ushort)BlockFacing.UP.Index);
+        }
+
+        return stream.ToArray();
     }
 
     // The enabled recipes that use an item in the grid, in the order the game collects them (InventoryCraftingGrid.FindMatchingRecipe).
