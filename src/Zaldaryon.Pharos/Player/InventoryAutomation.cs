@@ -283,7 +283,9 @@ public sealed class InventoryAutomation
     /// <param name="x">Grid X coordinate (0-2 for 3x3 grid).</param>
     /// <param name="y">Grid Y coordinate (0-2 for 3x3 grid).</param>
     /// <param name="itemCode">The item code to place, or null to clear.</param>
-    /// <returns>True if the slot was set.</returns>
+    /// <returns>
+    /// True if the slot was set. On a live inventory an item cannot be placed this way, so placing one returns false; clearing works.
+    /// </returns>
     public bool SetCraftingSlot(int x, int y, string? itemCode)
     {
         if (x < 0 || y < 0 || x > 2 || y > 2)
@@ -330,11 +332,12 @@ public sealed class InventoryAutomation
         if (string.IsNullOrEmpty(itemCode))
         {
             slot.Itemstack = null;
+            return true;
         }
-        // Note: Creating actual ItemStacks requires block/item registry access
-        // In headless scenarios this sets the slot to null first
 
-        return true;
+        // Placing an item needs a real stack, and this headless path has no item registry to make one, so nothing is placed.
+        // A player fills the grid with clicks: Client.Ui.Crafting.PlaceAsync does that on an engine-mode client.
+        return false;
     }
 
     /// <summary>

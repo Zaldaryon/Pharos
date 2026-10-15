@@ -340,6 +340,55 @@ public sealed class ServerTestPlayer : IServerTestPlayer, IDisposable
         });
     }
 
+    /// <summary>
+    /// The code of the item in a slot of one of the player's inventories on the server, such as the survival inventory's
+    /// <c>craftinggrid</c>, or null when the slot is empty or the player has no such inventory.
+    /// </summary>
+    /// <param name="inventoryClass">The inventory's class name, such as <c>craftinggrid</c>.</param>
+    /// <param name="slot">The slot index in that inventory.</param>
+    public string? SlotItem(string inventoryClass, int slot)
+    {
+        ArgumentNullException.ThrowIfNull(inventoryClass);
+
+        if (_player?.Entity is null || Api is null) return null;
+
+        return OnGameThread(() =>
+        {
+            IInventory? inventory = _player.InventoryManager?.Inventories?.Values?.FirstOrDefault(inv => inv.ClassName == inventoryClass);
+            if (inventory is null || slot < 0 || slot >= inventory.Count) return null;
+            return inventory[slot]?.Itemstack?.Collectible?.Code?.ToString();
+        });
+    }
+
+    /// <summary>The remaining durability of the first stack of an item the player holds on the server, or null when it holds none.</summary>
+    /// <param name="itemCode">The item's code, such as <c>game:knife-generic-flint</c>.</param>
+    public int? ItemDurability(string itemCode)
+    {
+        ArgumentNullException.ThrowIfNull(itemCode);
+
+        CollectibleObject? collectible = Resolve(itemCode);
+        if (_player?.Entity is null || Api is null || collectible is null) return null;
+
+        return OnGameThread(() =>
+        {
+            foreach (IInventory inv in _player.InventoryManager?.Inventories?.Values?.ToArray() ?? [])
+            {
+                if (inv.ClassName == GlobalConstants.creativeInvClassName) continue;
+
+                foreach (ItemSlot slot in inv)
+                {
+                    ItemStack? stack = slot?.Itemstack;
+                    if (stack?.Collectible?.Id == collectible.Id)
+                    {
+                        return (int?)stack.Collectible.GetRemainingDurability(stack);
+                    }
+                }
+            }
+
+            return null;
+        });
+    }
+
     /// <inheritdoc />
     public bool HasPrivilege(string privilege)
     {
