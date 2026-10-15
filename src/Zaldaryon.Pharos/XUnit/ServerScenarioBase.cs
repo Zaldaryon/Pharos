@@ -389,9 +389,31 @@ public abstract class ServerScenarioBase : IAsyncLifetime, IScenarioLifecycle
     // Why the server cannot be kept for the next test, before any rollback is tried.
     private string? WhyNotReusable(PooledServer pooled) =>
         !pooled.Host.IsRunning ? "the server stopped"
+        : pooled.Reloaded ? "the world was saved and booted again"
         : _run.TimedOut ? "the test timed out"
         : pooled.Sandbox.IsRetained ? "the sandbox was kept for inspection"
         : null;
+
+    /// <summary>
+    /// Saves the world, stops the server and boots it again on its save, so a test can compare what the save gives back. The
+    /// players the test joined are gone afterwards: join them again. Errors that the server logged while it saved are reported
+    /// before the restart, since the new server's logs start empty.
+    /// </summary>
+    /// <param name="ct">Cancellation token.</param>
+    /// <exception cref="InvalidOperationException">The server is not running, or it was not booted from this test's pool.</exception>
+    protected async Task ReloadWorldAsync(CancellationToken ct = default)
+    {
+        EmbeddedServerHost old = _host ?? throw new InvalidOperationException("The server is not running, so its world cannot be reloaded.");
+        PooledServer pooled = _pooled ?? throw new InvalidOperationException("The server was not booted for this test, so it cannot be reloaded.");
+
+        await old.SaveWorldAsync(ct).ConfigureAwait(false);
+        LoggedErrorGate.ThrowIfAny(LoggedErrorGate.Collect(FailOnLoggedErrors, AllowedLoggedErrors, old.Logs));
+
+        EmbeddedServerHost next = await old.RestartAsync(RestartMode.Graceful, ct).ConfigureAwait(false);
+        _testPlayers.Clear();
+        pooled.ReplaceHost(next);
+        _host = next;
+    }
 
     /// <summary>
     /// Joins a headless player into the server and returns it once it is playing. See
@@ -443,8 +465,32 @@ public abstract class ServerScenarioBase : IAsyncLifetime, IScenarioLifecycle
         public DataFileSet Files { get; } = files;
 
         public ServerSandbox Sandbox { get; } = sandbox;
-        public EmbeddedServerHost Host { get; } = host;
+        public EmbeddedServerHost Host { get; private set; } = host;
         public ServerPoolKey Key { get; } = key;
+
+        /// <summary>Whether the world was saved and booted again during the test, so it no longer matches the captured baseline.</summary>
+        public bool Reloaded { get; private set; }
+
+        /// <summary>
+        /// Puts a server that was booted again on the same save in place of the one the test started with. The baseline of the old
+        /// server does not describe the new one, so the server is not pooled for another test.
+        /// </summary>
+        public void ReplaceHost(EmbeddedServerHost next)
+        {
+            try
+            {
+                _tracking?.Dispose();
+            }
+            catch
+            {
+                // The old server is stopped already; its tracking has nothing left to undo.
+            }
+
+            _tracking = null;
+            _baseline = null;
+            Host = next;
+            Reloaded = true;
+        }
 
         /// <summary>Captures the world as booted, for <see cref="TryRollback"/>.</summary>
         public void TakeBaseline()

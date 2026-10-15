@@ -78,6 +78,20 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime, IScenarioLifecy
     protected EmbeddedServerHost? ServerHost => _serverHost;
 
     /// <summary>
+    /// Saves the world, stops the server and boots it again on its save, and joins the client to the new server. The save's
+    /// errors are reported before the restart, since the new server's logs start empty. See <see cref="RestartServerAsync"/>.
+    /// </summary>
+    /// <param name="ct">Cancellation token.</param>
+    /// <exception cref="InvalidOperationException">The session is not running.</exception>
+    protected async Task ReloadWorldAsync(CancellationToken ct = default)
+    {
+        EmbeddedServerHost old = _serverHost ?? throw new InvalidOperationException("The server is not running, so its world cannot be reloaded.");
+        await old.SaveWorldAsync(ct).ConfigureAwait(false);
+        LoggedErrorGate.ThrowIfAny(LoggedErrorGate.Collect(FailOnLoggedErrors, AllowedLoggedErrors, old.Logs));
+        await RestartServerAsync(RestartMode.Graceful, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
     /// Restarts the server the client is joined to, on its save, and joins the client to the new server as the same player. The new server
     /// becomes <see cref="ServerHost"/>, and the scenario disposes it at the end.
     /// </summary>
