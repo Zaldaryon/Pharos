@@ -654,7 +654,7 @@ public sealed record WorldSnapshot : IWorldSnapshot
     /// Empties the map's one-chunk lookup cache, so its next lookup reads the loaded chunk table again. The cache
     /// is read and written under the loaded chunk table's lock, which is the lock taken here.
     /// </summary>
-    private static void ForgetCachedChunk(ServerMain server)
+    internal static void ForgetCachedChunk(ServerMain server)
     {
         ServerWorldMap map = server.WorldMap;
         lock (ServerInternals.LoadedChunks(server))

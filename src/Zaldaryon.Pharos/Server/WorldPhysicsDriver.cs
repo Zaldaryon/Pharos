@@ -145,6 +145,34 @@ public sealed class WorldPhysicsDriver
         lock (map.LightingTasksLock) return map.LightingTasks.Count;
     });
 
+    /// <summary>
+    /// Unloads the chunk columns under a box, as the server does when no player is near them: each changed chunk is written to the
+    /// save, and the server forgets it. The next read or edit of those blocks loads them from the save again, or <see cref="ReloadChunksAsync"/> does it now.
+    /// </summary>
+    /// <param name="min">One corner of the box, inclusive.</param>
+    /// <param name="max">The opposite corner, inclusive.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="min"/> or <paramref name="max"/> is null.</exception>
+    /// <exception cref="InvalidOperationException">A player stands in one of the columns, or the game's unloading system is missing.</exception>
+    public Task UnloadChunksAsync(BlockPos min, BlockPos max)
+    {
+        ArgumentNullException.ThrowIfNull(min);
+        ArgumentNullException.ThrowIfNull(max);
+        if (_host.IsOnGameThread) throw new InvalidOperationException("UnloadChunksAsync waits for the game thread and cannot run on it.");
+        _host.UnloadChunks(min, max);
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Loads the chunks under a box from the save, keeping their columns loaded, and ticks the server until they are there. The
+    /// chunks that were unloaded come back as new objects, with what the save held.
+    /// </summary>
+    /// <param name="min">One corner of the box, inclusive.</param>
+    /// <param name="max">The opposite corner, inclusive.</param>
+    /// <param name="ct">Cancels the wait.</param>
+    /// <exception cref="TimeoutException">The chunks did not load in time.</exception>
+    public Task ReloadChunksAsync(BlockPos min, BlockPos max, CancellationToken ct = default) =>
+        _host.EnsureChunksLoadedAsync(min, max, ct: ct);
+
     private ICoreServerAPI ServerApi => (ICoreServerAPI)_host.Server.Api;
 
     private int FallingBlocksAlive() => _host.RunOnGameThread(() =>
