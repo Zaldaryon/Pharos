@@ -154,6 +154,11 @@ public sealed partial class EmbeddedServerHost : IDisposable, IAsyncDisposable
 
     private ProcessingDriver? _processing;
 
+    /// <summary>Matches crafting grids against the game's recipes, and explains a grid that matches none.</summary>
+    public RecipeDriver Recipes => _recipes ??= new RecipeDriver(this);
+
+    private RecipeDriver? _recipes;
+
     /// <summary>
     /// Records the server's game events, such as blocks placed and entities dying, to assert on.
     /// See <see cref="Zaldaryon.Pharos.Events.ServerEventRecorder"/>.
