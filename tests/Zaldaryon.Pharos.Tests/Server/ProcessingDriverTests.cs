@@ -3,6 +3,7 @@ using Vintagestory.API.Common.Entities;
 using Vintagestory.API.MathTools;
 using Zaldaryon.Pharos.Assertions;
 using Zaldaryon.Pharos.Server;
+using Zaldaryon.Pharos.Tests.Support;
 using Zaldaryon.Pharos.XUnit;
 using Xunit;
 
@@ -13,7 +14,7 @@ public sealed class ProcessingDriverTests : ServerScenarioBase
     [ServerScenario]
     public async Task Firepit_CooksRawFishOnFirewoodLitWithATorch()
     {
-        ServerTestPlayer player = await CreateTestPlayerAsync("FirepitCook");
+        ServerTestPlayer player = await CreateTestPlayerAsync(PlayerNames.Next());
         BlockPos pos = PlaceBlock(player, "game:firepit-extinct");
         FirepitFacade firepit = Host!.Processing.Firepit(pos);
         player.GiveItem("game:torch-basic-lit-up");
@@ -33,9 +34,68 @@ public sealed class ProcessingDriverTests : ServerScenarioBase
     }
 
     [ServerScenario]
+    public async Task Firepit_FillsReportTheChangedSlotToTheGame()
+    {
+        ServerTestPlayer player = await CreateTestPlayerAsync(PlayerNames.Next());
+        BlockPos pos = PlaceBlock(player, "game:firepit-extinct");
+        FirepitFacade firepit = Host!.Processing.Firepit(pos);
+        var changed = new List<int>();
+
+        using (firepit.WatchSlotChanges(changed.Add))
+        {
+            firepit.Fill(FirepitSlot.Input, "game:fish-raw", 1).Fill(FirepitSlot.Fuel, "game:firewood", 2);
+            firepit.AddFuel("game:firewood", 1);
+        }
+
+        // Each write reaches the game's slot-modified event, which is what syncs a slot to the clients.
+        Assert.Equal(new[] { (int)FirepitSlot.Input, (int)FirepitSlot.Fuel, (int)FirepitSlot.Fuel }, changed);
+        Assert.Equal(3, firepit.FuelLeft);
+    }
+
+    [ServerScenario]
+    public async Task Firepit_CatchesWithAFirestarterTurnedLongEnough()
+    {
+        ServerTestPlayer player = await CreateTestPlayerAsync(PlayerNames.Next());
+        Host!.Random.Seed(4243);
+        BlockPos pos = PlaceBlock(player, "game:firepit-extinct");
+        FirepitFacade firepit = Host.Processing.Firepit(pos).Fill(FirepitSlot.Fuel, "game:firewood", 2);
+        player.GiveItem("game:firestarter");
+
+        firepit.IgniteWithFirestarter(player, secondsHeld: 4);
+        await firepit.RunAsync(TimeSpan.FromSeconds(10));
+
+        Assert.True(firepit.State.Burning, "The firestarter did not light the firewood.");
+    }
+
+    [ServerScenario]
+    public async Task Firepit_DoesNotCatchFromAFirestarterTurnedTooBriefly()
+    {
+        ServerTestPlayer player = await CreateTestPlayerAsync(PlayerNames.Next());
+        BlockPos pos = PlaceBlock(player, "game:firepit-extinct");
+        FirepitFacade firepit = Host!.Processing.Firepit(pos).Fill(FirepitSlot.Fuel, "game:firewood", 2);
+        player.GiveItem("game:firestarter");
+
+        // Under three seconds the firepit is not yet ignitable, so no turn can catch it.
+        InvalidOperationException error = Assert.Throws<InvalidOperationException>(() => firepit.IgniteWithFirestarter(player, secondsHeld: 1, attempts: 5));
+
+        Assert.Contains("did not catch", error.Message);
+        Assert.False(firepit.State.Burning);
+    }
+
+    [ServerScenario]
+    public async Task GeneratedPlayerNames_AtTheLimit_JoinTheServer()
+    {
+        string name = PlayerNames.Next();
+        ServerTestPlayer player = await CreateTestPlayerAsync(name);
+
+        Assert.Equal(PlayerNames.MaxLength, name.Length);
+        Assert.Equal(name, player.PlayerName);
+    }
+
+    [ServerScenario]
     public async Task Firepit_NeedsALitTorchToCatch()
     {
-        ServerTestPlayer player = await CreateTestPlayerAsync("FirepitNoTorch");
+        ServerTestPlayer player = await CreateTestPlayerAsync(PlayerNames.Next());
         BlockPos pos = PlaceBlock(player, "game:firepit-extinct");
         FirepitFacade firepit = Host!.Processing.Firepit(pos).Fill(FirepitSlot.Fuel, "game:firewood", 1);
 
@@ -46,9 +106,27 @@ public sealed class ProcessingDriverTests : ServerScenarioBase
     }
 
     [ServerScenario]
+    public async Task Barrel_MeadIsReadyAfterItsFourteenDaysOfSealing()
+    {
+        ServerTestPlayer player = await CreateTestPlayerAsync(PlayerNames.Next());
+        BlockPos pos = PlaceBlock(player, "game:barrel");
+        BarrelFacade barrel = Host!.Processing.Barrel(pos);
+
+        // Honey is 100 portions to the litre, so 0.1 litres of honey is 10 portions, and the mead recipe seals for 336 hours.
+        barrel.Fill(BarrelSlot.Liquid, "game:honeyportion", 10).Seal();
+
+        await barrel.RunAsync(TimeSpan.FromDays(13.5));
+        Assert.NotEqual("game:ciderportion-mead", barrel.State.Liquid?.Code);
+
+        await barrel.RunAsync(TimeSpan.FromDays(1));
+        PharosAssert.Produces(barrel.State.Liquid, "game:ciderportion-mead", 10);
+        Assert.Null(barrel.State.Items);
+    }
+
+    [ServerScenario]
     public async Task Barrel_SpeltCiderIsNotReadyBeforeItsSealingTime()
     {
-        ServerTestPlayer player = await CreateTestPlayerAsync("BarrelCider");
+        ServerTestPlayer player = await CreateTestPlayerAsync(PlayerNames.Next());
         BlockPos pos = PlaceBlock(player, "game:barrel");
         BarrelFacade barrel = Host!.Processing.Barrel(pos);
 
@@ -69,9 +147,33 @@ public sealed class ProcessingDriverTests : ServerScenarioBase
     }
 
     [ServerScenario]
+    public async Task FiredClayPot_CooksPorridgeInAnotherColourOfPot()
+    {
+        ServerTestPlayer player = await CreateTestPlayerAsync(PlayerNames.Next());
+        BlockPos pos = PlaceBlock(player, "game:firepit-extinct");
+        FirepitFacade firepit = Host!.Processing.Firepit(pos);
+        player.GiveItem("game:torch-basic-lit-up");
+
+        // Porridge is grains alone, at least two grain stacks, each in its own slot. Each stack counts once toward the
+        // recipe's minimum, so one stack of three grains would not match. It has no water ingredient.
+        firepit.Fill(FirepitSlot.Fuel, "game:firewood", 6).Fill(FirepitSlot.Input, "game:claypot-red-fired", 1)
+            .FillCookingSlot(0, "game:grain-spelt", 1)
+            .FillCookingSlot(1, "game:grain-spelt", 1);
+        firepit.IgniteWithTorch(player, secondsHeld: 4);
+
+        // Each firewood piece burns for 24 seconds, so the cook keeps the fire fed, as a player does.
+        for (int minute = 0; minute < 16 && firepit.State.Output is null; minute++)
+        {
+            if (firepit.FuelLeft < 2) firepit.AddFuel("game:firewood", 3);
+            await firepit.RunAsync(TimeSpan.FromSeconds(30));
+        }
+
+    }
+
+    [ServerScenario]
     public async Task FiredClayPot_CooksASoupOverAFirewoodFire()
     {
-        ServerTestPlayer player = await CreateTestPlayerAsync("PotSoup");
+        ServerTestPlayer player = await CreateTestPlayerAsync(PlayerNames.Next());
         BlockPos pos = PlaceBlock(player, "game:firepit-extinct");
         FirepitFacade firepit = Host!.Processing.Firepit(pos);
         player.GiveItem("game:torch-basic-lit-up");
@@ -91,9 +193,23 @@ public sealed class ProcessingDriverTests : ServerScenarioBase
     }
 
     [ServerScenario]
+    public async Task Quern_GrindsWhenTheHandleIsHeldThroughPackets()
+    {
+        ServerTestPlayer player = await CreateTestPlayerAsync(PlayerNames.Next());
+        BlockPos pos = PlaceBlock(player, "game:quern-granite");
+        QuernFacade quern = Host!.Processing.Quern(pos).Fill("game:grain-spelt", 1);
+
+        await quern.GrindThroughPacketsAsync(player, TimeSpan.FromSeconds(8));
+
+        QuernState done = quern.State;
+        Assert.Null(done.Input);
+        PharosAssert.Produces(done.Output, "game:flour-spelt", 1);
+    }
+
+    [ServerScenario]
     public async Task Quern_GrindsGrainIntoFlourOnlyWhileAPlayerHoldsTheHandle()
     {
-        ServerTestPlayer player = await CreateTestPlayerAsync("QuernGrind");
+        ServerTestPlayer player = await CreateTestPlayerAsync(PlayerNames.Next());
         BlockPos pos = PlaceBlock(player, "game:quern-granite");
         QuernFacade quern = Host!.Processing.Quern(pos).Fill("game:grain-spelt", 1);
 
@@ -111,7 +227,7 @@ public sealed class ProcessingDriverTests : ServerScenarioBase
     [ServerScenario]
     public async Task ClayOven_BakesSpeltBreadOnceTheFireIsOutAndTheOvenIsStillHot()
     {
-        ServerTestPlayer player = await CreateTestPlayerAsync("OvenBread");
+        ServerTestPlayer player = await CreateTestPlayerAsync(PlayerNames.Next());
         BlockPos pos = PlaceBlock(player, "game:clayoven-north");
         OvenFacade oven = Host!.Processing.Oven(pos);
         player.GiveItem("game:torch-basic-lit-up");
@@ -135,6 +251,33 @@ public sealed class ProcessingDriverTests : ServerScenarioBase
             perfect = oven.State.Slots.Any(slot => slot?.Code == "game:bread-spelt-perfect");
         }
         Assert.True(perfect, "The dough did not bake to a perfect loaf in the oven's remaining heat.");
+    }
+
+    [ServerScenario]
+    public async Task ClayOven_BreadPassesThroughPartbakedThenPerfectThenCharred()
+    {
+        ServerTestPlayer player = await CreateTestPlayerAsync(PlayerNames.Next());
+        BlockPos pos = PlaceBlock(player, "game:clayoven-north");
+        OvenFacade oven = Host!.Processing.Oven(pos);
+        player.GiveItem("game:torch-basic-lit-up");
+
+        oven.Fill(OvenSlot.First, "game:firewood", 6).IgniteWithTorch(player, secondsHeld: 5);
+        for (int i = 0; i < 600 && oven.State.Burning; i++) await oven.RunAsync(TimeSpan.FromSeconds(1));
+        oven.RemoveFuel().PutIn("game:dough-spelt");
+
+        // The stages follow the bake levels in the dough's and the bread's baking properties: partbaked to a
+        // quarter, perfect to a half, and charred to three quarters. Record each stage in the order it appears.
+        var order = new List<string>();
+        for (int i = 0; i < 400 && !order.Contains("game:bread-spelt-charred"); i++)
+        {
+            await oven.RunAsync(TimeSpan.FromSeconds(30));
+            foreach (var slot in oven.State.Slots)
+            {
+                if (slot is { Code: { } code } && code.StartsWith("game:bread-spelt-", StringComparison.Ordinal) && !order.Contains(code)) order.Add(code);
+            }
+        }
+
+        Assert.Equal(new[] { "game:bread-spelt-partbaked", "game:bread-spelt-perfect", "game:bread-spelt-charred" }, order);
     }
 
     private BlockPos PlaceBlock(ServerTestPlayer player, string blockCode)

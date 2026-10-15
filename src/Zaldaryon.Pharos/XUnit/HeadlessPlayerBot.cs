@@ -264,7 +264,7 @@ public sealed class HeadlessPlayerBot
         }
     }
 
-    private void SendHandUsePacket(BlockPos position, BlockFacing face, EnumHandInteract useType, EnumHandInteractNw interaction) => Send(new Packet_Client
+    private void SendHandUsePacket(BlockPos position, BlockFacing face, EnumHandInteract useType, EnumHandInteractNw interaction, Vec3d? hit = null, int selectionBoxIndex = 0) => Send(new Packet_Client
     {
         Id = 25,
         HandInteraction = new Packet_ClientHandInteraction
@@ -275,13 +275,38 @@ public sealed class HeadlessPlayerBot
             Y = position.Y,
             Z = position.Z,
             OnBlockFace = face.Index,
-            HitX = CollectibleNet.SerializeDoublePrecise(0.5),
-            HitY = CollectibleNet.SerializeDoublePrecise(0.5),
-            HitZ = CollectibleNet.SerializeDoublePrecise(0.5),
+            HitX = CollectibleNet.SerializeDoublePrecise(hit?.X ?? 0.5),
+            HitY = CollectibleNet.SerializeDoublePrecise(hit?.Y ?? 0.5),
+            HitZ = CollectibleNet.SerializeDoublePrecise(hit?.Z ?? 0.5),
             EnumHandInteract = (int)interaction,
+            SelectionBoxIndex = selectionBoxIndex,
             FirstEvent = interaction is EnumHandInteractNw.StartBlockUse or EnumHandInteractNw.StartHeldItemUse ? 1 : 0,
         },
     });
+
+    /// <summary>
+    /// Sends the start of a held block use through the hand-interaction packet, at a point on the block. The server
+    /// picks the block's selection box from that point, so a quern's handle is hit at a height in its top part.
+    /// </summary>
+    /// <param name="position">The block position.</param>
+    /// <param name="hit">The hit point on the block, from 0 to 1 on each axis.</param>
+    /// <param name="selectionBoxIndex">The block's selection box the hit is in: 0 for the base, 1 for a quern's handle.</param>
+    public void SendBlockUseStart(BlockPos position, Vec3d hit, int selectionBoxIndex = 0) =>
+        SendHandUsePacket(position, BlockFacing.UP, EnumHandInteract.BlockInteract, EnumHandInteractNw.StartBlockUse, hit, selectionBoxIndex);
+
+    /// <summary>Sends one step of a held block use, as a client does every frame the button stays down.</summary>
+    /// <param name="position">The block position.</param>
+    /// <param name="hit">The hit point on the block, from 0 to 1 on each axis.</param>
+    /// <param name="selectionBoxIndex">The block's selection box the hit is in: 0 for the base, 1 for a quern's handle.</param>
+    public void SendBlockUseStep(BlockPos position, Vec3d hit, int selectionBoxIndex = 0) =>
+        SendHandUsePacket(position, BlockFacing.UP, EnumHandInteract.BlockInteract, EnumHandInteractNw.StepBlockUse, hit, selectionBoxIndex);
+
+    /// <summary>Sends the end of a held block use, as a client does when the button is released.</summary>
+    /// <param name="position">The block position.</param>
+    /// <param name="hit">The hit point on the block, from 0 to 1 on each axis.</param>
+    /// <param name="selectionBoxIndex">The block's selection box the hit is in: 0 for the base, 1 for a quern's handle.</param>
+    public void SendBlockUseStop(BlockPos position, Vec3d hit, int selectionBoxIndex = 0) =>
+        SendHandUsePacket(position, BlockFacing.UP, EnumHandInteract.BlockInteract, EnumHandInteractNw.StopBlockUse, hit, selectionBoxIndex);
 
     /// <summary>
     /// Moves items between two inventories the server has opened for this player through packet 8.

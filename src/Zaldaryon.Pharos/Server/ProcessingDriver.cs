@@ -71,8 +71,7 @@ public sealed class FirepitFacade
             ItemSlot target = Inventory()[(int)slot];
             CollectibleObject collectible = ProcessingDriver.CollectibleNamed(ServerApi.World, code);
             target.Itemstack = new ItemStack(collectible, quantity);
-            target.MarkDirty();
-            ProcessingDriver.SyncBlockEntity((BlockEntity)Block());
+            ProcessingDriver.MarkSlot((BlockEntity)Block(), target);
         });
         return this;
     }
@@ -153,8 +152,75 @@ public sealed class FirepitFacade
         return (recipe, output!.Attributes.GetInt("quantityServings", 1));
     });
 
+    /// <summary>
+    /// Listens for the firepit's inventory slots changing, as the game's sync does. The listener gets the slot index.
+    /// Dispose the returned handle to stop listening.
+    /// </summary>
+    /// <param name="onChanged">Called with the index of each changed slot.</param>
+    public IDisposable WatchSlotChanges(Action<int> onChanged)
+    {
+        ArgumentNullException.ThrowIfNull(onChanged);
+        InventoryBase inventory = _host.RunOnGameThread(() => Inventory());
+        return _host.RunOnGameThread(() => new SlotWatch(inventory, onChanged));
+    }
+
+    private sealed class SlotWatch : IDisposable
+    {
+        private readonly InventoryBase _inventory;
+        private readonly Action<int> _onChanged;
+
+        public SlotWatch(InventoryBase inventory, Action<int> onChanged)
+        {
+            _inventory = inventory;
+            _onChanged = onChanged;
+            _inventory.SlotModified += _onChanged;
+        }
+
+        public void Dispose() => _inventory.SlotModified -= _onChanged;
+    }
+
     /// <summary>The pieces of fuel left in the fuel slot.</summary>
     public int FuelLeft => _host.RunOnGameThread(() => Inventory()[(int)FirepitSlot.Fuel].Itemstack?.StackSize ?? 0);
+
+    /// <summary>
+    /// Lights the firepit with a firestarter, the hand drill the player turns against it. The drill turns for
+    /// the given seconds, and each finished turn has a one-in-four chance of catching, as the game's firestarter does.
+    /// The turns are repeated until the firepit catches, or until the attempts run out.
+    /// </summary>
+    /// <param name="player">The joined player who holds the firestarter.</param>
+    /// <param name="secondsHeld">How long each turn lasts, in seconds. The firepit lights only after more than three.</param>
+    /// <param name="attempts">The most turns to try.</param>
+    /// <returns>This facade.</returns>
+    /// <exception cref="InvalidOperationException">The player does not hold a firestarter, the turn is too short, or the firepit did not catch.</exception>
+    public FirepitFacade IgniteWithFirestarter(ServerTestPlayer player, double secondsHeld = 4, int attempts = 40)
+    {
+        ArgumentNullException.ThrowIfNull(player);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(secondsHeld);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(attempts);
+        _host.RunOnGameThread(() =>
+        {
+            EntityAgent entity = player.Entity ?? throw new InvalidOperationException($"{player.PlayerUID} has not joined the server.");
+            ItemSlot hand = entity.RightHandItemSlot;
+            string held = hand.Itemstack?.Collectible.Code.ToString() ?? "nothing";
+            if (!string.Equals(held, "game:firestarter", StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException($"The player holds {held}, not a firestarter.");
+            }
+
+            Block firepit = ServerApi.World.BlockAccessor.GetBlock(_pos);
+            BlockSelection selection = new(_pos.Copy(), BlockFacing.UP, firepit);
+            CollectibleObject drill = hand.Itemstack.Collectible;
+            for (int attempt = 0; attempt < attempts; attempt++)
+            {
+                if (hand.Empty) throw new InvalidOperationException("The firestarter broke before the firepit caught.");
+                drill.GetType().GetMethod("OnHeldInteractStop")!.Invoke(drill, [(float)secondsHeld, hand, entity, selection, null]);
+                if ((bool)(ProcessingDriver.Member(Block(), "canIgniteFuel") ?? false)) return;
+            }
+
+            throw new InvalidOperationException($"The firepit did not catch after {attempts} turns of {secondsHeld} s.");
+        });
+        return this;
+    }
 
     /// <summary>Adds firewood to the fuel slot as a player does while the fire burns. Stacks merge, as they do in the game.</summary>
     /// <param name="code">The fuel item code, such as <c>game:firewood</c>.</param>
@@ -180,8 +246,7 @@ public sealed class FirepitFacade
             {
                 throw new InvalidOperationException($"The fuel slot holds {fuel.Itemstack.Collectible.Code}, not {code}.");
             }
-            fuel.MarkDirty();
-            ProcessingDriver.SyncBlockEntity((BlockEntity)Block());
+            ProcessingDriver.MarkSlot((BlockEntity)Block(), Inventory()[(int)FirepitSlot.Fuel]);
         });
         return this;
     }
@@ -256,8 +321,7 @@ public sealed class BarrelFacade
             ItemSlot target = Inventory()[(int)slot];
             CollectibleObject collectible = ProcessingDriver.CollectibleNamed(ServerApi.World, code);
             target.Itemstack = new ItemStack(collectible, quantity);
-            target.MarkDirty();
-            ProcessingDriver.SyncBlockEntity((BlockEntity)Block());
+            ProcessingDriver.MarkSlot((BlockEntity)Block(), target);
         });
         return this;
     }
@@ -317,6 +381,9 @@ public sealed record QuernState((string Code, int Quantity)? Input, (string Code
 /// <summary>Fills and reads a quern, and grinds by a player holding the quern's handle for a span of game time.</summary>
 public sealed class QuernFacade
 {
+    /// <summary>The quern's selection box for its handle, the top part, as the game numbers it.</summary>
+    private const int QuernHandleBox = 1;
+
     /// <summary>How often the holding player's interaction is renewed in simulated time. The server drops a grinder after one second without one.</summary>
     private static readonly TimeSpan RenewEvery = TimeSpan.FromMilliseconds(200);
 
@@ -342,8 +409,7 @@ public sealed class QuernFacade
             ItemSlot target = (ItemSlot)ProcessingDriver.Member(Block(), "InputSlot")!;
             CollectibleObject collectible = ProcessingDriver.CollectibleNamed(ServerApi.World, code);
             target.Itemstack = new ItemStack(collectible, quantity);
-            target.MarkDirty();
-            ProcessingDriver.SyncBlockEntity((BlockEntity)Block());
+            ProcessingDriver.MarkSlot((BlockEntity)Block(), target);
         });
         return this;
     }
@@ -396,6 +462,45 @@ public sealed class QuernFacade
         finally
         {
             _host.RunOnGameThread(() => Interact(byPlayer, handle, "OnBlockInteractStop", (float)span.TotalSeconds));
+        }
+    }
+
+    /// <summary>
+    /// Grinds for a span of game time by sending the handle interaction as packets, the way a client does: the start,
+    /// a step every 200 simulated milliseconds while the button stays down, and the stop. Each step is processed by the
+    /// server's tick, and the grinder's tick listener runs over the same simulated time.
+    /// </summary>
+    /// <param name="player">The joined player who holds the handle.</param>
+    /// <param name="span">The game time to hold the handle for.</param>
+    /// <param name="ct">Cancellation token.</param>
+    public async Task GrindThroughPacketsAsync(ServerTestPlayer player, TimeSpan span, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(player);
+        ArgumentOutOfRangeException.ThrowIfLessThan(span, TimeSpan.Zero);
+        // The top part of the quern, above 0.6875 of its height, is the handle's selection box.
+        Vec3d handle = new(0.5, 0.85, 0.5);
+        _host.RunOnGameThread(() => player.Bot.SendBlockUseStart(_pos.Copy(), handle, QuernHandleBox));
+        _host.Tick();
+        await Task.Delay(1, ct).ConfigureAwait(false);
+        try
+        {
+            TimeSpan played = TimeSpan.Zero;
+            while (played < span)
+            {
+                ct.ThrowIfCancellationRequested();
+                TimeSpan slice = span - played < RenewEvery ? span - played : RenewEvery;
+                _host.RunOnGameThread(() => player.Bot.SendBlockUseStep(_pos.Copy(), handle, QuernHandleBox));
+                _host.Tick();
+                await Task.Delay(1, ct).ConfigureAwait(false);
+                await _host.TickListeners.FastForwardAsync(_pos, slice, ct: ct);
+                played += slice;
+            }
+        }
+        finally
+        {
+            _host.RunOnGameThread(() => player.Bot.SendBlockUseStop(_pos.Copy(), handle, QuernHandleBox));
+            _host.Tick();
+            await Task.Delay(1).ConfigureAwait(false);
         }
     }
 
@@ -466,8 +571,7 @@ public sealed class OvenFacade
             ItemSlot target = ProcessingDriver.InventoryOf(Block())[(int)slot];
             CollectibleObject collectible = ProcessingDriver.CollectibleNamed(ServerApi.World, code);
             target.Itemstack = new ItemStack(collectible, quantity);
-            target.MarkDirty();
-            ProcessingDriver.SyncBlockEntity((BlockEntity)Block());
+            ProcessingDriver.MarkSlot((BlockEntity)Block(), target);
         });
         return this;
     }
@@ -542,8 +646,7 @@ public sealed class OvenFacade
             if ((bool)ProcessingDriver.Member(Block(), "IsBurning")!) throw new InvalidOperationException("The oven is still burning, so its fuel cannot be removed.");
             ItemSlot first = ProcessingDriver.InventoryOf(Block())[0];
             first.Itemstack = null;
-            first.MarkDirty();
-            ProcessingDriver.SyncBlockEntity((BlockEntity)Block());
+            ProcessingDriver.MarkSlot((BlockEntity)Block(), first);
         });
         return this;
     }
@@ -589,6 +692,16 @@ public sealed class ProcessingDriver
 
     /// <summary>Marks a block entity dirty with a sync, so its inventory reaches the clients as the game sends it.</summary>
     internal static void SyncBlockEntity(BlockEntity blockEntity) => blockEntity.MarkDirty(true);
+
+    /// <summary>
+    /// Reports a changed slot the way the game does: the slot's own <c>MarkDirty</c> tells its inventory, which fires the
+    /// slot-modified event that the block entity listens to for syncing. The block entity is then marked dirty with a sync.
+    /// </summary>
+    internal static void MarkSlot(BlockEntity blockEntity, ItemSlot slot)
+    {
+        slot.MarkDirty();
+        SyncBlockEntity(blockEntity);
+    }
 
     /// <summary>The item or block with a code. Containers such as the clay pot are blocks, so both are searched.</summary>
     internal static CollectibleObject CollectibleNamed(IWorldAccessor world, string code)
