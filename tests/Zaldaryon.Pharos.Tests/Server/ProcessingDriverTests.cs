@@ -106,6 +106,30 @@ public sealed class ProcessingDriverTests : ServerScenarioBase
     }
 
     [ServerScenario]
+    public async Task FiredClayPot_CooksPorridgeInAnotherColourOfPot()
+    {
+        ServerTestPlayer player = await CreateTestPlayerAsync("PotPorridge");
+        BlockPos pos = PlaceBlock(player, "game:firepit-extinct");
+        FirepitFacade firepit = Host!.Processing.Firepit(pos);
+        player.GiveItem("game:torch-basic-lit-up");
+
+        // Porridge is grains alone, at least two grain stacks, each in its own slot. Each stack counts once toward the
+        // recipe's minimum, so one stack of three grains would not match. It has no water ingredient.
+        firepit.Fill(FirepitSlot.Fuel, "game:firewood", 6).Fill(FirepitSlot.Input, "game:claypot-red-fired", 1)
+            .FillCookingSlot(0, "game:grain-spelt", 1)
+            .FillCookingSlot(1, "game:grain-spelt", 1);
+        firepit.IgniteWithTorch(player, secondsHeld: 4);
+
+        // Each firewood piece burns for 24 seconds, so the cook keeps the fire fed, as a player does.
+        for (int minute = 0; minute < 16 && firepit.State.Output is null; minute++)
+        {
+            if (firepit.FuelLeft < 2) firepit.AddFuel("game:firewood", 3);
+            await firepit.RunAsync(TimeSpan.FromSeconds(30));
+        }
+
+    }
+
+    [ServerScenario]
     public async Task FiredClayPot_CooksASoupOverAFirewoodFire()
     {
         ServerTestPlayer player = await CreateTestPlayerAsync("PotSoup");
