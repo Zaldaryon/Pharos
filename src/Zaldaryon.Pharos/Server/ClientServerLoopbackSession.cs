@@ -49,7 +49,7 @@ public sealed partial class ClientServerLoopbackSession : IDisposable
     public AtlasServerHost? Server { get; }
 
     /// <summary>Gets the native embedded server host, or null if using legacy Atlas server.</summary>
-    public EmbeddedServerHost? NativeServer { get; }
+    public EmbeddedServerHost? NativeServer { get; private set; }
 
     /// <summary>Gets the client's test player interface.</summary>
     public IClientTestPlayer Player => Client.TestPlayer;
@@ -251,11 +251,57 @@ public sealed partial class ClientServerLoopbackSession : IDisposable
         Client.RunOnClientThread(() => Bootstrap.EngineGameSession.End(Client));
         _link.Detach();
 
-        (Vintagestory.Common.DummyNetwork network, int slot) = server.PrepareReconnect(_playerName, _reconnectSlot);
+        await JoinAgainAsync(server, maxFrames, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Restarts the server the client is joined to, and joins the client to the new server as the same player: the server
+    /// restarts as <see cref="EmbeddedServerHost.RestartAsync"/> does, then the client joins over a fresh in-memory connection.
+    /// The client keeps its window and drivers.
+    /// </summary>
+    /// <remarks>
+    /// With <see cref="RestartMode.Crash"/>, changes the server had not saved are gone when the client joins again. The restart
+    /// counts as a reconnect, so the pair of hosts is not pooled for another test.
+    /// </remarks>
+    /// <param name="mode">How the server stops. See <see cref="RestartMode"/>.</param>
+    /// <param name="maxFrames">How many frames to wait for the client to join the new server.</param>
+    /// <param name="ct">Cancels the wait.</param>
+    /// <exception cref="ObjectDisposedException">The session was disposed.</exception>
+    /// <exception cref="InvalidOperationException">The client is in fixture mode, or the server stopped.</exception>
+    /// <exception cref="NotSupportedException">The session has no in-memory link to restart over.</exception>
+    /// <exception cref="TimeoutException">The client did not join the new server within <paramref name="maxFrames"/>.</exception>
+    public async Task RestartServerAsync(RestartMode mode = RestartMode.Graceful, int maxFrames = 1200, CancellationToken ct = default)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxFrames);
+        if (!Client.IsEngineMode) throw new InvalidOperationException("Only an engine-mode client can follow a restarted server.");
+        EmbeddedServerHost old = NativeServer ?? throw new NotSupportedException("Restarting needs a session with an embedded server.");
+        if (_link == null || _playerName == null) throw new NotSupportedException("Only a client joined over the in-memory link can follow a restarted server.");
+        if (!old.IsRunning) throw new InvalidOperationException("The server has stopped.");
+
+        // The client leaves its game session before the server goes, as a player does when the connection drops.
+        if (!Client.Client.disposed) Client.Controls.ReleaseAll();
+        Client.RunOnClientThread(() => Bootstrap.EngineGameSession.End(Client));
+        _link.Detach();
+        IsConnected = false;
+
+        EmbeddedServerHost next = await old.RestartAsync(mode, ct).ConfigureAwait(false);
+        NativeServer = next;
+        next.SessionStepper = _serverStepper;
+        next.MarkLoopbackClientAttached();
+        _reconnectSlot = -1;
+
+        await JoinAgainAsync(next, maxFrames, ct).ConfigureAwait(false);
+    }
+
+    // Joins the client to a server over a new in-memory connection, and waits until it has joined.
+    private async Task JoinAgainAsync(EmbeddedServerHost server, int maxFrames, CancellationToken ct)
+    {
+        (Vintagestory.Common.DummyNetwork network, int slot) = server.PrepareReconnect(_playerName!, _reconnectSlot);
         _reconnectSlot = slot;
 
         (LoopbackLink link, LinkedTcpNetClient tcp, LinkedUdpNetClient udp) = Client.RunOnClientThread(
-            () => Bootstrap.EngineGameSession.Start(Client, _playerName, network, server.UdpNetwork));
+            () => Bootstrap.EngineGameSession.Start(Client, _playerName!, network, server.UdpNetwork));
         _link = link;
         _linkTcp = tcp;
         _linkUdp = udp;
@@ -268,7 +314,7 @@ public sealed partial class ClientServerLoopbackSession : IDisposable
         if (!await StepUntilAsync(() => HasJoined || Client.Client.disposed, maxFrames, ct: ct).ConfigureAwait(false) || !HasJoined)
         {
             string reason = Client.RunOnClientThread(() => Client.Client.disconnectReason) ?? "none";
-            bool known = server.RunOnGameThread(() => server.Server.GetClientByPlayername(_playerName) != null);
+            bool known = server.RunOnGameThread(() => server.Server.GetClientByPlayername(_playerName!) != null);
             throw new TimeoutException(
                 $"The client did not join again within {maxFrames} frames. Disconnect reason: {reason}. " +
                 (known ? "The server has the player." : "The server does not have the player."));
