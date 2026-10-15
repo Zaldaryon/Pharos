@@ -109,7 +109,22 @@ public sealed partial class EmbeddedServerHost
         return Task.CompletedTask;
     }
 
-    private void SaveWorldCore(string destination)
+    /// <summary>
+    /// Saves the world into the server's own save file, as the autosave does, and returns once the game has written it.
+    /// Pair it with <see cref="RestartAsync"/> to keep what was saved across a restart.
+    /// </summary>
+    /// <param name="ct">Cancellation token, checked before the save starts.</param>
+    /// <exception cref="InvalidOperationException">The server is not running, could not be paused, or is writing a backup.</exception>
+    public Task SaveWorldAsync(CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        if (!IsRunning) throw new InvalidOperationException("Cannot save the world of a stopped server.");
+
+        RunOnGameThread(() => SaveWorldCore(destination: null));
+        return Task.CompletedTask;
+    }
+
+    private void SaveWorldCore(string? destination)
     {
         object chunkThread = s_chunkThread?.GetValue(Server) ?? throw new InvalidOperationException("The server has no chunk thread to save with.");
         GameDatabase database = s_gameDatabase?.GetValue(chunkThread) as GameDatabase ?? throw new InvalidOperationException("The server has no open world database.");
@@ -119,13 +134,17 @@ public sealed partial class EmbeddedServerHost
             throw new InvalidOperationException("The server is writing a backup (/genbackup); save the world once it is done.");
         }
 
-        if (string.Equals(Path.GetFullPath(database.DatabaseFilename), destination, OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
+        string? temp = null;
+        if (destination != null)
         {
-            throw new ArgumentException("The destination is the running server's own save.", nameof(destination));
-        }
+            if (string.Equals(Path.GetFullPath(database.DatabaseFilename), destination, OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
+            {
+                throw new ArgumentException("The destination is the running server's own save.", nameof(destination));
+            }
 
-        Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
-        string temp = destination + ".pharos-" + Guid.NewGuid().ToString("N")[..8];
+            Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+            temp = destination + ".pharos-" + Guid.NewGuid().ToString("N")[..8];
+        }
 
         // As the autosave does: the chunk thread must be still while the save and the copy use its connection.
         if (!Server.Suspend(true, 10000)) throw new InvalidOperationException("The server could not be paused to save the world.");
@@ -147,15 +166,21 @@ public sealed partial class EmbeddedServerHost
                 Server.Saving = false;
             }
 
-            database.CreateBackup(temp);
-            if (!File.Exists(temp)) throw new InvalidOperationException($"The game did not write the copy of the save; see the server log.");
-            File.Move(temp, destination, overwrite: true);
+            if (temp != null)
+            {
+                database.CreateBackup(temp);
+                if (!File.Exists(temp)) throw new InvalidOperationException("The game did not write the copy of the save; see the server log.");
+                File.Move(temp, destination!, overwrite: true);
+            }
         }
         finally
         {
-            foreach (string leftover in new[] { temp, temp + "-wal", temp + "-shm", temp + "-journal" })
+            if (temp != null)
             {
-                if (File.Exists(leftover)) File.Delete(leftover);
+                foreach (string leftover in new[] { temp, temp + "-wal", temp + "-shm", temp + "-journal" })
+                {
+                    if (File.Exists(leftover)) File.Delete(leftover);
+                }
             }
 
             Server.Suspend(false);
