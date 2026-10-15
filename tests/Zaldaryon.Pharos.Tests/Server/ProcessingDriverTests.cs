@@ -3,6 +3,7 @@ using Vintagestory.API.Common.Entities;
 using Vintagestory.API.MathTools;
 using Zaldaryon.Pharos.Assertions;
 using Zaldaryon.Pharos.Server;
+using Zaldaryon.Pharos.Tests.Support;
 using Zaldaryon.Pharos.XUnit;
 using Xunit;
 
@@ -13,7 +14,7 @@ public sealed class ProcessingDriverTests : ServerScenarioBase
     [ServerScenario]
     public async Task Firepit_CooksRawFishOnFirewoodLitWithATorch()
     {
-        ServerTestPlayer player = await CreateTestPlayerAsync("FirepitCook");
+        ServerTestPlayer player = await CreateTestPlayerAsync(PlayerNames.Next());
         BlockPos pos = PlaceBlock(player, "game:firepit-extinct");
         FirepitFacade firepit = Host!.Processing.Firepit(pos);
         player.GiveItem("game:torch-basic-lit-up");
@@ -35,7 +36,7 @@ public sealed class ProcessingDriverTests : ServerScenarioBase
     [ServerScenario]
     public async Task Firepit_FillsReportTheChangedSlotToTheGame()
     {
-        ServerTestPlayer player = await CreateTestPlayerAsync("FirepitSlots");
+        ServerTestPlayer player = await CreateTestPlayerAsync(PlayerNames.Next());
         BlockPos pos = PlaceBlock(player, "game:firepit-extinct");
         FirepitFacade firepit = Host!.Processing.Firepit(pos);
         var changed = new List<int>();
@@ -52,9 +53,49 @@ public sealed class ProcessingDriverTests : ServerScenarioBase
     }
 
     [ServerScenario]
+    public async Task Firepit_CatchesWithAFirestarterTurnedLongEnough()
+    {
+        ServerTestPlayer player = await CreateTestPlayerAsync(PlayerNames.Next());
+        Host!.Random.Seed(4243);
+        BlockPos pos = PlaceBlock(player, "game:firepit-extinct");
+        FirepitFacade firepit = Host.Processing.Firepit(pos).Fill(FirepitSlot.Fuel, "game:firewood", 2);
+        player.GiveItem("game:firestarter");
+
+        firepit.IgniteWithFirestarter(player, secondsHeld: 4);
+        await firepit.RunAsync(TimeSpan.FromSeconds(10));
+
+        Assert.True(firepit.State.Burning, "The firestarter did not light the firewood.");
+    }
+
+    [ServerScenario]
+    public async Task Firepit_DoesNotCatchFromAFirestarterTurnedTooBriefly()
+    {
+        ServerTestPlayer player = await CreateTestPlayerAsync(PlayerNames.Next());
+        BlockPos pos = PlaceBlock(player, "game:firepit-extinct");
+        FirepitFacade firepit = Host!.Processing.Firepit(pos).Fill(FirepitSlot.Fuel, "game:firewood", 2);
+        player.GiveItem("game:firestarter");
+
+        // Under three seconds the firepit is not yet ignitable, so no turn can catch it.
+        InvalidOperationException error = Assert.Throws<InvalidOperationException>(() => firepit.IgniteWithFirestarter(player, secondsHeld: 1, attempts: 5));
+
+        Assert.Contains("did not catch", error.Message);
+        Assert.False(firepit.State.Burning);
+    }
+
+    [ServerScenario]
+    public async Task GeneratedPlayerNames_AtTheLimit_JoinTheServer()
+    {
+        string name = PlayerNames.Next();
+        ServerTestPlayer player = await CreateTestPlayerAsync(name);
+
+        Assert.Equal(PlayerNames.MaxLength, name.Length);
+        Assert.Equal(name, player.PlayerName);
+    }
+
+    [ServerScenario]
     public async Task Firepit_NeedsALitTorchToCatch()
     {
-        ServerTestPlayer player = await CreateTestPlayerAsync("FirepitNoTorch");
+        ServerTestPlayer player = await CreateTestPlayerAsync(PlayerNames.Next());
         BlockPos pos = PlaceBlock(player, "game:firepit-extinct");
         FirepitFacade firepit = Host!.Processing.Firepit(pos).Fill(FirepitSlot.Fuel, "game:firewood", 1);
 
@@ -67,7 +108,7 @@ public sealed class ProcessingDriverTests : ServerScenarioBase
     [ServerScenario]
     public async Task Barrel_MeadIsReadyAfterItsFourteenDaysOfSealing()
     {
-        ServerTestPlayer player = await CreateTestPlayerAsync("BarrelMead");
+        ServerTestPlayer player = await CreateTestPlayerAsync(PlayerNames.Next());
         BlockPos pos = PlaceBlock(player, "game:barrel");
         BarrelFacade barrel = Host!.Processing.Barrel(pos);
 
@@ -85,7 +126,7 @@ public sealed class ProcessingDriverTests : ServerScenarioBase
     [ServerScenario]
     public async Task Barrel_SpeltCiderIsNotReadyBeforeItsSealingTime()
     {
-        ServerTestPlayer player = await CreateTestPlayerAsync("BarrelCider");
+        ServerTestPlayer player = await CreateTestPlayerAsync(PlayerNames.Next());
         BlockPos pos = PlaceBlock(player, "game:barrel");
         BarrelFacade barrel = Host!.Processing.Barrel(pos);
 
@@ -108,7 +149,7 @@ public sealed class ProcessingDriverTests : ServerScenarioBase
     [ServerScenario]
     public async Task FiredClayPot_CooksPorridgeInAnotherColourOfPot()
     {
-        ServerTestPlayer player = await CreateTestPlayerAsync("PotPorridge");
+        ServerTestPlayer player = await CreateTestPlayerAsync(PlayerNames.Next());
         BlockPos pos = PlaceBlock(player, "game:firepit-extinct");
         FirepitFacade firepit = Host!.Processing.Firepit(pos);
         player.GiveItem("game:torch-basic-lit-up");
@@ -132,7 +173,7 @@ public sealed class ProcessingDriverTests : ServerScenarioBase
     [ServerScenario]
     public async Task FiredClayPot_CooksASoupOverAFirewoodFire()
     {
-        ServerTestPlayer player = await CreateTestPlayerAsync("PotSoup");
+        ServerTestPlayer player = await CreateTestPlayerAsync(PlayerNames.Next());
         BlockPos pos = PlaceBlock(player, "game:firepit-extinct");
         FirepitFacade firepit = Host!.Processing.Firepit(pos);
         player.GiveItem("game:torch-basic-lit-up");
@@ -154,7 +195,7 @@ public sealed class ProcessingDriverTests : ServerScenarioBase
     [ServerScenario]
     public async Task Quern_GrindsGrainIntoFlourOnlyWhileAPlayerHoldsTheHandle()
     {
-        ServerTestPlayer player = await CreateTestPlayerAsync("QuernGrind");
+        ServerTestPlayer player = await CreateTestPlayerAsync(PlayerNames.Next());
         BlockPos pos = PlaceBlock(player, "game:quern-granite");
         QuernFacade quern = Host!.Processing.Quern(pos).Fill("game:grain-spelt", 1);
 
@@ -172,7 +213,7 @@ public sealed class ProcessingDriverTests : ServerScenarioBase
     [ServerScenario]
     public async Task ClayOven_BakesSpeltBreadOnceTheFireIsOutAndTheOvenIsStillHot()
     {
-        ServerTestPlayer player = await CreateTestPlayerAsync("OvenBread");
+        ServerTestPlayer player = await CreateTestPlayerAsync(PlayerNames.Next());
         BlockPos pos = PlaceBlock(player, "game:clayoven-north");
         OvenFacade oven = Host!.Processing.Oven(pos);
         player.GiveItem("game:torch-basic-lit-up");
@@ -201,7 +242,7 @@ public sealed class ProcessingDriverTests : ServerScenarioBase
     [ServerScenario]
     public async Task ClayOven_BreadPassesThroughPartbakedThenPerfectThenCharred()
     {
-        ServerTestPlayer player = await CreateTestPlayerAsync("OvenStages");
+        ServerTestPlayer player = await CreateTestPlayerAsync(PlayerNames.Next());
         BlockPos pos = PlaceBlock(player, "game:clayoven-north");
         OvenFacade oven = Host!.Processing.Oven(pos);
         player.GiveItem("game:torch-basic-lit-up");

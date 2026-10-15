@@ -182,6 +182,46 @@ public sealed class FirepitFacade
     /// <summary>The pieces of fuel left in the fuel slot.</summary>
     public int FuelLeft => _host.RunOnGameThread(() => Inventory()[(int)FirepitSlot.Fuel].Itemstack?.StackSize ?? 0);
 
+    /// <summary>
+    /// Lights the firepit with a firestarter, the hand drill the player turns against it. The drill turns for
+    /// the given seconds, and each finished turn has a one-in-four chance of catching, as the game's firestarter does.
+    /// The turns are repeated until the firepit catches, or until the attempts run out.
+    /// </summary>
+    /// <param name="player">The joined player who holds the firestarter.</param>
+    /// <param name="secondsHeld">How long each turn lasts, in seconds. The firepit lights only after more than three.</param>
+    /// <param name="attempts">The most turns to try.</param>
+    /// <returns>This facade.</returns>
+    /// <exception cref="InvalidOperationException">The player does not hold a firestarter, the turn is too short, or the firepit did not catch.</exception>
+    public FirepitFacade IgniteWithFirestarter(ServerTestPlayer player, double secondsHeld = 4, int attempts = 40)
+    {
+        ArgumentNullException.ThrowIfNull(player);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(secondsHeld);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(attempts);
+        _host.RunOnGameThread(() =>
+        {
+            EntityAgent entity = player.Entity ?? throw new InvalidOperationException($"{player.PlayerUID} has not joined the server.");
+            ItemSlot hand = entity.RightHandItemSlot;
+            string held = hand.Itemstack?.Collectible.Code.ToString() ?? "nothing";
+            if (!string.Equals(held, "game:firestarter", StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException($"The player holds {held}, not a firestarter.");
+            }
+
+            Block firepit = ServerApi.World.BlockAccessor.GetBlock(_pos);
+            BlockSelection selection = new(_pos.Copy(), BlockFacing.UP, firepit);
+            CollectibleObject drill = hand.Itemstack.Collectible;
+            for (int attempt = 0; attempt < attempts; attempt++)
+            {
+                if (hand.Empty) throw new InvalidOperationException("The firestarter broke before the firepit caught.");
+                drill.GetType().GetMethod("OnHeldInteractStop")!.Invoke(drill, [(float)secondsHeld, hand, entity, selection, null]);
+                if ((bool)(ProcessingDriver.Member(Block(), "canIgniteFuel") ?? false)) return;
+            }
+
+            throw new InvalidOperationException($"The firepit did not catch after {attempts} turns of {secondsHeld} s.");
+        });
+        return this;
+    }
+
     /// <summary>Adds firewood to the fuel slot as a player does while the fire burns. Stacks merge, as they do in the game.</summary>
     /// <param name="code">The fuel item code, such as <c>game:firewood</c>.</param>
     /// <param name="quantity">How many pieces to add.</param>
