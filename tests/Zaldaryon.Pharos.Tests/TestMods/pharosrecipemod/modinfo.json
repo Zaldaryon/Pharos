@@ -1,0 +1,11 @@
+{
+  "type": "content",
+  "modid": "pharosrecipemod",
+  "name": "Pharos Recipe Mod",
+  "version": "1.0.0",
+  "side": "Universal",
+  "requiredOnClient": false,
+  "description": "Content-only mod the recipe tests stage: one valid grid recipe, one whose ingredient does not exist, and one whose wildcard matches nothing.",
+  "authors": ["Pharos"],
+  "dependencies": { "game": "" }
+}

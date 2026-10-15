@@ -1,3 +1,4 @@
+using Zaldaryon.Pharos.Server;
 using static System.FormattableString;
 using Zaldaryon.Pharos.Culling;
 using Zaldaryon.Pharos.Graphics;
@@ -566,6 +567,27 @@ public static class PharosAssert
                 $"Expected mod '{modId}' to be detected, but it was not in ActiveMockMods. " +
                 $"Active mods: [{string.Join(", ", snapshot.ActiveMockMods)}].");
         }
+    }
+
+    /// <summary>
+    /// Asserts that every recipe of a domain loaded: each recipe the game found resolved, and every ingredient, output and wildcard
+    /// in the domain's recipe files names an item or block. Pass the list from <c>Host.Recipes.Unresolved</c>.
+    /// </summary>
+    /// <param name="unresolved">The recipes that cannot be used, as the server reports them.</param>
+    /// <param name="domain">The domain the list was taken for, for the message.</param>
+    /// <exception cref="PharosAssertException">Thrown when any recipe of the domain cannot be used, naming each one and why.</exception>
+    public static void RecipesLoaded(IEnumerable<UnresolvedRecipe> unresolved, string domain)
+    {
+        ArgumentNullException.ThrowIfNull(unresolved);
+        ArgumentException.ThrowIfNullOrWhiteSpace(domain);
+        UnresolvedRecipe[] problems = unresolved.ToArray();
+        if (problems.Length == 0)
+        {
+            return;
+        }
+
+        string list = string.Join(Environment.NewLine, problems.Select(p => $"  {p.Recipe}: {p.Reason}"));
+        throw new PharosAssertException($"{problems.Length} recipe(s) in the {domain} domain cannot be used:{Environment.NewLine}{list}");
     }
 
     /// <summary>

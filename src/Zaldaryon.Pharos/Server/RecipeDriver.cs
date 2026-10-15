@@ -1,4 +1,6 @@
 using System.Collections;
+using System.Reflection;
+using System.Text.RegularExpressions;
 using Vintagestory.API.Common;
 using Vintagestory.API.Common.Entities;
 using Vintagestory.API.MathTools;
@@ -29,6 +31,11 @@ public sealed record GridMatch(
 /// <param name="Expected">The ingredient the recipe wants at that cell, or "nothing" for an empty cell.</param>
 /// <param name="Found">The item code the grid holds at that cell, or "nothing" for an empty cell.</param>
 public sealed record GridMiss(string Recipe, int Row, int Column, string Expected, string Found);
+
+/// <summary>A recipe that cannot be used, and the reason, for <see cref="RecipeDriver.Unresolved"/>.</summary>
+/// <param name="Recipe">The recipe's name, or the location of the file that holds it.</param>
+/// <param name="Reason">What is wrong: an ingredient or output that names no item or block, or a wildcard that matches none.</param>
+public sealed record UnresolvedRecipe(string Recipe, string Reason);
 
 /// <summary>Matches crafting grids against the game's recipes on the server, and explains a grid that matches nothing.</summary>
 public sealed class RecipeDriver
@@ -404,6 +411,104 @@ public sealed class RecipeDriver
         }
 
         return stream.ToArray();
+    }
+
+    /// <summary>
+    /// Lists the recipes of one domain that cannot be used: a recipe the game found while loading but did not register, and each
+    /// ingredient, output or wildcard in the domain's recipe files that names no item or block.
+    /// </summary>
+    /// <param name="domain">The mod or game domain, such as <c>game</c> or <c>mymod</c>.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="domain"/> is null.</exception>
+    public IReadOnlyList<UnresolvedRecipe> Unresolved(string domain)
+    {
+        ArgumentNullException.ThrowIfNull(domain);
+        return _host.RunOnGameThread(() => UnresolvedOnGameThread(domain));
+    }
+
+    private List<UnresolvedRecipe> UnresolvedOnGameThread(string domain)
+    {
+        ICoreServerAPI api = ServerApi;
+        IWorldAccessor world = api.World;
+        var result = new List<UnresolvedRecipe>();
+
+        // Recipes the search holds but no registry does: the game gave them up while loading.
+        var registered = new HashSet<object>(ReferenceEqualityComparer.Instance);
+        foreach (GridRecipe grid in world.GridRecipes) registered.Add(grid);
+        object registry = api.ModLoader.GetModSystem(RecipeRegistryType)
+            ?? throw new InvalidOperationException($"The game's {RecipeRegistryType} is not loaded.");
+        foreach (FieldInfo field in registry.GetType().GetFields(BindingFlags.Public | BindingFlags.Instance))
+        {
+            if (field.GetValue(registry) is IEnumerable list)
+            {
+                foreach (object recipe in list) registered.Add(recipe);
+            }
+        }
+
+        var given = new HashSet<string>(StringComparer.Ordinal);
+        foreach (KeyValuePair<IRecipeIngredientBase, List<IRecipeBase>> entry in world.FastSearchRecipesByIngredient)
+        {
+            foreach (IRecipeBase recipe in entry.Value)
+            {
+                if (recipe.Name?.Domain != domain || registered.Contains(recipe)) continue;
+                if (given.Add(recipe.Name.ToString()))
+                {
+                    result.Add(new UnresolvedRecipe(recipe.Name.ToString(), "the game could not resolve this recipe"));
+                }
+            }
+        }
+
+        // The grid recipe files: each ingredient on its own line must name an item or block, and each wildcard must match one,
+        // completed with the variants the line allows. Outputs are left out: an output that names nothing stops its recipe from
+        // registering, which the search check reports.
+        foreach (AssetLocation location in api.Assets.GetLocations("recipes/grid", domain))
+        {
+            string text = api.Assets.TryGet(location)?.ToText() ?? "";
+            foreach (string line in text.Split('\n'))
+            {
+                if (line.Contains("output", StringComparison.Ordinal)) continue;
+                Match ingredient = IngredientPattern.Match(line);
+                if (!ingredient.Success) continue;
+                string code = ingredient.Groups["code"].Value;
+                if (code.Contains('{')) continue;
+                Match allowed = AllowedVariantsPattern.Match(line);
+                List<string> variants = allowed.Success ? QuotedPattern.Matches(allowed.Groups["list"].Value).Select(m => m.Groups[1].Value).ToList() : [];
+                string? reason = CodeProblem(world, code, variants);
+                if (reason is not null) result.Add(new UnresolvedRecipe(location.ToString(), reason));
+            }
+        }
+
+        return result;
+    }
+
+    // An ingredient line of a grid recipe: its type and code, such as `"C": { type: "block", code: "torch-crude-*-up", ... }`.
+    private static readonly Regex IngredientPattern = new(@"type:\s*""(?:item|block)""\s*,\s*code:\s*""(?<code>[^""]+)""", RegexOptions.Compiled);
+
+    // The variants a wildcard ingredient may take, such as `allowedVariants: ["extinct", "lit"]`, and the quoted names in that list.
+    private static readonly Regex AllowedVariantsPattern = new(@"allowedVariants:\s*\[(?<list>[^\]]*)\]", RegexOptions.Compiled);
+    private static readonly Regex QuotedPattern = new(@"""([^""]+)""", RegexOptions.Compiled);
+
+    // A code without a domain belongs to the game. A wildcard matches the codes the game matches it to, with the variants the line allows.
+    private static string? CodeProblem(IWorldAccessor world, string code, List<string> variants)
+    {
+        if (!code.Contains('*'))
+        {
+            return Exists(world, code) ? null : $"{code} names no item or block";
+        }
+
+        AssetLocation location = code.Contains(':') ? AssetLocation.Create(code) : new AssetLocation("game", code);
+        string[] allowed = variants.ToArray();
+        bool matched = world.Items.Any(item => item.Code is not null && MatchesWildcard(location, item.Code, allowed))
+            || world.Blocks.Any(block => block.Code is not null && MatchesWildcard(location, block.Code, allowed));
+        return matched ? null : $"the wildcard {code} matches no item or block";
+    }
+
+    private static bool MatchesWildcard(AssetLocation wildcard, AssetLocation code, string[] allowed) =>
+        allowed.Length == 0 ? WildcardUtil.Match(wildcard, code) : WildcardUtil.Match(wildcard, code, allowed);
+
+    private static bool Exists(IWorldAccessor world, string code)
+    {
+        AssetLocation location = code.Contains(':') ? AssetLocation.Create(code) : new AssetLocation("game", code);
+        return world.GetItem(location) is not null || world.GetBlock(location) is not null;
     }
 
     // The enabled recipes that use an item in the grid, in the order the game collects them (InventoryCraftingGrid.FindMatchingRecipe).

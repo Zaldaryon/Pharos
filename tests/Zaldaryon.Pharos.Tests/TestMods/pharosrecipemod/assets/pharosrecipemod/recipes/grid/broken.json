@@ -1,0 +1,13 @@
+[
+	{
+		ingredientPattern: "MS",
+		ingredients: {
+			"M": { type: "item", code: "pharosrecipemod:missing-stuff" },
+			"S": { type: "item", code: "game:stick" }
+		},
+		width: 2,
+		height: 1,
+		name: "broken pair",
+		output: { type: "item", code: "game:stick", quantity: 1 }
+	}
+]
