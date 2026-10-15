@@ -109,7 +109,7 @@ public sealed partial class EmbeddedServerHost : IDisposable, IAsyncDisposable
 
     private ServerEntityDriver? _entities;
 
-    /// <summary>Waits for and reads the server's world physics: light, liquids, falling blocks and relighting.</summary>
+    /// <summary>Waits for and reads the server's world physics: light, liquids, falling blocks, relighting, rooms and fire.</summary>
     public WorldPhysicsDriver World => _world ??= new WorldPhysicsDriver(this);
 
     private WorldPhysicsDriver? _world;

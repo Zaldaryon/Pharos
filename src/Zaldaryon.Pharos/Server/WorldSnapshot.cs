@@ -324,15 +324,30 @@ public sealed record WorldSnapshot : IWorldSnapshot
         if (Weather != null) host.Weather.Restore(Weather);
         RestorePlayerData(server);
 
-        int restored = 0;
+        List<(long Index, ServerChunk Current, byte[] Saved)> changed = [];
         foreach ((long index, byte[] saved) in ChunkData)
         {
             ServerChunk? current = server.GetLoadedChunk(index);
             if (current == null || current.ToBytes().AsSpan().SequenceEqual(saved)) continue;
 
-            RestoreChunk(server, index, current, saved);
-            restored++;
+            changed.Add((index, current, saved));
         }
+
+        if (changed.Count > 0)
+        {
+            // The lighting thread may hold tasks for the chunks about to be replaced. Hold it between passes while the
+            // chunks are restored, then drop the tasks for those chunks, so none lights a chunk after the rollback.
+            using (LightingThread.Pause(server))
+            {
+                foreach ((long index, ServerChunk current, byte[] saved) in changed) RestoreChunk(server, index, current, saved);
+                LightingThread.DropQueued(server, changed.Select(c => c.Index).ToHashSet());
+
+                // The map's one-chunk lookup cache may still hold a chunk object the restore just replaced.
+                ForgetCachedChunk(server);
+            }
+        }
+
+        int restored = changed.Count;
 
         foreach ((long mapIndex, MapChunkState state) in _mapChunks)
         {
@@ -617,6 +632,38 @@ public sealed record WorldSnapshot : IWorldSnapshot
     {
         [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "RuntimePrivileveCodes")]
         public static extern ref HashSet<string> RuntimePrivilegeCodes(ServerConfig config);
+    }
+
+    /// <summary>The map's one-chunk lookup cache, which the game keeps internal.</summary>
+    private static class WorldMapInternals
+    {
+        [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "prevChunkX")]
+        public static extern ref int PrevChunkX(ServerWorldMap map);
+
+        [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "prevChunkY")]
+        public static extern ref int PrevChunkY(ServerWorldMap map);
+
+        [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "prevChunkZ")]
+        public static extern ref int PrevChunkZ(ServerWorldMap map);
+
+        [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "prevChunk")]
+        public static extern ref IWorldChunk? PrevChunk(ServerWorldMap map);
+    }
+
+    /// <summary>
+    /// Empties the map's one-chunk lookup cache, so its next lookup reads the loaded chunk table again. The cache
+    /// is read and written under the loaded chunk table's lock, which is the lock taken here.
+    /// </summary>
+    private static void ForgetCachedChunk(ServerMain server)
+    {
+        ServerWorldMap map = server.WorldMap;
+        lock (ServerInternals.LoadedChunks(server))
+        {
+            WorldMapInternals.PrevChunkX(map) = -1;
+            WorldMapInternals.PrevChunkY(map) = -1;
+            WorldMapInternals.PrevChunkZ(map) = -1;
+            WorldMapInternals.PrevChunk(map) = null;
+        }
     }
 
     /// <summary>The server's chunk table, which the game keeps internal.</summary>
