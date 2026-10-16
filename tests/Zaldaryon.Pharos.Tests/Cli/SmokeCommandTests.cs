@@ -40,6 +40,14 @@ public class SmokeCommandTests
     }
 
     [Fact]
+    public void ParseReadsSurvivalPreset()
+    {
+        SmokeOptions options = SmokeCommand.Parse(["--mod", "a.zip", "--preset", "survival"])!;
+        Assert.Equal(Zaldaryon.Pharos.Server.WorldPreset.SurvivalFlat, options.Preset);
+        Assert.Contains("--preset survival", SmokeCommand.HelpText, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Parse_HasSensibleDefaults()
     {
         SmokeOptions options = SmokeCommand.Parse(["--mod", "a.zip"])!;

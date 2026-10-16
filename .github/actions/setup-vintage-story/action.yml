@@ -35,6 +35,9 @@ outputs:
   cache-hit:
     description: Whether the install came from the cache.
     value: ${{ steps.cache.outputs.cache-hit }}
+  preset-cache:
+    description: Cache folder used for immutable Pharos world presets.
+    value: ${{ steps.preset-cache-root.outputs.path }}
 
 runs:
   using: composite
@@ -56,6 +59,19 @@ runs:
         fi
         echo "path=$RUNNER_TEMP/vintagestory/$VS_VERSION" >> "$GITHUB_OUTPUT"
         echo "channel=$channel" >> "$GITHUB_OUTPUT"
+
+    - name: Choose the world preset cache folder
+      id: preset-cache-root
+      shell: bash
+      env:
+        VS_VERSION: ${{ inputs.version }}
+      run: echo "path=$RUNNER_TEMP/pharos-cache/$VS_VERSION" >> "$GITHUB_OUTPUT"
+
+    - name: Cache Pharos world presets
+      uses: actions/cache@v4
+      with:
+        path: ${{ steps.preset-cache-root.outputs.path }}
+        key: pharos-world-presets-${{ runner.os }}-${{ inputs.version }}-schema1
 
     - name: Cache Vintage Story
       id: cache
@@ -107,6 +123,7 @@ runs:
           exit 1
         fi
         echo "VINTAGE_STORY=$VS_DIR" >> "$GITHUB_ENV"
+        echo "PHAROS_CACHE=${{ steps.preset-cache-root.outputs.path }}" >> "$GITHUB_ENV"
         if [ "$RUNNER_OS" = "Linux" ]; then
           echo "LD_LIBRARY_PATH=$VS_DIR/Lib:$VS_DIR${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" >> "$GITHUB_ENV"
         fi

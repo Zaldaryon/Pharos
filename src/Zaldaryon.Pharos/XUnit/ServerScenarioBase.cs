@@ -41,6 +41,7 @@ public abstract class ServerScenarioBase : IAsyncLifetime, IScenarioLifecycle
     private EmbeddedServerHost? _host;
     private IDisposable? _gate;
     private PooledServer? _pooled;
+    private ScenarioContext? _environmentContext;
     private readonly List<ServerTestPlayer> _testPlayers = [];
 
     /// <summary>
@@ -188,7 +189,7 @@ public abstract class ServerScenarioBase : IAsyncLifetime, IScenarioLifecycle
 
         try
         {
-            ServerWorldOptions options = WorldOptions;
+            ServerWorldOptions options = WorldPresetCache.Resolve(WorldOptions);
             IReadOnlyList<string> mods = ScenarioAttributes.ServerMods(GetType());
             DataFileSet files = ScenarioAttributes.DataFiles(GetType(), EnumAppSide.Server);
             ServerPoolKey key = new(options, string.Join("|", mods), WorldIsolation, files.Key);
@@ -279,6 +280,25 @@ public abstract class ServerScenarioBase : IAsyncLifetime, IScenarioLifecycle
         ScenarioRun.SeedRandom(this, _host?.Random, client: null);
     }
 
+    Task IScenarioLifecycle.ApplyEnvironmentsAsync(CancellationToken cancellationToken)
+    {
+        ScenarioTestInfo test = ScenarioTestInfo.Current ?? throw new InvalidOperationException("Scenario test information is not available.");
+        _environmentContext = new ScenarioContext(_host, client: null, session: null);
+        return ScenarioEnvironments.ApplyAsync(test.TestClass, test.Method, _environmentContext, cancellationToken);
+    }
+
+    Task IScenarioLifecycle.CleanupEnvironmentsAsync(CancellationToken cancellationToken) => CleanupEnvironmentsAsync(cancellationToken);
+
+    private async Task CleanupEnvironmentsAsync(CancellationToken cancellationToken)
+    {
+        ScenarioContext? context = _environmentContext;
+        if (context != null)
+        {
+            await context.DisposeAsync(cancellationToken);
+            if (ReferenceEquals(_environmentContext, context)) _environmentContext = null;
+        }
+    }
+
     void IScenarioLifecycle.CheckLoggedErrors() =>
         LoggedErrorGate.ThrowIfAny(LoggedErrorGate.Collect(FailOnLoggedErrors, AllowedLoggedErrors, _host?.Logs));
 
@@ -320,7 +340,7 @@ public abstract class ServerScenarioBase : IAsyncLifetime, IScenarioLifecycle
     /// Stops the server, or pools it for the next test of this class under
     /// <see cref="WorldIsolation.Recycle"/>.
     /// </summary>
-    public virtual Task DisposeAsync()
+    public virtual async Task DisposeAsync()
     {
         IReadOnlyList<LogEntry> loggedErrors = _run.PipelineChecksLoggedErrors
             ? []
@@ -328,15 +348,25 @@ public abstract class ServerScenarioBase : IAsyncLifetime, IScenarioLifecycle
 
         if (_run.Abandoned)
         {
-            World.RandomSeeding.Abandon();
-            IsolationLog.Left(GetType(), null, "the previous test timed out and was left running");
-            // The timed-out body still runs on the game thread: the host is left as it is.
-            _testPlayers.Clear();
-            _pooled = null;
-            _host = null;
-            _gate?.Dispose();
-            _gate = null;
-            return Task.CompletedTask;
+            AbandonRunningScenario();
+            return;
+        }
+
+        Exception? environmentFailure = null;
+        if (_environmentContext is { } environmentContext)
+        {
+            try
+            {
+                await environmentContext.DisposeAsync(ScenarioTimeouts.Grace).ConfigureAwait(false);
+                if (ReferenceEquals(_environmentContext, environmentContext)) _environmentContext = null;
+            }
+            catch (Exception ex) { environmentFailure = ex; }
+        }
+        if (environmentFailure is TimeoutException)
+        {
+            _run.BodyTimedOut(stillRunning: true);
+            AbandonRunningScenario();
+            throw new TimeoutException("Scenario environment cleanup did not stop; the server was abandoned to avoid reusing it in a dirty state.", environmentFailure);
         }
 
         IsolationException? isolationFailure = null;
@@ -367,7 +397,7 @@ public abstract class ServerScenarioBase : IAsyncLifetime, IScenarioLifecycle
 
             if (_pooled != null)
             {
-                string? fallback = WhyNotReusable(_pooled) ?? random;
+                string? fallback = WhyNotReusable(_pooled) ?? random ?? (ScenarioHostPool.CanReuseAfterEnvironmentCleanup(environmentFailure) ? null : "a test environment cleanup failed");
                 IsolationReport? rolledBack = null;
                 if (fallback == null && WorldIsolation == WorldIsolation.Rollback)
                 {
@@ -406,8 +436,23 @@ public abstract class ServerScenarioBase : IAsyncLifetime, IScenarioLifecycle
             _gate = null;
         }
 
-        ScenarioFailures.ThrowAll(isolationFailure, () => LoggedErrorGate.ThrowIfAny(loggedErrors));
-        return Task.CompletedTask;
+        Exception? teardownFailure = isolationFailure != null && environmentFailure != null
+            ? new AggregateException(isolationFailure, environmentFailure)
+            : isolationFailure ?? environmentFailure;
+        ScenarioFailures.ThrowAll(teardownFailure, () => LoggedErrorGate.ThrowIfAny(loggedErrors));
+    }
+
+    private void AbandonRunningScenario()
+    {
+        World.RandomSeeding.Abandon();
+        IsolationLog.Left(GetType(), null, "the previous test timed out and was left running");
+        // A timed-out body or environment cleanup may still be using this host.
+        _testPlayers.Clear();
+        _environmentContext = null;
+        _pooled = null;
+        _host = null;
+        _gate?.Dispose();
+        _gate = null;
     }
 
     // Why the server cannot be kept for the next test, before any rollback is tried.

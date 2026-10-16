@@ -37,6 +37,34 @@ public class BlockPlacementTests : ServerScenarioBase
 
 The base class provides access to the embedded server and its APIs.
 
+### Building a Scene
+
+`Scene` lets a test describe a small block arrangement as rows of characters. Load the chunks first: `Build` and `Assert` are synchronous and require every covered chunk to be loaded already. Columns map to X, rows map to increasing Z, and each additional layer maps to increasing Y. A dot means air.
+
+```csharp
+using Vintagestory.API.MathTools;
+using Zaldaryon.Pharos.World;
+
+[ServerScenario]
+public async Task BuildAndCheckAWall()
+{
+    BlockPos origin = new(10, 80, 10);
+    await Host!.EnsureChunksLoadedAsync(origin, origin.AddCopy(2, 0, 1));
+
+    Dictionary<char, string> blocks = new()
+    {
+        ['S'] = "game:stone",
+        ['W'] = "game:water-still-7",
+    };
+    string[] rows = ["SS.", ".W."];
+
+    Scene.Build(Host, origin, blocks, rows);
+    Scene.Assert(Host, origin, blocks, rows);
+}
+```
+
+`Build` validates the whole layout and every block code before writing, so a typo does not leave a partially built scene. `Assert` reports the first mismatches and the total number of differing blocks.
+
 ### Properties
 
 | Property | Type | Description |
@@ -159,7 +187,22 @@ companion selection, entity collision, or distance from players.
 
 The server runs on its own game thread, as the real server does: boot, ticks and teardown all happen there. Test code that touches live server state should go through `Host.RunOnGameThread(...)`. The world helpers (`this.SetBlock`, `this.SpawnEntity`) and `ExecuteCommand` already do.
 
+### Reusable world presets
+
+`[ServerWorld(Preset = WorldPreset.SurvivalFlat)]` and `SurvivalStandardSmall` load immutable saves from the Pharos cache for the installed game version. Generate them once in a standalone process before running scenarios:
+
+```bash
+pharos fixture --preset survival-flat --game "$VINTAGE_STORY"
+pharos fixture --preset survival-standard-small --game "$VINTAGE_STORY"
+```
+
+The cache defaults to the platform cache directory; set `PHAROS_CACHE` to choose another location. The generator stages an isolated sandbox and refuses to run while a client or server is active in that process. A cache miss in a scenario reports the generation command. Presets own seed, play style, world type, and world configuration; conflicting values, `SaveFile`, and `SaveFileLocation` are rejected. `SurvivalStandardSmall` verifies the resulting map dimensions before publishing its save. Cache generations are immutable and the current-generation pointer is replaced atomically.
+
 Scenarios run one at a time, whatever the test collection layout. The game keeps process-wide static state, so two servers or clients cannot boot side by side in one process.
+
+### Per-test environments
+
+Use `[TestEnvironment(typeof(MyEnvironment))]` on a scenario class or test method to install reusable state after the host baseline and deterministic seed are ready. Base class environments run before derived class environments, then method environments. Pharos creates each environment object per test. Its `ApplyAsync(ScenarioContext, CancellationToken)` can register cleanup with `context.OnCleanup(...)`; cleanup runs once in reverse registration order, including when setup fails partway through. Keep synchronous cleanup callbacks short. Async environments that use a fixture-mode client should capture the scenario synchronization context across awaits; avoid `ConfigureAwait(false)` before client calls so those continuations stay on the GL-owning test thread. Async cleanup receives cancellation after the cleanup grace period and must observe it.
 
 ## Isolation Modes
 

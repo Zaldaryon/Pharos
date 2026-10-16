@@ -174,3 +174,34 @@ public class ClientServerScenarioLifecycleTests : ClientServerScenarioBase
         Assert.True(synced, "The block set on the server never reached the client");
     }
 }
+
+public sealed class FixtureClientAffinityEnvironment : ITestEnvironment
+{
+    public async Task ApplyAsync(ScenarioContext context, CancellationToken cancellationToken)
+    {
+        int owner = Environment.CurrentManagedThreadId;
+        AssertFrameOnOwner(context.Client!, owner);
+        await Task.Yield();
+        AssertFrameOnOwner(context.Client!, owner);
+        context.OnCleanup(async ct =>
+        {
+            await Task.Yield();
+            ct.ThrowIfCancellationRequested();
+            AssertFrameOnOwner(context.Client!, owner);
+        });
+    }
+
+    private static void AssertFrameOnOwner(HeadlessClient client, int owner)
+    {
+        Assert.Equal(owner, Environment.CurrentManagedThreadId);
+        _ = client.CaptureFrame();
+    }
+}
+
+[Collection("Sequential")]
+[TestEnvironment(typeof(FixtureClientAffinityEnvironment))]
+public sealed class FixtureClientEnvironmentAffinityTests : ClientScenarioBase
+{
+    [ClientScenario]
+    public void EnvironmentAndCleanupRunOnFixtureOwnerThread() => Assert.NotNull(Client);
+}

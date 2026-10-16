@@ -9,6 +9,8 @@ namespace Zaldaryon.Pharos.Server;
 /// </remarks>
 public sealed record ServerWorldOptions
 {
+    /// <summary>Optional immutable cached world recipe.</summary>
+    public WorldPreset Preset { get; init; }
     /// <summary>
     /// The world seed string used for terrain generation.
     /// </summary>

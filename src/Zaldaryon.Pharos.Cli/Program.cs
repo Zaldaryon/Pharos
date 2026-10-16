@@ -14,7 +14,8 @@ internal static class Program
 
         // Help, Atlas migration, `run`, which starts `dotnet vstest` workers, `diff` and `fixture` need no game; the
         // in-process test runner, benchmarks and smoke tests do.
-        bool needsGame = args.Length > 0 && args[0] is not ("help" or "migrate-atlas" or "run" or "diff" or "fixture" or "-h" or "--help")
+        bool generatingPreset = args.Length > 0 && args[0] == "fixture" && args.Contains("--preset");
+        bool needsGame = args.Length > 0 && (generatingPreset || args[0] is not ("help" or "migrate-atlas" or "run" or "diff" or "fixture" or "-h" or "--help"))
             && !args.Contains("--help") && !args.Contains("-h");
         if (!needsGame) return RunHere(args);
 

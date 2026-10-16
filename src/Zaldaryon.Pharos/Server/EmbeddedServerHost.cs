@@ -12,6 +12,7 @@ using Vintagestory.API.Datastructures;
 using Vintagestory.Common;
 using Vintagestory.Server;
 using Vintagestory.Server.Network;
+using Zaldaryon.Pharos.Core;
 using Zaldaryon.Pharos.Platform;
 using Zaldaryon.Pharos.XUnit;
 using Zaldaryon.Pharos.Reporting;
@@ -48,6 +49,7 @@ namespace Zaldaryon.Pharos.Server;
 public sealed partial class EmbeddedServerHost : IDisposable, IAsyncDisposable
 {
     private bool _disposed;
+    private int _sessionActivityRegistered;
     private readonly bool _ownsDataPath;
     private readonly MethodInfo? _waitOnBuildServerAssetsPacket;
     private int _tickCount;
@@ -304,6 +306,8 @@ public sealed partial class EmbeddedServerHost : IDisposable, IAsyncDisposable
         Options = options;
         DataPath = dataPath;
         _ownsDataPath = ownsDataPath;
+        GameSessionActivity.Started();
+        _sessionActivityRegistered = 1;
         Sandbox = sandbox;
 
         _waitOnBuildServerAssetsPacket = typeof(ServerMain).GetMethod(
@@ -908,8 +912,8 @@ public sealed partial class EmbeddedServerHost : IDisposable, IAsyncDisposable
         if (_disposed) return;
         _random?.ReleaseOnDispose();
         _disposed = true;
-
-        DisposeOnGameThread();
+        try { DisposeOnGameThread(); }
+        finally { ReleaseSessionActivity(); }
     }
 
     /// <summary>
@@ -923,11 +927,20 @@ public sealed partial class EmbeddedServerHost : IDisposable, IAsyncDisposable
         _disposed = true;
 
         Task disposal = Task.Factory.StartNew(
-            DisposeOnGameThread,
+            () =>
+            {
+                try { DisposeOnGameThread(); }
+                finally { ReleaseSessionActivity(); }
+            },
             CancellationToken.None,
             TaskCreationOptions.LongRunning,
             TaskScheduler.Default);
         return new ValueTask(disposal);
+    }
+
+    private void ReleaseSessionActivity()
+    {
+        GameSessionActivity.Release(ref _sessionActivityRegistered);
     }
 
     private void DisposeOnGameThread()

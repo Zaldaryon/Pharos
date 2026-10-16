@@ -37,6 +37,7 @@ namespace Zaldaryon.Pharos.Core;
 public sealed class HeadlessClient : IDisposable
 {
     private bool _disposed;
+    private int _sessionActivityRegistered;
     private readonly string? _tempDataPath;
     private bool _retainDataPath;
 
@@ -523,6 +524,8 @@ public sealed class HeadlessClient : IDisposable
 
         // Before the client joins or steps: what the game makes from here on can be seeded.
         Random.HookAtBoot();
+        GameSessionActivity.Started();
+        _sessionActivityRegistered = 1;
     }
 
     /// <summary>
@@ -1240,12 +1243,12 @@ public sealed class HeadlessClient : IDisposable
     public void Dispose()
     {
         if (_disposed) return;
-        _random?.ReleaseOnDispose();
         _disposed = true;
-        _lang?.Dispose();
 
         try
         {
+            _random?.ReleaseOnDispose();
+            _lang?.Dispose();
             if (_clientThread != null)
             {
                 // Engine teardown deletes GL objects and joins engine threads; it runs where the
@@ -1266,11 +1269,23 @@ public sealed class HeadlessClient : IDisposable
         }
         finally
         {
-            // The settings watchers this client added would otherwise run against it when a later
-            // client changes a setting.
-            if (SettingsWatchersAtBoot != null) ClientSettingsWatchers.RemoveAddedSince(SettingsWatchersAtBoot);
-            NativeHeap.Trim();
+            try
+            {
+                // The settings watchers this client added would otherwise run against it when a later
+                // client changes a setting.
+                if (SettingsWatchersAtBoot != null) ClientSettingsWatchers.RemoveAddedSince(SettingsWatchersAtBoot);
+            }
+            finally
+            {
+                try { NativeHeap.Trim(); }
+                finally { ReleaseSessionActivity(); }
+            }
         }
+    }
+
+    private void ReleaseSessionActivity()
+    {
+        GameSessionActivity.Release(ref _sessionActivityRegistered);
     }
 
     /// <summary>

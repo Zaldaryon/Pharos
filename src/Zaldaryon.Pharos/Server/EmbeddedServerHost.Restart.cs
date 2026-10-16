@@ -76,7 +76,8 @@ public sealed partial class EmbeddedServerHost
         _random?.ReleaseOnDispose();
         _disposed = true;
 
-        await Task.Run(KillOnGameThread).ConfigureAwait(false);
+        try { await Task.Run(KillOnGameThread).ConfigureAwait(false); }
+        finally { ReleaseSessionActivity(); }
     }
 
     private void KillOnGameThread()
