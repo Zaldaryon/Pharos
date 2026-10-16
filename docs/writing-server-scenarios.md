@@ -593,7 +593,8 @@ using (Host.Faults.DelayChunkLoads(ticks: 100))
 method the first time a fault names it, and the patch stays; an inlined method cannot be patched, so the target must be reached
 through a delegate or a virtual call. `DelayChunkLoads` counts ticks, not time, and it is a lower bound: a load already under way
 can still finish. `FailSaves` affects saves the test makes on the game thread, not the chunk thread's off-thread saves, so a chunk
-those saves write is stored whatever the fault says.
+those saves write is stored whatever the fault says. A chunk whose write failed is left clean, because the game clears its dirty mark
+before the write: a later save writes it again only once it changes.
 
 ## Calendar and Weather
 

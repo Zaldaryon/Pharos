@@ -86,11 +86,13 @@ public class ServerFaultsTests : ServerScenarioBase
             Assert.True(fault.Hits > 0);
         }
 
-        // With the fault gone, a save stores the chest, and a crash keeps it: the failed save left the server usable.
+        // The game clears a chunk's dirty mark before it writes the chunk, so a failed write leaves the chunk clean: a later save writes it
+        // again only once it changes. Changing the chest again makes the next save store it, and a crash keeps it.
+        this.SetBlock(chest, "game:rock-granite");
         await Host.SaveWorldAsync();
         await RestartWorldAsync(RestartMode.Crash);
         await Host!.EnsureChunksLoadedAsync(chest, chest);
-        Assert.Equal("game:chest-east", BlockCodeAt(chest));
+        Assert.Equal("game:rock-granite", BlockCodeAt(chest));
     }
 
     private string BlockCodeAt(BlockPos pos) => Host!.RunOnGameThread(() => Api!.World.BlockAccessor.GetBlock(pos).Code.ToString());
