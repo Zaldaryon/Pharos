@@ -34,7 +34,7 @@ internal sealed class HeadlessPlayerConnection
     private readonly DummyTcpNetClient _client;
     private readonly DummyNetwork _network;
 
-    private HeadlessPlayerConnection(DummyTcpNetClient client, DummyTcpNetServer socket, DummyNetwork network, int slot)
+    private HeadlessPlayerConnection(DummyTcpNetClient client, HeadlessTcpNetServer socket, DummyNetwork network, int slot)
     {
         _client = client;
         Socket = socket;
@@ -43,7 +43,11 @@ internal sealed class HeadlessPlayerConnection
     }
 
     /// <summary>The server-side socket installed for this player.</summary>
-    public DummyTcpNetServer Socket { get; }
+    public HeadlessTcpNetServer Socket { get; }
+
+    /// <summary>Cuts the player's connection without the leave packet: the server reads a lost connection and drops the player.</summary>
+    /// <remarks>Safe from any thread.</remarks>
+    public void Sever() => Socket.Sever();
 
     /// <summary>The <c>MainSockets</c> index the socket occupies.</summary>
     public int Slot { get; }
@@ -58,7 +62,7 @@ internal sealed class HeadlessPlayerConnection
         DummyNetwork network = new();
         network.Start();
 
-        DummyTcpNetServer socket = new();
+        HeadlessTcpNetServer socket = new();
         socket.SetNetwork(network);
 
         DummyTcpNetClient client = new();

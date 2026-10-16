@@ -38,6 +38,7 @@ public sealed class ServerTestPlayer : IServerTestPlayer, IDisposable
     private ServerMain? _server;
     private EmbeddedServerHost? _host;
     private HeadlessPlayerConnection? _connection;
+    private string? _joinedName;
     private bool _disposed;
 
     /// <summary>
@@ -547,6 +548,7 @@ public sealed class ServerTestPlayer : IServerTestPlayer, IDisposable
         _connection = connection;
         _player = player;
         _server = server;
+        _joinedName = player.PlayerName;
     }
 
     internal EmbeddedServerHost RequireBotHost() => _host
@@ -570,6 +572,29 @@ public sealed class ServerTestPlayer : IServerTestPlayer, IDisposable
         {
             Received.Add(packet);
         }
+    }
+
+    /// <summary>
+    /// Cuts the player's connection without the leave packet a quitting client sends. The server reads a lost connection on its next
+    /// pass and drops the player, so <see cref="IsConnected"/> turns false.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">The player is not joined to an embedded server.</exception>
+    public void Sever() => RequireBotConnection().Sever();
+
+    /// <summary>
+    /// Joins the same player back, under the same name and UID, after it was severed or disconnected. The player keeps this test
+    /// object, and the server restores the data it saved when the player left.
+    /// </summary>
+    /// <param name="maxTicks">How many server ticks each join step may take.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <exception cref="InvalidOperationException">The player is still connected, or was never joined to an embedded server.</exception>
+    /// <exception cref="TimeoutException">A join step did not complete in time.</exception>
+    public Task RejoinAsync(int maxTicks = 2000, CancellationToken ct = default)
+    {
+        if (IsConnected) throw new InvalidOperationException($"'{_joinedName ?? _playerUid}' is still connected: sever or disconnect it first.");
+        EmbeddedServerHost host = _host ?? throw new InvalidOperationException("The player was never joined to an embedded server.");
+        string name = _joinedName ?? throw new InvalidOperationException("The player has no name to rejoin under.");
+        return host.RejoinPlayerAsync(name, this, maxTicks, ct);
     }
 
     /// <summary>

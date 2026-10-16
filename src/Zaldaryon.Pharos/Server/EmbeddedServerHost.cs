@@ -221,6 +221,9 @@ public sealed partial class EmbeddedServerHost : IDisposable, IAsyncDisposable
     /// </summary>
     public IReadOnlyList<ServerTestPlayer> TestPlayers => _players.Joined;
 
+    internal Task<ServerTestPlayer> RejoinPlayerAsync(string playerName, ServerTestPlayer player, int maxTicks, CancellationToken ct) =>
+        _players.JoinAsync(playerName, maxTicks, ct, player);
+
     /// <summary>
     /// Joins a headless player: a real multiplayer client as far as the server can tell, with no
     /// rendering client behind it. It goes through the full join sequence, packet by packet, and

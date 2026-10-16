@@ -54,7 +54,7 @@ internal sealed class HeadlessPlayers
         }
     }
 
-    public async Task<ServerTestPlayer> JoinAsync(string playerName, int maxTicks, CancellationToken ct)
+    public async Task<ServerTestPlayer> JoinAsync(string playerName, int maxTicks, CancellationToken ct, ServerTestPlayer? reuse = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(playerName);
         ServerMain server = _host.Server;
@@ -79,7 +79,7 @@ internal sealed class HeadlessPlayers
             return HeadlessPlayerConnection.Open(server, playerName, playerUid);
         });
 
-        ServerTestPlayer player = new(playerUid);
+        ServerTestPlayer player = reuse ?? new ServerTestPlayer(playerUid);
         try
         {
             // The server spawns the entity once the identification is processed and the spawn
@@ -119,7 +119,7 @@ internal sealed class HeadlessPlayers
             player.Attach(client.Player, server, _host, connection);
             lock (_lock)
             {
-                _players.Add(player);
+                if (!_players.Contains(player)) _players.Add(player);
             }
 
             return player;
