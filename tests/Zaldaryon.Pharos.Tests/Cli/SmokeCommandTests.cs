@@ -32,6 +32,14 @@ public class SmokeCommandTests
     }
 
     [Fact]
+    public void Parse_ReadsSaveReload()
+    {
+        Assert.True(SmokeCommand.Parse(["--mod", "a.zip", "--save-reload"])!.SaveReload);
+        Assert.False(SmokeCommand.Parse(["--mod", "a.zip"])!.SaveReload);
+        Assert.Contains("--save-reload", SmokeCommand.HelpText, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Parse_HasSensibleDefaults()
     {
         SmokeOptions options = SmokeCommand.Parse(["--mod", "a.zip"])!;

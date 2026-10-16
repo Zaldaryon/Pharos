@@ -56,6 +56,25 @@ public sealed class ModSmokeTestLiveTests : IDisposable
     }
 
     [Fact]
+    public void TheSmokeCommand_WithSaveReload_PassesACleanMod_AndFailsALossyOne()
+    {
+        StringWriter stdout = new(), stderr = new();
+        string artifacts = Path.Combine(_root, "save-reload");
+
+        int clean = Zaldaryon.Pharos.Cli.SmokeCommand.Run(
+            ["--mod", "TestMods/pharossavemod", "--frames", "120", "--save-reload", "--command", "/pharossave place clean", "--artifacts", artifacts], stdout, stderr);
+        Assert.True(clean == 0, stdout + Environment.NewLine + stderr);
+        Assert.Contains("Smoke test passed.", stdout.ToString());
+
+        StringWriter lossyOut = new();
+        int lossy = Zaldaryon.Pharos.Cli.SmokeCommand.Run(
+            ["--mod", "TestMods/pharossavemod", "--frames", "120", "--save-reload", "--command", "/pharossave place lossy", "--artifacts", artifacts], lossyOut, stderr);
+        Assert.Equal(1, lossy);
+        Assert.Contains("Smoke test failed:", lossyOut.ToString());
+        Assert.Contains("/count: 5 -> 0", lossyOut.ToString());
+    }
+
+    [Fact]
     public void TheSmokeCommand_PassesACleanMod_AndFailsABrokenOneStrictly()
     {
         StringWriter stdout = new(), stderr = new();

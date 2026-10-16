@@ -1,5 +1,7 @@
 using System;
 using Vintagestory.API.Common;
+using Vintagestory.API.Common.Entities;
+using Vintagestory.API.MathTools;
 using Vintagestory.API.Datastructures;
 using Vintagestory.API.Server;
 
@@ -21,6 +23,27 @@ public sealed class PharosSaveCaseModSystem : ModSystem
 
     public override void StartServerSide(ICoreServerAPI api)
     {
+        api.ChatCommands.Create("pharossave")
+            .WithDescription("Pharos save and reload test")
+            .RequiresPrivilege(Privilege.controlserver)
+            .BeginSubCommand("place")
+            .WithArgs(api.ChatCommands.Parsers.WordRange("kind", "clean", "lossy", "throwing"))
+            .HandleWith(args =>
+            {
+                // Two blocks east of the first player online, so a smoke test can compare the area it joined in.
+                IPlayer[] online = api.World.AllOnlinePlayers;
+                IPlayer? player = online.Length > 0 ? online[0] : null;
+                if (player?.Entity == null) return TextCommandResult.Error("No player is online to place the block by.");
+
+                Block block = api.World.GetBlock(new AssetLocation("pharossavemod:savecase-" + (string)args[0]))
+                    ?? throw new InvalidOperationException("The save case block is not registered.");
+                BlockPos at = player.Entity.Pos.AsBlockPos.AddCopy(2, 0, 0);
+                api.World.BlockAccessor.SetBlock(block.BlockId, at);
+                api.World.BlockAccessor.GetBlockEntity(at)?.OnBlockPlaced();
+                return TextCommandResult.Success();
+            })
+            .EndSubCommand();
+
         api.Event.GameWorldSave += () =>
         {
             byte[]? counter = api.WorldManager.SaveGame.GetData(SaveCountKey);
@@ -39,6 +62,12 @@ public sealed class PharosSaveCaseModSystem : ModSystem
 public class PharosSaveCase : BlockEntity
 {
     public int Count;
+
+    public override void OnBlockPlaced(ItemStack byItemStack = null)
+    {
+        base.OnBlockPlaced(byItemStack);
+        Count = 5;
+    }
 
     public override void ToTreeAttributes(ITreeAttribute tree)
     {

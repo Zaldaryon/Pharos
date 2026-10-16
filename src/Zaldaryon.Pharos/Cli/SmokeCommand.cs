@@ -19,6 +19,9 @@ public sealed record SmokeOptions
     /// <summary>Server console commands to run once the player has joined.</summary>
     public IReadOnlyList<string> Commands { get; init; } = [];
 
+    /// <summary>Whether the world is saved, reloaded after the play, and compared with what it was.</summary>
+    public bool SaveReload { get; init; }
+
     /// <summary>Whether boot warnings fail the run.</summary>
     public bool Strict { get; init; }
 
@@ -80,6 +83,7 @@ public static class SmokeCommand
           --frames <n>            Frames to play, the server ticking once per frame (default: 600)
           --command <text>        A server console command to run after the join (repeatable)
           --strict                Fail on any warning logged while booting
+          --save-reload           Save and reload the world after the play, and fail on a difference around the player
           --allow <regex>         A boot warning to allow with --strict (repeatable)
           --allow-error <text>    A fragment of a logged error to allow (repeatable)
           --timeout <seconds>     How long the play may take (default: 300; scaled by PHAROS_TIMEOUT_SCALE)
@@ -129,6 +133,9 @@ public static class SmokeCommand
                     break;
                 case "--strict":
                     options = options with { Strict = true };
+                    break;
+                case "--save-reload":
+                    options = options with { SaveReload = true };
                     break;
                 case "-v" or "--verbose":
                     options = options with { Verbose = true };
@@ -359,6 +366,8 @@ public static class SmokeCommand
         protected override IReadOnlyList<string> SmokeCommands => options.Commands;
 
         protected override bool StrictBoot => options.Strict;
+
+        protected override bool SmokeSaveReload => options.SaveReload;
 
         protected override IEnumerable<AllowBootDiagnosticAttribute> BootAllowances => [.. options.Allow.Select(p => new AllowBootDiagnosticAttribute(p))];
 
