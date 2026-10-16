@@ -1,0 +1,11 @@
+{
+  code: "savecase",
+  class: "Block",
+  entityClass: "PharosSaveCase",
+  variantgroups: [
+    { code: "kind", states: ["clean", "lossy", "throwing"] }
+  ],
+  shape: { base: "game:block/basic/cube" },
+  textures: { all: { base: "game:block/stone/rock/andesite1" } },
+  creativeinventory: { "general": ["*"] }
+}

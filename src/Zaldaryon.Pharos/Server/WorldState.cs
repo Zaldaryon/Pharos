@@ -1,9 +1,11 @@
 using System.Globalization;
 using Vintagestory.API.Common;
 using Vintagestory.API.Common.Entities;
+using Vintagestory.API.Config;
 using Vintagestory.API.Datastructures;
 using Vintagestory.API.MathTools;
 using Vintagestory.API.Server;
+using Vintagestory.Server;
 
 namespace Zaldaryon.Pharos.Server;
 
@@ -16,6 +18,10 @@ namespace Zaldaryon.Pharos.Server;
 /// Captured on the game thread, and read only: capturing changes nothing in the world. Players are left out, because the game
 /// does not save them with their chunks. Entity positions are compared to a thousandth of a block, and the entity's motion is not
 /// captured at all, so a moving entity does not differ from itself between two captures.
+/// </remarks>
+/// <remarks>
+/// The mod data is read as it is stored. A chunk or region keeps the mod data a mod changed in memory until the game saves it, so
+/// capture after <see cref="EmbeddedServerHost.SaveWorldAsync()"/> to compare what the save holds.
 /// </remarks>
 public sealed class WorldState
 {
@@ -124,6 +130,54 @@ public sealed class WorldState
             }
         }
 
+        // The mod data of the save, of each chunk of the cube, of its map chunks and of its map regions.
+        if (api.WorldManager.SaveGame is SaveGame save && save.ModData is { } saveData)
+        {
+            AddModData(entries, "savegame", saveData);
+        }
+
+        var chunks = new HashSet<long>();
+        var columns = new HashSet<(int, int)>();
+        var regions = new HashSet<(int, int)>();
+        for (int dx = -radius; dx <= radius; dx++)
+        {
+            for (int dy = -radius; dy <= radius; dy++)
+            {
+                for (int dz = -radius; dz <= radius; dz++)
+                {
+                    var pos = new BlockPos(around.X + dx, around.InternalY + dy, around.Z + dz);
+                    chunks.Add(host.Server.WorldMap.ChunkIndex3D(pos.X / GlobalConstants.ChunkSize, pos.InternalY / GlobalConstants.ChunkSize, pos.Z / GlobalConstants.ChunkSize));
+                    columns.Add((pos.X / GlobalConstants.ChunkSize, pos.Z / GlobalConstants.ChunkSize));
+                    regions.Add((pos.X / MagicNum.MapRegionSize, pos.Z / MagicNum.MapRegionSize));
+                }
+            }
+        }
+
+        foreach (long index in chunks)
+        {
+            if (host.Server.GetLoadedChunk(index) is { } chunk && chunk.ModData is { } chunkData)
+            {
+                Vintagestory.Common.Database.ChunkPos at = host.Server.WorldMap.ChunkPosFromChunkIndex3D(index);
+                AddModData(entries, $"chunk {at.X},{at.Y},{at.Z}", chunkData);
+            }
+        }
+
+        foreach ((int cx, int cz) in columns)
+        {
+            if (host.Server.WorldMap.GetMapChunk(cx, cz) is ServerMapChunk mapChunk && mapChunk.Moddata is { } mapData)
+            {
+                AddModData(entries, $"map chunk {cx},{cz}", mapData);
+            }
+        }
+
+        foreach ((int rx, int rz) in regions)
+        {
+            if (host.Server.WorldMap.GetMapRegion(rx, rz) is ServerMapRegion region && region.ModData is { } regionData)
+            {
+                AddModData(entries, $"map region {rx},{rz}", regionData);
+            }
+        }
+
         foreach (Entity entity in api.World.LoadedEntities.Values)
         {
             if (entity is EntityPlayer || !entity.Alive || !entity.StoreWithChunk) continue;
@@ -167,6 +221,16 @@ public sealed class WorldState
                     entries[leaf] = Describe(attribute.GetValue());
                     break;
             }
+        }
+    }
+
+    // The mod data of a save, a chunk or a region. An entry with no bytes is left out: the game writes an empty entry when it
+    // unloads a map region at shutdown, as the cloth manager does for its cloth systems, so an empty entry holds nothing a save keeps.
+    private static void AddModData(IDictionary<string, string> entries, string owner, IReadOnlyDictionary<string, byte[]> data)
+    {
+        foreach (KeyValuePair<string, byte[]> datum in data)
+        {
+            if (datum.Value.Length > 0) entries[$"{owner} mod data {datum.Key}"] = Describe(datum.Value);
         }
     }
 

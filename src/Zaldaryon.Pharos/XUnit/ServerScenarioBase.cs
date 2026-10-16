@@ -396,8 +396,8 @@ public abstract class ServerScenarioBase : IAsyncLifetime, IScenarioLifecycle
 
     /// <summary>
     /// Saves the world, stops the server and boots it again on its save, so a test can compare what the save gives back. The
-    /// players the test joined are gone afterwards: join them again. Errors that the server logged while it saved are reported
-    /// before the restart, since the new server's logs start empty.
+    /// players the test joined are gone afterwards: join them again. Errors that the server logged while it saved or stopped are
+    /// reported once the new server is up.
     /// </summary>
     /// <param name="ct">Cancellation token.</param>
     /// <exception cref="InvalidOperationException">The server is not running, or it was not booted from this test's pool.</exception>
@@ -406,13 +406,13 @@ public abstract class ServerScenarioBase : IAsyncLifetime, IScenarioLifecycle
         EmbeddedServerHost old = _host ?? throw new InvalidOperationException("The server is not running, so its world cannot be reloaded.");
         PooledServer pooled = _pooled ?? throw new InvalidOperationException("The server was not booted for this test, so it cannot be reloaded.");
 
-        await old.SaveWorldAsync(ct).ConfigureAwait(false);
-        LoggedErrorGate.ThrowIfAny(LoggedErrorGate.Collect(FailOnLoggedErrors, AllowedLoggedErrors, old.Logs));
-
+        // The game logs a save's serialization errors while the old server stops, so they are checked once it has. The new
+        // server replaces the old one first, so the scenario disposes it whatever the check finds.
         EmbeddedServerHost next = await old.RestartAsync(RestartMode.Graceful, ct).ConfigureAwait(false);
         _testPlayers.Clear();
         pooled.ReplaceHost(next);
         _host = next;
+        LoggedErrorGate.ThrowIfAny(LoggedErrorGate.Collect(FailOnLoggedErrors, AllowedLoggedErrors, old.Logs));
     }
 
     /// <summary>

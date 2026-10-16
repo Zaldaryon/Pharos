@@ -32,6 +32,7 @@ public class LiveClientSaveReloadTests : ClientServerScenarioBase
         await ServerHost!.EnsureChunksLoadedAsync(chest, chest);
         SetBlock(ServerHost, chest, "game:chest-east");
         FillSlot(ServerHost, chest, 3, "game:ingot-copper", 5);
+        await ServerHost.SaveWorldAsync();
         WorldState before = WorldState.Capture(ServerHost, chest, radius: 2);
 
         await ReloadWorldAsync();

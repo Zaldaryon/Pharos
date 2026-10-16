@@ -19,9 +19,12 @@ public class ChunkReloadTests : ServerScenarioBase
     public async Task UnloadAndReload_GivesNewChunks_AndTheSameChest()
     {
         ServerTestPlayer player = await CreateTestPlayerAsync(PlayerNames.Next());
-        BlockPos chest = player.Entity!.Pos.AsBlockPos.AddCopy(4, 0, 0);
+        // The chest sits in another column than the player's: the player's column is kept with the player.
+        BlockPos chest = player.Entity!.Pos.AsBlockPos.AddCopy(40, 0, 0);
+        await Host!.EnsureChunksLoadedAsync(chest, chest);
         this.SetBlock(chest, "game:chest-east");
         FillSlot(chest, 3, "game:ingot-copper", 5);
+        await Host!.SaveWorldAsync();
         WorldState before = WorldState.Capture(Host!, chest, radius: 2);
         object loaded = ChunkAt(chest) ?? throw new InvalidOperationException("The chest's chunk is not loaded.");
 

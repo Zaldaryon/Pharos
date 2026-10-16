@@ -20,6 +20,7 @@ public class LiveSaveReloadTests : ServerScenarioBase
         BlockPos chest = player.Entity!.Pos.AsBlockPos.AddCopy(4, 0, 0);
         this.SetBlock(chest, "game:chest-east");
         FillSlot(chest, 3, "game:ingot-copper", 5);
+        await Host!.SaveWorldAsync();
         WorldState before = WorldState.Capture(Host!, chest, radius: 2);
         EmbeddedServerHost booted = Host!;
 
