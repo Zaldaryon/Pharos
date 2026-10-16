@@ -34,6 +34,9 @@ public class CraftingGridTests : ClientServerScenarioBase
         await Client.Ui.Crafting.PlaceAsync(1, 0, "game:stick");
         Assert.True(await StepUntilAsync(() => ServerCell(0, 0) == "game:drygrass" && ServerCell(1, 0) == "game:stick" && ServerCell(0, 1) == "game:stick", maxFrames: 600), "The server's grid never took the three items.");
 
+        // The server's last cursor update can reach the client after the client emptied its cursor, so wait until both agree it is empty.
+        Assert.True(await StepUntilAsync(() => ServerPlayer.SlotItem("mouse", 0) is null && Client.Ui.Crafting.Cursor is null, maxFrames: 600), "The cursor never emptied on the server and the client.");
+
         (string Code, int Quantity) output = await Client.Ui.Crafting.TakeOutputAsync();
 
         Assert.Equal(("game:firestarter", 1), output);

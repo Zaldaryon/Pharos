@@ -91,7 +91,12 @@ public sealed class CraftingDriver
         ArgumentNullException.ThrowIfNull(itemCode);
 
         await OpenAsync(ct).ConfigureAwait(false);
-        if (Cursor is not null) throw new InvalidOperationException($"The cursor holds {Cursor.Value.Code}: empty it before placing.");
+        // The server's last update for the cursor can reach the client after it has emptied the cursor, so wait for it to settle.
+        if (!await _gui.StepUntilAsync(() => Cursor is null, 60, ct).ConfigureAwait(false))
+        {
+            throw new InvalidOperationException($"The cursor holds {Cursor?.Code}: empty it before placing.");
+        }
+
         int hotbar = HotbarSlotOf(itemCode);
         if (hotbar < 0) throw new InvalidOperationException($"The hotbar holds no {itemCode}.");
 
@@ -139,7 +144,12 @@ public sealed class CraftingDriver
     public async Task<(string Code, int Quantity)> TakeOutputAsync(CancellationToken ct = default)
     {
         await OpenAsync(ct).ConfigureAwait(false);
-        if (Cursor is not null) throw new InvalidOperationException($"The cursor holds {Cursor.Value.Code}: empty it before taking the output.");
+        // As in PlaceAsync: a late update for the cursor may still be on its way, so give it a moment to settle.
+        if (!await _gui.StepUntilAsync(() => Cursor is null, 60, ct).ConfigureAwait(false))
+        {
+            throw new InvalidOperationException($"The cursor holds {Cursor?.Code}: empty it before taking the output.");
+        }
+
         int empty = EmptyHotbarSlot();
         if (empty < 0) throw new InvalidOperationException("The hotbar has no empty slot for the output.");
 
