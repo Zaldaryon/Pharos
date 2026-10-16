@@ -38,6 +38,7 @@ public sealed class ServerTestPlayer : IServerTestPlayer, IDisposable
     private ServerMain? _server;
     private EmbeddedServerHost? _host;
     private HeadlessPlayerConnection? _connection;
+    private string? _joinedName;
     private bool _disposed;
 
     /// <summary>
@@ -547,6 +548,7 @@ public sealed class ServerTestPlayer : IServerTestPlayer, IDisposable
         _connection = connection;
         _player = player;
         _server = server;
+        _joinedName = player.PlayerName;
     }
 
     internal EmbeddedServerHost RequireBotHost() => _host
@@ -560,6 +562,11 @@ public sealed class ServerTestPlayer : IServerTestPlayer, IDisposable
     internal void RunBotOnGameThread(Action action) => OnGameThread(action);
 
     /// <summary>
+    /// Moves the player's link on by <paramref name="dtMs"/>. Called on the game thread every tick, before its packets are read.
+    /// </summary>
+    internal void AdvanceNetwork(double dtMs) => _connection?.AdvanceLink(dtMs);
+
+    /// <summary>
     /// Takes the packets the server queued for this player. Called on the game thread every tick.
     /// </summary>
     internal void ReceivePending()
@@ -570,6 +577,51 @@ public sealed class ServerTestPlayer : IServerTestPlayer, IDisposable
         {
             Received.Add(packet);
         }
+    }
+
+    /// <summary>
+    /// The player's network: how its link is degraded, scripted, severed and frozen. The player must be joined.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">The player is not joined to an embedded server.</exception>
+    public PlayerNetwork Network => new(RequireBotConnection(), this);
+
+    /// <summary>
+    /// Freezes the player's connection: it stops reading and answering the server's pings. The server then times the player out once the
+    /// game's ping timeout has passed in simulated time, as it would for a client that stopped responding.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">The player is not joined to an embedded server.</exception>
+    public void Freeze() => FreezeNetwork();
+
+    internal void FreezeNetwork()
+    {
+        HeadlessPlayerConnection connection = RequireBotConnection();
+        EmbeddedServerHost host = RequireBotHost();
+        ServerMain server = _server ?? throw new InvalidOperationException("The player is not connected to a server.");
+        string name = _joinedName ?? _playerUid;
+        host.RunOnGameThread(() => connection.Freeze(server, name));
+    }
+
+    /// <summary>
+    /// Cuts the player's connection without the leave packet a quitting client sends. The server reads a lost connection on its next
+    /// pass and drops the player, so <see cref="IsConnected"/> turns false.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">The player is not joined to an embedded server.</exception>
+    public void Sever() => RequireBotConnection().Sever();
+
+    /// <summary>
+    /// Joins the same player back, under the same name and UID, after it was severed or disconnected. The player keeps this test
+    /// object, and the server restores the data it saved when the player left.
+    /// </summary>
+    /// <param name="maxTicks">How many server ticks each join step may take.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <exception cref="InvalidOperationException">The player is still connected, or was never joined to an embedded server.</exception>
+    /// <exception cref="TimeoutException">A join step did not complete in time.</exception>
+    public Task RejoinAsync(int maxTicks = 2000, CancellationToken ct = default)
+    {
+        if (IsConnected) throw new InvalidOperationException($"'{_joinedName ?? _playerUid}' is still connected: sever or disconnect it first.");
+        EmbeddedServerHost host = _host ?? throw new InvalidOperationException("The player was never joined to an embedded server.");
+        string name = _joinedName ?? throw new InvalidOperationException("The player has no name to rejoin under.");
+        return host.RejoinPlayerAsync(name, this, maxTicks, ct);
     }
 
     /// <summary>

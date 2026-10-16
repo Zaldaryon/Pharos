@@ -401,14 +401,23 @@ public abstract class ServerScenarioBase : IAsyncLifetime, IScenarioLifecycle
     /// </summary>
     /// <param name="ct">Cancellation token.</param>
     /// <exception cref="InvalidOperationException">The server is not running, or it was not booted from this test's pool.</exception>
-    protected async Task ReloadWorldAsync(CancellationToken ct = default)
+    protected Task ReloadWorldAsync(CancellationToken ct = default) => RestartWorldAsync(RestartMode.Graceful, ct);
+
+    /// <summary>
+    /// Stops the server in <paramref name="mode"/> and boots it again on its save, as <see cref="ReloadWorldAsync"/> does. A
+    /// <see cref="RestartMode.Crash"/> keeps only what the game had saved before the crash.
+    /// </summary>
+    /// <param name="mode">How the server stops.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <exception cref="InvalidOperationException">The server is not running, or it was not booted from this test's pool.</exception>
+    protected async Task RestartWorldAsync(RestartMode mode, CancellationToken ct = default)
     {
-        EmbeddedServerHost old = _host ?? throw new InvalidOperationException("The server is not running, so its world cannot be reloaded.");
-        PooledServer pooled = _pooled ?? throw new InvalidOperationException("The server was not booted for this test, so it cannot be reloaded.");
+        EmbeddedServerHost old = _host ?? throw new InvalidOperationException("The server is not running, so its world cannot be restarted.");
+        PooledServer pooled = _pooled ?? throw new InvalidOperationException("The server was not booted for this test, so it cannot be restarted.");
 
         // The game logs a save's serialization errors while the old server stops, so they are checked once it has. The new
         // server replaces the old one first, so the scenario disposes it whatever the check finds.
-        EmbeddedServerHost next = await old.RestartAsync(RestartMode.Graceful, ct).ConfigureAwait(false);
+        EmbeddedServerHost next = await old.RestartAsync(mode, ct).ConfigureAwait(false);
         _testPlayers.Clear();
         pooled.ReplaceHost(next);
         _host = next;

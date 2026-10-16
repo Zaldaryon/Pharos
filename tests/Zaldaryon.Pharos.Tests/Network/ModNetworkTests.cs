@@ -4,6 +4,7 @@ using Xunit;
 using Zaldaryon.Pharos.Bootstrap;
 using Zaldaryon.Pharos.Core;
 using Zaldaryon.Pharos.Network;
+using Zaldaryon.Pharos.Tests.Support;
 using Zaldaryon.Pharos.XUnit;
 
 namespace Zaldaryon.Pharos.Tests.Network;
@@ -98,6 +99,52 @@ public class LiveModNetworkTests : ClientServerScenarioBase
     }
 
     [ClientServerScenario]
+    public async Task Filter_DropsOnlyTheSelectedServerMessage()
+    {
+        // The first message tells the test the id the server's SyncPacket has on the channel.
+        long mark = Client!.ModNetwork.Mark();
+        ServerHost!.RunOnGameThread(() => ((Vintagestory.API.Server.ICoreServerAPI)Server!.Api).ChatCommands.ExecuteUnparsed(
+            "/pharosnet sync 1", new TextCommandCallingArgs { Caller = ServerScenarioBase.ConsoleCaller() }, _ => { }));
+        await Client.ModNetwork.WaitForReceivedAsync<SyncPacket>(Channel, p => p.Version == 1, since: mark);
+        int messageId = Assert.Single(Client.ModNetwork.Of<SyncPacket>(Channel, ModMessageDirection.Received), m => m.Sequence > mark).MessageId;
+
+        using (Client.NetworkDegradation.Filter(p => p.Direction == PacketDirection.Inbound && p.Channel == Channel && p.MessageId == messageId))
+        {
+            long dropped = Client.NetworkDegradation.PacketsDropped;
+            ServerHost.RunOnGameThread(() => ((Vintagestory.API.Server.ICoreServerAPI)Server!.Api).ChatCommands.ExecuteUnparsed(
+                "/pharosnet sync 2", new TextCommandCallingArgs { Caller = ServerScenarioBase.ConsoleCaller() }, _ => { }));
+
+            await Session!.StepFramesAsync(120);
+            Assert.DoesNotContain(Client.ModNetwork.Received<SyncPacket>(Channel), p => p.Version == 2);
+            Assert.True(Client.NetworkDegradation.PacketsDropped > dropped, "The filter dropped nothing");
+        }
+
+        // Once the filter is gone, the server's messages reach the client again, and the connection held.
+        ServerHost.RunOnGameThread(() => ((Vintagestory.API.Server.ICoreServerAPI)Server!.Api).ChatCommands.ExecuteUnparsed(
+            "/pharosnet sync 3", new TextCommandCallingArgs { Caller = ServerScenarioBase.ConsoleCaller() }, _ => { }));
+        Assert.Equal(3, (await Client.ModNetwork.WaitForReceivedAsync<SyncPacket>(Channel, p => p.Version == 3, since: mark)).Version);
+        Assert.True(Session.IsConnected);
+    }
+
+    [ClientServerScenario]
+    public async Task Script_OutageHoldsTcpUntilRecover()
+    {
+        // The script's only step is the outage, which lasts until the test changes the profile.
+        Client!.NetworkDegradation.Run(NetworkScript.Begin(new DegradedNetworkProfile(Outage: true)));
+        long mark = Client.ModNetwork.Mark();
+        ServerHost!.RunOnGameThread(() => ((Vintagestory.API.Server.ICoreServerAPI)Server!.Api).ChatCommands.ExecuteUnparsed(
+            "/pharosnet sync 5", new TextCommandCallingArgs { Caller = ServerScenarioBase.ConsoleCaller() }, _ => { }));
+
+        await Session!.StepFramesAsync(120);
+        Assert.DoesNotContain(Client.ModNetwork.Received<SyncPacket>(Channel), p => p.Version == 5);
+
+        // Recovery releases the held message, which then arrives.
+        Client.NetworkDegradation.Configure(DegradedNetworkProfile.None);
+        Assert.Equal(5, (await Client.ModNetwork.WaitForReceivedAsync<SyncPacket>(Channel, p => p.Version == 5, since: mark)).Version);
+        Assert.True(Session.IsConnected);
+    }
+
+    [ClientServerScenario]
     public async Task UdpMessages_AreRecordedAndDelivered()
     {
         long mark = Client!.ModNetwork.Mark();
@@ -124,5 +171,32 @@ public class LiveModNetworkTests : ClientServerScenarioBase
         Assert.Contains("PharosNetMod.SyncAck", noType.Message);
         await Assert.ThrowsAsync<InvalidOperationException>(() => Client!.ModNetwork.DeliverAsync(Channel, new Unhandled { N = 1 }));
         await Assert.ThrowsAsync<TimeoutException>(() => Client!.ModNetwork.WaitForSentAsync<SyncAck>(Channel, maxFrames: 5));
+    }
+}
+
+/// <summary>A headless player's link names a mod's messages, as the engine client's does, so a filter can select a channel on it.</summary>
+[Collection("Sequential")]
+[Trait(PharosTraits.Category, PharosTraits.Live)]
+[ServerMods("TestMods/pharosnetmod")]
+public class HeadlessModChannelTests : ServerScenarioBase
+{
+    private const string Channel = "pharosnet";
+
+    [ServerScenario]
+    public async Task AHeadlessPlayer_NamesTheChannelOfAModMessage()
+    {
+        ServerTestPlayer bob = await CreateTestPlayerAsync(PlayerNames.Next());
+        var seen = new System.Collections.Concurrent.ConcurrentQueue<NetworkPacketInfo>();
+        using IDisposable watch = bob.Network.Simulator.Filter(p =>
+        {
+            seen.Enqueue(p);
+            return false;
+        });
+
+        Host!.RunOnGameThread(() => ((Vintagestory.API.Server.ICoreServerAPI)Server!.Api).ChatCommands.ExecuteUnparsed(
+            "/pharosnet sync 3", new TextCommandCallingArgs { Caller = ServerScenarioBase.ConsoleCaller() }, _ => { }));
+
+        Assert.True(await Host.TickUntilAsync(() => seen.Any(p => p.Channel == Channel), maxTicks: 120),
+            "No packet on the pharosnet channel reached the headless player's link.");
     }
 }

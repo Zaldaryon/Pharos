@@ -331,6 +331,22 @@ var pings = Host.ModPackets<MyPing>(alice, "mymod");
 
 `player.Received.Clear()` starts a fresh record.
 
+### Headless player network
+
+`player.Network` is the player's link to the server. `Configure` and `Run` degrade it like the engine client's
+`NetworkDegradation`, `Sever` cuts the connection without a leave packet, and `RejoinAsync` joins the same player back under its
+name and UID with its data. A headless player answers the server's pings; `Freeze` stops it reading and answering, and the server
+times it out after the game's ping timeout of simulated time, so a virtual clock with one-second ticks counts it in ticks:
+
+```csharp
+using VirtualClock clock = Host!.UseVirtualClock(tickMs: 1000);
+bob.Network.Freeze();
+clock.Advance(TimeSpan.FromSeconds(160), TimeSpan.FromSeconds(1));
+Assert.False(bob.IsConnected);
+```
+
+The engine client is not frozen this way: the game never times out a single-player client, and the engine client is one.
+
 ### Headless player actions
 
 `player.Bot` sends the same client packets as the game client. The embedded server runs its normal
@@ -544,6 +560,41 @@ await Host.WaitForBackgroundWorkAsync();      // relight, random ticks, spawner,
 - **Disposing:** the server goes back to the wall clock, carrying on from the simulated time, so its time never goes backwards. A clock a test leaves in use ends with the test, before a rollback or a recycle. The server's time is never rolled back.
 - **Failure artifacts:** a failure's `run.json` records the clock under `serverClock`.
 - **Cost:** Pharos patches the server's time reads once per process, before anything boots, whether or not a test uses the clock. That takes about 0.4 s, and longer in a process where nothing has used Harmony yet. Without a clock, the patched reads return what the game's stopwatch says.
+
+## Faults
+
+`Host.Faults` injects server-side failures. Each fault lasts until it is disposed, and the scenario disposes the rest when it ends,
+before the world is rolled back:
+
+```csharp
+using (Host!.Faults.SlowTicks(every: 4, delayMs: 500))
+{
+    // Every fourth tick takes 500 ms longer on the virtual clock.
+}
+
+using (Host.Faults.ThrowIn<MyModSystem>(nameof(MyModSystem.OnTick), times: 1))
+{
+    // The next call to OnTick throws InjectedFaultException; the server logs it and runs the next tick.
+}
+
+using (Host.Faults.FailSaves())
+{
+    // Each database write of a save on the game thread throws. The game logs some of these and the save completes; the chunk writes
+    // escape the save, which then throws. The game's off-thread saves, which run on the chunk thread after a save, are not failed.
+}
+
+using (Host.Faults.DelayChunkLoads(ticks: 100))
+{
+    // A column requested now stays missing for 100 ticks.
+}
+```
+
+`SlowTicks` needs a virtual clock, since a stretch on the wall clock cannot be checked deterministically. `ThrowIn` patches the
+method the first time a fault names it, and the patch stays; an inlined method cannot be patched, so the target must be reached
+through a delegate or a virtual call. `DelayChunkLoads` counts ticks, not time, and it is a lower bound: a load already under way
+can still finish. `FailSaves` affects saves the test makes on the game thread, not the chunk thread's off-thread saves, so a chunk
+those saves write is stored whatever the fault says. A chunk whose write failed is left clean, because the game clears its dirty mark
+before the write: a later save writes it again only once it changes.
 
 ## Calendar and Weather
 

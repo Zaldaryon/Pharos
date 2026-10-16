@@ -32,6 +32,7 @@ internal sealed class HeadlessPlayers
     private readonly List<ServerTestPlayer> _players = [];
     private readonly object _lock = new();
     private DummyUdpNetClient? _udpDrain;
+    private long? _lastNetworkMs;
     private HeadlessUdpNetServer? _udpIngress;
 
     public HeadlessPlayers(EmbeddedServerHost host)
@@ -54,7 +55,7 @@ internal sealed class HeadlessPlayers
         }
     }
 
-    public async Task<ServerTestPlayer> JoinAsync(string playerName, int maxTicks, CancellationToken ct)
+    public async Task<ServerTestPlayer> JoinAsync(string playerName, int maxTicks, CancellationToken ct, ServerTestPlayer? reuse = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(playerName);
         ServerMain server = _host.Server;
@@ -79,7 +80,7 @@ internal sealed class HeadlessPlayers
             return HeadlessPlayerConnection.Open(server, playerName, playerUid);
         });
 
-        ServerTestPlayer player = new(playerUid);
+        ServerTestPlayer player = reuse ?? new ServerTestPlayer(playerUid);
         try
         {
             // The server spawns the entity once the identification is processed and the spawn
@@ -119,7 +120,7 @@ internal sealed class HeadlessPlayers
             player.Attach(client.Player, server, _host, connection);
             lock (_lock)
             {
-                _players.Add(player);
+                if (!_players.Contains(player)) _players.Add(player);
             }
 
             return player;
@@ -134,6 +135,11 @@ internal sealed class HeadlessPlayers
     /// <summary>Called on the game thread after every server pass.</summary>
     public void AfterTick()
     {
+        // Each player's link moves on by the server time that passed, so its latency and script run on the server's clock.
+        long now = _host.ServerNowMs;
+        double dt = _lastNetworkMs is { } last ? Math.Max(0, now - last) : 0;
+        _lastNetworkMs = now;
+
         ServerTestPlayer[] players;
         lock (_lock)
         {
@@ -143,6 +149,7 @@ internal sealed class HeadlessPlayers
 
         foreach (ServerTestPlayer player in players)
         {
+            player.AdvanceNetwork(dt);
             player.ReceivePending();
         }
 

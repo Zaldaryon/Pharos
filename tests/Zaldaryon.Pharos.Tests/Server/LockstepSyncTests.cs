@@ -228,7 +228,7 @@ public class LockstepSyncTests
     [Fact]
     public void NetworkDegradationSimulator_ProcessPacket_ReturnsResult()
     {
-        var method = typeof(NetworkDegradationSimulator).GetMethod("ProcessPacket", PublicInstance);
+        var method = typeof(NetworkDegradationSimulator).GetMethod("ProcessPacket", PublicInstance, Type.EmptyTypes);
         Assert.NotNull(method);
         Assert.Equal(typeof(PacketDegradationResult), method.ReturnType);
         Assert.Empty(method.GetParameters());

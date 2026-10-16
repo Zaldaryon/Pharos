@@ -18,6 +18,10 @@ public sealed class NetworkDegradationSimulator
     private long _packetsDropped;
     private long _packetsCorrupted;
     private long _totalLatencyApplied;
+    private readonly double[] _busyUntilMs = new double[2];
+    private readonly List<NetworkFilter> _filters = [];
+    private readonly List<(double AtMs, DegradedNetworkProfile Profile)> _timeline = [];
+    private double _clockMs;
 
     /// <summary>
     /// Creates a new NetworkDegradationSimulator with the default seed.
@@ -140,6 +144,9 @@ public sealed class NetworkDegradationSimulator
         lock (_lock)
         {
             _profile = DegradedNetworkProfile.None;
+            _timeline.Clear();
+            _filters.Clear();
+            Array.Clear(_busyUntilMs);
             _random = new Random(_seed);
             _packetsProcessed = 0;
             _packetsDropped = 0;
@@ -231,14 +238,166 @@ public sealed class NetworkDegradationSimulator
         }
     }
 
+    /// <summary>Whether the link is down: the profile is an outage.</summary>
+    internal bool IsOutage
+    {
+        get { lock (_lock) return _profile.Outage; }
+    }
+
     /// <summary>
-    /// Processes a packet through the degradation simulator, returning the result.
+    /// When the outage ends, in link milliseconds: the next step of the script, or never (infinity) when no step is due. TCP packets
+    /// sent during an outage arrive at this time.
     /// </summary>
-    public PacketDegradationResult ProcessPacket()
+    internal double OutageEndMs
+    {
+        get { lock (_lock) return _timeline.Count > 0 ? _timeline[0].AtMs : double.PositiveInfinity; }
+    }
+
+    /// <summary>
+    /// Starts a script on the link's clock: each step takes effect at its time after now. A step at time zero takes effect at once.
+    /// A script replaces the one before it.
+    /// </summary>
+    /// <exception cref="ArgumentNullException"><paramref name="script"/> is null.</exception>
+    public void Run(NetworkScript script)
+    {
+        ArgumentNullException.ThrowIfNull(script);
+        lock (_lock)
+        {
+            _timeline.Clear();
+            foreach ((int atMs, DegradedNetworkProfile profile) in script.Steps)
+            {
+                _timeline.Add((_clockMs + atMs, profile));
+            }
+
+            ApplyDueSteps();
+        }
+    }
+
+    // Advances the simulator's clock by the link's time step, and applies the script steps that are now due.
+    internal void Elapse(double dtMs)
     {
         lock (_lock)
         {
-            if (!_profile.HasDegradation)
+            _clockMs += dtMs;
+            ApplyDueSteps();
+        }
+    }
+
+    private void ApplyDueSteps()
+    {
+        while (_timeline.Count > 0 && _timeline[0].AtMs <= _clockMs)
+        {
+            DegradedNetworkProfile next = _timeline[0].Profile;
+            _timeline.RemoveAt(0);
+            _profile = next;
+            _events.Add(new DegradationEvent(
+                DegradationEventType.ProfileChanged,
+                $"Script changed the profile: Latency={next.LatencyMs}ms, Drop={next.PacketDropRate:P0}, Outage={next.Outage}"));
+        }
+    }
+
+    /// <summary>Whether a filter is in place. The link reads packets only while one is.</summary>
+    public bool HasFilters
+    {
+        get { lock (_lock) return _filters.Count > 0; }
+    }
+
+    /// <summary>
+    /// Drops the packets that <paramref name="match"/> selects, with probability <paramref name="drop"/>, whatever the profile is.
+    /// The filter stays in place until the returned handle is disposed. A drop of 1 draws nothing from the random generator.
+    /// </summary>
+    /// <exception cref="ArgumentNullException"><paramref name="match"/> is null.</exception>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="drop"/> is not from 0 to 1.</exception>
+    public IDisposable Filter(Func<NetworkPacketInfo, bool> match, float drop = 1f)
+    {
+        ArgumentNullException.ThrowIfNull(match);
+        if (drop is < 0f or > 1f) throw new ArgumentOutOfRangeException(nameof(drop), drop, "A drop rate is from 0 to 1.");
+
+        var filter = new NetworkFilter(this, match, drop);
+        lock (_lock) _filters.Add(filter);
+        return filter;
+    }
+
+    /// <summary>Whether a filter drops the packet. A drop counts as a dropped packet, and is logged.</summary>
+    internal bool FilterDrops(NetworkPacketInfo info)
+    {
+        lock (_lock)
+        {
+            foreach (NetworkFilter filter in _filters)
+            {
+                if (!filter.Matches(info)) continue;
+                if (filter.Drop < 1f && _random.NextDouble() >= filter.Drop) continue;
+
+                _packetsDropped++;
+                _events.Add(new DegradationEvent(DegradationEventType.PacketDropped,
+                    $"Filter dropped {info.Direction} {(info.Udp ? "UDP" : "TCP")} packet {info.PacketId}: {info.Channel ?? "not a mod message"} {info.MessageId}"));
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    internal void RemoveFilter(NetworkFilter filter)
+    {
+        lock (_lock) _filters.Remove(filter);
+    }
+
+    /// <summary>Whether the profile applies to packets in <paramref name="direction"/>.</summary>
+    public bool Applies(PacketDirection direction)
+    {
+        lock (_lock) return AppliesTo(direction);
+    }
+
+    // Callers without a direction, such as the first version of the API, are in both.
+    private bool AppliesTo(PacketDirection? direction) =>
+        _profile.Direction is not { } only || direction is null || only == direction;
+
+    /// <summary>
+    /// The time a packet of <paramref name="bytes"/> leaves the link in <paramref name="direction"/>, in link milliseconds. With a
+    /// bandwidth cap, packets queue behind the ones before them and each takes <c>bytes * 8 / BandwidthKbps</c> milliseconds. Without a
+    /// cap, or in the other direction, the packet leaves at <paramref name="nowMs"/>. It never draws from the random generator.
+    /// </summary>
+    public double Departure(PacketDirection direction, int bytes, double nowMs)
+    {
+        lock (_lock)
+        {
+            if (_profile.BandwidthKbps <= 0 || !Applies(direction)) return nowMs;
+
+            int slot = (int)direction;
+            double start = Math.Max(nowMs, _busyUntilMs[slot]);
+            _busyUntilMs[slot] = start + bytes * 8.0 / _profile.BandwidthKbps;
+            return _busyUntilMs[slot];
+        }
+    }
+
+    /// <summary>The latency one packet in <paramref name="direction"/> pays; 0 when the profile does not apply to it.</summary>
+    public int GetEffectiveLatency(PacketDirection direction)
+    {
+        lock (_lock) return AppliesTo(direction) ? GetEffectiveLatencyInternal() : 0;
+    }
+
+    /// <summary>
+    /// Processes a packet through the degradation simulator, returning the result.
+    /// </summary>
+    public PacketDegradationResult ProcessPacket() => ProcessPacket(null);
+
+    /// <summary>
+    /// Processes a packet in <paramref name="direction"/> through the degradation simulator, returning the result. A profile for one
+    /// direction leaves the other alone.
+    /// </summary>
+    public PacketDegradationResult ProcessPacket(PacketDirection? direction)
+    {
+        lock (_lock)
+        {
+            if (_profile.Outage && AppliesTo(direction))
+            {
+                _packetsProcessed++;
+                _packetsDropped++;
+                return new PacketDegradationResult(Dropped: true, Corrupted: false, LatencyMs: 0);
+            }
+
+            if (!_profile.HasDegradation || !AppliesTo(direction))
             {
                 _packetsProcessed++;
                 return new PacketDegradationResult(
@@ -384,3 +543,20 @@ public sealed record DegradationStatistics(
     float DropRate,
     float CorruptionRate,
     float AverageLatency);
+
+/// <summary>A filter a test set with <see cref="NetworkDegradationSimulator.Filter"/>. Disposing it takes the filter out.</summary>
+internal sealed class NetworkFilter(NetworkDegradationSimulator owner, Func<NetworkPacketInfo, bool> match, float drop) : IDisposable
+{
+    private int _disposed;
+
+    /// <summary>The probability that a selected packet is dropped.</summary>
+    public float Drop { get; } = drop;
+
+    public bool Matches(NetworkPacketInfo info) => Volatile.Read(ref _disposed) == 0 && match(info);
+
+    public void Dispose()
+    {
+        if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
+        owner.RemoveFilter(this);
+    }
+}

@@ -32,6 +32,7 @@ internal sealed class LoopbackLink
     private readonly object _lock = new();
     private readonly PacketRecorder _recorder;
     private readonly NetworkDegradationSimulator _degradation;
+    private readonly Func<int, bool, string?> _channelName;
     private readonly Queue<(double At, byte[] Data)> _toServer = new();
     private readonly Queue<(double At, NetIncomingMessage Message)> _toClient = new();
     private readonly List<(double At, Packet_UdpPacket Packet)> _udpToServer = [];
@@ -41,10 +42,11 @@ internal sealed class LoopbackLink
     private double _lastToClientAt;
     private Action<Exception>? _onDisconnected;
 
-    public LoopbackLink(PacketRecorder recorder, NetworkDegradationSimulator degradation)
+    public LoopbackLink(PacketRecorder recorder, NetworkDegradationSimulator degradation, Func<int, bool, string?>? channelName = null)
     {
         _recorder = recorder;
         _degradation = degradation;
+        _channelName = channelName ?? ((_, _) => null);
     }
 
     /// <summary>Whether the wire has been cut.</summary>
@@ -56,9 +58,11 @@ internal sealed class LoopbackLink
         List<byte[]> tcp = [];
         List<Packet_UdpPacket> udp = [];
 
+        _degradation.Elapse(dtMs);
         lock (_lock)
         {
             _nowMs += dtMs;
+            ReleaseHeldIfRecovered();
             while (_toServer.Count > 0 && _toServer.Peek().At <= _nowMs) tcp.Add(_toServer.Dequeue().Data);
             TakeDue(_udpToServer, udp);
         }
@@ -71,12 +75,15 @@ internal sealed class LoopbackLink
     public byte[]? ClientSends(byte[] data)
     {
         Record(data, PacketDirection.Outbound, server: false);
+        if (Filtered(() => PacketDescriber.Tcp(PacketDirection.Outbound, data, _channelName))) return null;
 
         lock (_lock)
         {
             if (IsSevered) return null;
 
-            double at = Math.Max(_nowMs + Latency(), _lastToServerAt);
+            double leave = _degradation.Departure(PacketDirection.Outbound, data.Length, _nowMs);
+            double at = Math.Max(leave + Latency(PacketDirection.Outbound), _lastToServerAt);
+            if (_degradation.IsOutage) at = Math.Max(at, _degradation.OutageEndMs);
             _lastToServerAt = at;
             if (at <= _nowMs && _toServer.Count == 0) return data;
 
@@ -91,12 +98,15 @@ internal sealed class LoopbackLink
         byte[] data = new byte[message.messageLength];
         Array.Copy(message.message, data, message.messageLength);
         Record(data, PacketDirection.Inbound, server: true);
+        if (Filtered(() => PacketDescriber.Tcp(PacketDirection.Inbound, data, _channelName))) return;
 
         lock (_lock)
         {
             if (IsSevered) return;
 
-            double at = Math.Max(_nowMs + Latency(), _lastToClientAt);
+            double leave = _degradation.Departure(PacketDirection.Inbound, message.messageLength, _nowMs);
+            double at = Math.Max(leave + Latency(PacketDirection.Inbound), _lastToClientAt);
+            if (_degradation.IsOutage) at = Math.Max(at, _degradation.OutageEndMs);
             _lastToClientAt = at;
             _toClient.Enqueue((at, message));
         }
@@ -114,15 +124,19 @@ internal sealed class LoopbackLink
     /// <summary>A datagram the client sends. Returns it when it may go now.</summary>
     public Packet_UdpPacket? ClientSendsUdp(Packet_UdpPacket packet)
     {
+        if (Filtered(() => PacketDescriber.Udp(PacketDirection.Outbound, packet, _channelName))) return null;
+
         lock (_lock)
         {
             if (IsSevered) return null;
 
-            PacketDegradationResult fate = _degradation.ProcessPacket();
+            PacketDegradationResult fate = _degradation.ProcessPacket(PacketDirection.Outbound);
             if (fate.Dropped || fate.Corrupted) return null;
-            if (fate.LatencyMs <= 0 && _udpToServer.Count == 0) return packet;
 
-            _udpToServer.Add((_nowMs + fate.LatencyMs, packet));
+            double at = _degradation.Departure(PacketDirection.Outbound, Packet_UdpPacketSerializer.GetSize(packet), _nowMs) + fate.LatencyMs;
+            if (at <= _nowMs && _udpToServer.Count == 0) return packet;
+
+            _udpToServer.Add((at, packet));
             return null;
         }
     }
@@ -138,8 +152,13 @@ internal sealed class LoopbackLink
             {
                 foreach (Packet_UdpPacket packet in packets)
                 {
-                    PacketDegradationResult fate = _degradation.ProcessPacket();
-                    if (!fate.Dropped && !fate.Corrupted) _udpToClient.Add((_nowMs + fate.LatencyMs, packet));
+                    if (Filtered(() => PacketDescriber.Udp(PacketDirection.Inbound, packet, _channelName))) continue;
+
+                    PacketDegradationResult fate = _degradation.ProcessPacket(PacketDirection.Inbound);
+                    if (fate.Dropped || fate.Corrupted) continue;
+
+                    double at = _degradation.Departure(PacketDirection.Inbound, Packet_UdpPacketSerializer.GetSize(packet), _nowMs) + fate.LatencyMs;
+                    _udpToClient.Add((at, packet));
                 }
             }
 
@@ -195,11 +214,37 @@ internal sealed class LoopbackLink
         }
     }
 
-    private double Latency()
+    // TCP packets held by an outage that has ended are due now. The last-send times follow them, or no new packet would ever leave.
+    private void ReleaseHeldIfRecovered()
+    {
+        if (_degradation.IsOutage) return;
+
+        ReleaseHeld(_toServer, _nowMs);
+        ReleaseHeld(_toClient, _nowMs);
+        if (double.IsPositiveInfinity(_lastToServerAt)) _lastToServerAt = _nowMs;
+        if (double.IsPositiveInfinity(_lastToClientAt)) _lastToClientAt = _nowMs;
+    }
+
+    private static void ReleaseHeld<T>(Queue<(double At, T Item)> queue, double nowMs)
+    {
+        if (!queue.Any(p => double.IsPositiveInfinity(p.At))) return;
+
+        List<(double At, T Item)> items = [.. queue];
+        queue.Clear();
+        foreach ((double at, T item) in items)
+        {
+            queue.Enqueue((double.IsPositiveInfinity(at) ? nowMs : at, item));
+        }
+    }
+
+    // Whether a filter drops the packet. The packet is described only while a filter is in place.
+    private bool Filtered(Func<NetworkPacketInfo> describe) => _degradation.HasFilters && _degradation.FilterDrops(describe());
+
+    private double Latency(PacketDirection direction)
     {
         // TCP is reliable: it pays the latency and jitter of a lossy network, never the loss.
         if (!_degradation.IsActive) return 0;
-        return Math.Max(0, _degradation.GetEffectiveLatency());
+        return Math.Max(0, _degradation.GetEffectiveLatency(direction));
     }
 
     private void TakeDue(List<(double At, Packet_UdpPacket Packet)> queue, List<Packet_UdpPacket> into)

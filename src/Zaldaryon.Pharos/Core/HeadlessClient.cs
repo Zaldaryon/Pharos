@@ -900,6 +900,15 @@ public sealed class HeadlessClient : IDisposable
         return new ClientServerLoopbackSession(this, server, link, tcp, udp, playerName);
     }
 
+    // The name of the mod channel a packet's channel id belongs to on the client, or null when none does.
+    private string? ChannelName(int channelId, bool udp)
+    {
+        ClientMain? game = Client;
+        if (game?.api?.Network is not NetworkAPI api) return null;
+        NetworkChannel? channel = ModChannels.ForSentId(api, channelId, udp);
+        return channel is null ? null : ModChannels.Name(channel);
+    }
+
     /// <summary>
     /// Gives the game sockets on <paramref name="tcpNetwork"/> and <paramref name="udpNetwork"/>
     /// that pass every packet through a new link, which records and degrades it. Runs on the
@@ -907,7 +916,7 @@ public sealed class HeadlessClient : IDisposable
     /// </summary>
     internal (LoopbackLink Link, LinkedTcpNetClient Tcp, LinkedUdpNetClient Udp) WireEngineLoopback(DummyNetwork tcpNetwork, DummyNetwork udpNetwork)
     {
-        LoopbackLink link = new(PacketRecorder, NetworkDegradation);
+        LoopbackLink link = new(PacketRecorder, NetworkDegradation, ChannelName);
 
         LinkedTcpNetClient tcp = new(link);
         tcp.SetNetwork(tcpNetwork);

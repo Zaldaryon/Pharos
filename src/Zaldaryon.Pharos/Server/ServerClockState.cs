@@ -82,6 +82,19 @@ internal sealed class ServerClockState
     /// <summary>Makes the next tick move the time by <paramref name="stepMs"/> instead of <see cref="TickMs"/>.</summary>
     public void SetPendingStep(long stepMs) => Volatile.Write(ref _pendingStepMs, stepMs);
 
+    /// <summary>Adds <paramref name="stepMs"/> to the step the next tick takes, when one is pending; false when none is.</summary>
+    public bool TryAddPendingStep(long stepMs)
+    {
+        long current;
+        do
+        {
+            current = Volatile.Read(ref _pendingStepMs);
+            if (current <= 0) return false;
+        }
+        while (Interlocked.CompareExchange(ref _pendingStepMs, current + stepMs, current) != current);
+        return true;
+    }
+
     /// <summary>
     /// Called where a server tick reads its time: moves the virtual time by one step and returns
     /// it. On the stopwatch, only reads.

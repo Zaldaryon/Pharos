@@ -99,6 +99,9 @@ public sealed partial class EmbeddedServerHost
         return BackgroundWork.WaitAsync(Server, timeout ?? TimeSpan.FromSeconds(30 * ScenarioTimeouts.Scale), ct);
     }
 
+    /// <summary>The server's time now, in milliseconds: simulated under a virtual clock, the wall clock's otherwise.</summary>
+    internal long ServerNowMs => ClockState.Read();
+
     /// <summary>The server's time state, made the one Pharos answers reads with.</summary>
     private ServerClockState ClockState
     {
@@ -163,6 +166,7 @@ public sealed partial class EmbeddedServerHost
     /// </summary>
     internal void ResetVirtualClock()
     {
+        _faults?.Clear();
         EndVirtualClock();
         lock (_clockLock) _lastClock = null;
     }

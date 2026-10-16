@@ -3,6 +3,7 @@ using Vintagestory.API.Config;
 using Vintagestory.Client;
 using Vintagestory.Common;
 using Vintagestory.Server;
+using Zaldaryon.Pharos.Network;
 using Vintagestory.Server.Network;
 
 namespace Zaldaryon.Pharos.Server;
@@ -31,19 +32,40 @@ internal sealed class HeadlessPlayerConnection
 {
     private const int FirstPlayerSlot = 2;
 
-    private readonly DummyTcpNetClient _client;
+    private const int PingId = 2;
+    private const int PingReplyId = 2;
+
+    private readonly LinkedTcpNetClient _client;
+    private volatile bool _frozen;
+    private readonly LoopbackLink _link;
     private readonly DummyNetwork _network;
 
-    private HeadlessPlayerConnection(DummyTcpNetClient client, DummyTcpNetServer socket, DummyNetwork network, int slot)
+    private HeadlessPlayerConnection(LinkedTcpNetClient client, LoopbackLink link, NetworkDegradationSimulator degradation,
+        HeadlessTcpNetServer socket, DummyNetwork network, int slot)
     {
         _client = client;
+        _link = link;
+        Degradation = degradation;
         Socket = socket;
         _network = network;
         Slot = slot;
     }
 
     /// <summary>The server-side socket installed for this player.</summary>
-    public DummyTcpNetServer Socket { get; }
+    public HeadlessTcpNetServer Socket { get; }
+
+    /// <summary>Degrades the player's link: its latency, drops, bandwidth, filters and scripts.</summary>
+    public NetworkDegradationSimulator Degradation { get; }
+
+    /// <summary>
+    /// Moves the player's link on by <paramref name="dtMs"/> milliseconds, delivering the packets that are due to the server. Called
+    /// once per server tick, before the player's packets are read.
+    /// </summary>
+    internal void AdvanceLink(double dtMs) => _link.Advance(dtMs, data => _client.Deliver(data), _ => { });
+
+    /// <summary>Cuts the player's connection without the leave packet: the server reads a lost connection and drops the player.</summary>
+    /// <remarks>Safe from any thread.</remarks>
+    public void Sever() => Socket.Sever();
 
     /// <summary>The <c>MainSockets</c> index the socket occupies.</summary>
     public int Slot { get; }
@@ -58,14 +80,17 @@ internal sealed class HeadlessPlayerConnection
         DummyNetwork network = new();
         network.Start();
 
-        DummyTcpNetServer socket = new();
+        HeadlessTcpNetServer socket = new();
         socket.SetNetwork(network);
 
-        DummyTcpNetClient client = new();
+        // The player's packets pass through a link, which degrades them only once the player's network is configured.
+        NetworkDegradationSimulator degradation = new();
+        LoopbackLink link = new(new PacketRecorder(), degradation, (channelId, udp) => ServerChannelName(server, channelId, udp));
+        LinkedTcpNetClient client = new(link);
         client.SetNetwork(network);
 
         int slot = InstallSocket(server, socket);
-        HeadlessPlayerConnection connection = new(client, socket, network, slot);
+        HeadlessPlayerConnection connection = new(client, link, degradation, socket, network, slot);
 
         // The server treats the first queued message as the connection itself, so queueing the
         // token query both connects and starts the handshake, exactly like a real client.
@@ -143,14 +168,65 @@ internal sealed class HeadlessPlayerConnection
     public List<byte[]> DrainReceived()
     {
         List<byte[]> packets = [];
+        if (_frozen) return packets;
+
         while (_client.ReadMessage() is { } message)
         {
             byte[] data = new byte[message.messageLength];
             Array.Copy(message.message, data, message.messageLength);
             packets.Add(data);
+
+            // Answers the server's ping, as a real client does, so the server sees the player as responsive.
+            if (IsPing(data)) Send(new Packet_Client { Id = PingReplyId });
         }
 
         return packets;
+    }
+
+    /// <summary>
+    /// Freezes the player: it reads nothing and answers no ping, so the server times it out once it has waited too long. The server
+    /// also stops treating the player as a single-player client, which the game never times out.
+    /// </summary>
+    /// <remarks>Runs on the server's game thread.</remarks>
+    public void Freeze(ServerMain server, string playerName)
+    {
+        _frozen = true;
+        ConnectedClient? client = server.GetClientByPlayername(playerName);
+        if (client is not null) client.IsSinglePlayerClient = false;
+    }
+
+    private static readonly System.Reflection.FieldInfo? s_serverChannels = typeof(NetworkAPI).GetField("channels", BindingFlags.Instance | BindingFlags.NonPublic);
+    private static readonly System.Reflection.FieldInfo? s_serverUdpChannels = typeof(NetworkAPI).GetField("channelsUdp", BindingFlags.Instance | BindingFlags.NonPublic);
+
+    // The name of the mod channel with this id on the server, or null when none is registered. It names a headless player's messages
+    // as the client names its own, so a filter can select a channel on either.
+    private static string? ServerChannelName(ServerMain server, int channelId, bool udp)
+    {
+        if (server.Api is not Vintagestory.API.Server.ICoreServerAPI api || api.Network is not NetworkAPI network) return null;
+
+        System.Reflection.FieldInfo? field = udp ? s_serverUdpChannels : s_serverChannels;
+        if (field?.GetValue(network) is not System.Collections.IEnumerable channels) return null;
+
+        foreach (object entry in channels)
+        {
+            Type pair = entry.GetType();
+            if ((int)pair.GetProperty("Key")!.GetValue(entry)! != channelId) continue;
+            return ModChannels.Name((NetworkChannelBase)pair.GetProperty("Value")!.GetValue(entry)!);
+        }
+
+        return null;
+    }
+
+    private static bool IsPing(byte[] data)
+    {
+        try
+        {
+            return Packet_ServerSerializer.DeserializeBuffer(data, data.Length, new Packet_Server()).Id == PingId;
+        }
+        catch (Exception)
+        {
+            return false;
+        }
     }
 
     /// <summary>
