@@ -3,6 +3,7 @@ using Vintagestory.API.Common.Entities;
 using Vintagestory.API.MathTools;
 using Xunit;
 using Zaldaryon.Pharos.Server;
+using Zaldaryon.Pharos.Tests.XUnit;
 using Zaldaryon.Pharos.XUnit;
 
 namespace Zaldaryon.Pharos.Tests.Server;
@@ -13,7 +14,7 @@ namespace Zaldaryon.Pharos.Tests.Server;
 /// </summary>
 [Collection("Sequential")]
 [ServerWorld(seed: 4242, playStyle: "creativebuilding", worldType: "superflat", Isolation = WorldIsolation.Restart)]
-public class WorldSnapshotTests : ServerScenarioBase
+public class WorldSnapshotTests : ThreadPoolWarningScenarioBase
 {
     [ServerScenario]
     public async Task RestoreSnapshot_PutsBlocksEntitiesAndPlayersBackWithoutARestart()

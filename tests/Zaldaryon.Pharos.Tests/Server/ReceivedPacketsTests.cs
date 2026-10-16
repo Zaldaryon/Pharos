@@ -5,6 +5,7 @@ using Vintagestory.API.MathTools;
 using Vintagestory.API.Server;
 using Xunit;
 using Zaldaryon.Pharos.Server;
+using Zaldaryon.Pharos.Tests.XUnit;
 using Zaldaryon.Pharos.XUnit;
 
 namespace Zaldaryon.Pharos.Tests.Server;
@@ -21,7 +22,7 @@ public class PharosTestMessage
 
 [Collection("Sequential")]
 [ServerWorld(seed: 5151, Isolation = WorldIsolation.Restart)]
-public class ReceivedPacketsTests : ServerScenarioBase
+public class ReceivedPacketsTests : ThreadPoolWarningScenarioBase
 {
     private ICoreServerAPI Sapi => Api!;
 

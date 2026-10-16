@@ -8,13 +8,14 @@ using Zaldaryon.Pharos.Assertions;
 using Zaldaryon.Pharos.Bootstrap;
 using Zaldaryon.Pharos.Network;
 using Zaldaryon.Pharos.Server;
+using Zaldaryon.Pharos.Tests.XUnit;
 using Zaldaryon.Pharos.XUnit;
 
 namespace Zaldaryon.Pharos.Tests.Server;
 
 [Collection("Sequential")]
 [ServerWorld(seed: 4242, Isolation = WorldIsolation.Restart)]
-public class HeadlessPlayerTests : ServerScenarioBase
+public class HeadlessPlayerTests : ThreadPoolWarningScenarioBase
 {
     [ServerScenario]
     public async Task CreateTestPlayerAsync_JoinsAPlayingPlayerWithEntityAndInventories()

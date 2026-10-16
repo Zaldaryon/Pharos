@@ -19,6 +19,8 @@ public sealed class FarmingSeededTests : ServerScenarioBase
     public async Task FirstStageTime_IsTheSameForTheSameSeed()
     {
         ServerTestPlayer player = await CreateTestPlayerAsync("SeededStage");
+        Host!.Calendar.Freeze();
+        double plantedAtHours = Host!.RunOnGameThread(() => Host.Calendar.TotalHours);
         Host!.Random.Seed(4242);
         Host.RunOnGameThread(() => player.Player!.WorldData.CurrentGameMode = EnumGameMode.Creative);
         Entity entity = player.Entity!;
@@ -28,10 +30,13 @@ public sealed class FarmingSeededTests : ServerScenarioBase
             ((Vintagestory.API.Server.ICoreServerAPI)Host.Server.Api).World.GetBlock(new AssetLocation("game:water-still-7"))!.BlockId, pos.AddCopy(1, 0, 0)));
         Assert.True(await Host.Farming.PlantAsync(player, pos, "game:seeds-carrot"));
 
-        double hoursToStage = Host.Farming.Farmland(pos).NextStageAtHours - Host.RunOnGameThread(() => Host.Calendar.TotalHours);
+        (double nextStageAtHours, double observedAtHours) = Host.RunOnGameThread(() =>
+            (Host.Farming.Farmland(pos).NextStageAtHours, Host.Calendar.TotalHours));
 
         // The crop's stage draw is part of the seeded statics, so the same seed gives the same time.
         Assert.Contains(Host.Random.Seeded, r => r.Member.Contains("BlockEntityFastForwardGrowth.rand", StringComparison.Ordinal));
+        Assert.Equal(plantedAtHours, observedAtHours);
+        double hoursToStage = nextStageAtHours - plantedAtHours;
         Assert.InRange(hoursToStage, GoldenHours - 0.001, GoldenHours + 0.001);
     }
 
