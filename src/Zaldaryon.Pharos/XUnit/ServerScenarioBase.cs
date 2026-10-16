@@ -64,6 +64,30 @@ public abstract class ServerScenarioBase : IAsyncLifetime, IScenarioLifecycle
     /// </summary>
     protected ICoreServerAPI? Api => Server?.Api as ICoreServerAPI;
 
+    /// <summary>Polls an assertion once per server tick until it passes or the tick budget expires.</summary>
+    protected Task SucceedWhenAsync(Action assertion, int maxTicks = 300, CancellationToken ct = default)
+    {
+        EmbeddedServerHost host = Host ?? throw new InvalidOperationException("Server host is not available.");
+        return ScenarioTickWait.SucceedWhenAsync(assertion, maxTicks, (count, token) =>
+        {
+            token.ThrowIfCancellationRequested();
+            host.Ticks(count);
+            return Task.CompletedTask;
+        }, ct);
+    }
+
+    /// <summary>Creates a sequence that advances this server by ticks.</summary>
+    protected ScenarioSequence Sequence()
+    {
+        EmbeddedServerHost host = Host ?? throw new InvalidOperationException("Server host is not available.");
+        return new ScenarioSequence((count, token) =>
+        {
+            token.ThrowIfCancellationRequested();
+            host.Ticks(count);
+            return Task.CompletedTask;
+        });
+    }
+
     /// <summary>
     /// Gets the world isolation mode used for tests in this class. Defaults to the
     /// <see cref="ServerWorldAttribute.Isolation"/> of the class, or

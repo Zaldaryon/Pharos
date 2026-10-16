@@ -16,6 +16,15 @@ namespace Zaldaryon.Pharos.Assertions;
 /// </summary>
 public static class PharosAssert
 {
+    /// <summary>Marks the current Pharos scenario as skipped with the supplied reason.</summary>
+    /// <param name="reason">Why the scenario cannot run.</param>
+    /// <remarks>The scenario runner reports the current test as skipped with this reason.</remarks>
+    public static void Skip(string reason)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(reason);
+        throw new Zaldaryon.Pharos.XUnit.Execution.ScenarioSkipException(reason);
+    }
+
     /// <summary>
     /// Asserts that draw calls were collapsed efficiently via indirect drawing.
     /// </summary>

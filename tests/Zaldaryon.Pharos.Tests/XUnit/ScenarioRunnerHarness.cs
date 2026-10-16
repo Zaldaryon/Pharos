@@ -33,19 +33,24 @@ internal static class ScenarioRunnerHarness
     public static async Task<RunResult> RunAsync(Type testClass, string methodName)
     {
         CollectingBus bus = new();
+        List<RunSummary> summaries = [];
         foreach (IXunitTestCase testCase in Discover(testClass, methodName))
         {
-            await testCase.RunAsync(new NullMessageSink(), bus, [], new ExceptionAggregator(), new CancellationTokenSource());
+            summaries.Add(await testCase.RunAsync(new NullMessageSink(), bus, [], new ExceptionAggregator(), new CancellationTokenSource()));
         }
 
-        return new RunResult([.. bus.Messages]);
+        return new RunResult([.. bus.Messages], summaries);
     }
 
-    public sealed record RunResult(IReadOnlyList<IMessageSinkMessage> Messages)
+    public sealed record RunResult(IReadOnlyList<IMessageSinkMessage> Messages, IReadOnlyList<RunSummary> Summaries)
     {
         public IReadOnlyList<ITestFailed> Failed => Messages.OfType<ITestFailed>().ToList();
 
         public IReadOnlyList<ITestPassed> Passed => Messages.OfType<ITestPassed>().ToList();
+
+        public IReadOnlyList<ITestSkipped> Skipped => Messages.OfType<ITestSkipped>().ToList();
+
+        public IReadOnlyList<ITestCaseFinished> CasesFinished => Messages.OfType<ITestCaseFinished>().ToList();
 
         public ITestFailed SingleFailure => Assert.Single(Failed);
 

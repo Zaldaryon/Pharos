@@ -11,6 +11,8 @@ namespace Zaldaryon.Pharos.XUnit;
 [AttributeUsage(AttributeTargets.Method, AllowMultiple = false, Inherited = true)]
 public sealed class ClientScenarioAttribute : Xunit.FactAttribute, ITraitAttribute
 {
+    /// <summary>Whether the scenario runs only through an explicit name filter or PHAROS_RUN_EXPLICIT=1.</summary>
+    public bool Explicit { get; set; }
     /// <summary>The default watchdog timeout in milliseconds for the test body (120 seconds).</summary>
     public const int DefaultTimeoutMs = 120_000;
 

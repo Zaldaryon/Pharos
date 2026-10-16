@@ -55,6 +55,30 @@ public abstract class ClientScenarioBase : IAsyncLifetime, IScenarioLifecycle
     /// </summary>
     protected DeterministicFrameController? FrameController => Client?.FrameController;
 
+    /// <summary>Polls an assertion once per deterministic client frame until it passes.</summary>
+    protected Task SucceedWhenAsync(Action assertion, int maxFrames = 600, CancellationToken ct = default)
+    {
+        DeterministicFrameController frames = FrameController ?? throw new InvalidOperationException("Client frame controller is not available.");
+        return ScenarioTickWait.SucceedWhenAsync(assertion, maxFrames, (count, token) =>
+        {
+            token.ThrowIfCancellationRequested();
+            frames.StepFrames(count);
+            return Task.CompletedTask;
+        }, ct);
+    }
+
+    /// <summary>Creates a sequence that advances this client by deterministic frames.</summary>
+    protected ScenarioSequence Sequence()
+    {
+        DeterministicFrameController frames = FrameController ?? throw new InvalidOperationException("Client frame controller is not available.");
+        return new ScenarioSequence((count, token) =>
+        {
+            token.ThrowIfCancellationRequested();
+            frames.StepFrames(count);
+            return Task.CompletedTask;
+        });
+    }
+
     /// <summary>
     /// The isolation mode used for tests in this class.
     /// Override in derived classes to change isolation behavior.

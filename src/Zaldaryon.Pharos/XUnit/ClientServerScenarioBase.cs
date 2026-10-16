@@ -77,6 +77,30 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime, IScenarioLifecy
     /// </summary>
     protected EmbeddedServerHost? ServerHost => _serverHost;
 
+    /// <summary>Polls an assertion once per deterministic client and server frame.</summary>
+    protected Task SucceedWhenAsync(Action assertion, int maxFrames = 600, CancellationToken ct = default)
+    {
+        if (_session is null) throw new InvalidOperationException("Session is not initialized. Call InitializeAsync first.");
+        return ScenarioTickWait.SucceedWhenAsync(assertion, maxFrames, (count, token) =>
+        {
+            token.ThrowIfCancellationRequested();
+            _session.StepFrames(count);
+            return Task.CompletedTask;
+        }, ct);
+    }
+
+    /// <summary>Creates a sequence that advances the client and server by deterministic frames.</summary>
+    protected ScenarioSequence Sequence()
+    {
+        if (_session is null) throw new InvalidOperationException("Session is not initialized. Call InitializeAsync first.");
+        return new ScenarioSequence((count, token) =>
+        {
+            token.ThrowIfCancellationRequested();
+            _session.StepFrames(count);
+            return Task.CompletedTask;
+        });
+    }
+
     /// <summary>
     /// Saves the world, stops the server and boots it again on its save, and joins the client to the new server. The save's
     /// errors are reported once the new server is up. See <see cref="RestartServerAsync"/>.
