@@ -38,6 +38,37 @@ public class ChunkReloadTests : ServerScenarioBase
     }
 
     [ServerScenario]
+    public async Task AfterReload_TheMapCacheHoldsTheNewChunk()
+    {
+        ServerTestPlayer player = await CreateTestPlayerAsync(PlayerNames.Next());
+        BlockPos chest = player.Entity!.Pos.AsBlockPos.AddCopy(40, 0, 0);
+        await Host!.EnsureChunksLoadedAsync(chest, chest);
+
+        await Host.World.UnloadChunksAsync(chest, chest);
+
+        // A read of the unloaded chunk leaves the map's one-chunk cache holding the absence of the chunk.
+        Assert.Null(MapLookup(chest));
+
+        await Host.World.ReloadChunksAsync(chest, chest);
+        Assert.Same(ChunkAt(chest), MapLookup(chest));
+    }
+
+    [ServerScenario]
+    public async Task AfterAChunkReload_TheMapRegionIsTheSameObject()
+    {
+        // The game releases a region only after two minutes without loaded chunks, so a reload inside this test keeps the region.
+        ServerTestPlayer player = await CreateTestPlayerAsync(PlayerNames.Next());
+        BlockPos chest = player.Entity!.Pos.AsBlockPos.AddCopy(40, 0, 0);
+        await Host!.EnsureChunksLoadedAsync(chest, chest);
+        object region = RegionAt(chest) ?? throw new InvalidOperationException("The chest's map region is not loaded.");
+
+        await Host.World.UnloadChunksAsync(chest, chest);
+        await Host.World.ReloadChunksAsync(chest, chest);
+
+        Assert.Same(region, RegionAt(chest));
+    }
+
+    [ServerScenario]
     public async Task Unload_RefusesThePlayersColumn()
     {
         ServerTestPlayer player = await CreateTestPlayerAsync(PlayerNames.Next());
@@ -83,6 +114,10 @@ public class ChunkReloadTests : ServerScenarioBase
             second.Dispose();
         }
     }
+
+    private IWorldChunk? MapLookup(BlockPos pos) => Host!.RunOnGameThread(() => Host.Server.WorldMap.GetUnpackedChunkFast(pos.X / 32, pos.Y / 32, pos.Z / 32));
+
+    private object? RegionAt(BlockPos pos) => Host!.RunOnGameThread(() => Host.Server.WorldMap.GetMapRegion(pos));
 
     private object? ChunkAt(BlockPos pos) => Host!.RunOnGameThread(() =>
     {

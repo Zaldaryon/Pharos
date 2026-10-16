@@ -166,12 +166,21 @@ public sealed class WorldPhysicsDriver
     /// Loads the chunks under a box from the save, keeping their columns loaded, and ticks the server until they are there. The
     /// chunks that were unloaded come back as new objects, with what the save held.
     /// </summary>
+    /// <remarks>
+    /// Only the chunks are reloaded. The map regions and their mod data stay as they were: a region is released by the game only
+    /// after two minutes without loaded chunks, and a full reload of the save is <see cref="EmbeddedServerHost.RestartAsync"/>.
+    /// </remarks>
     /// <param name="min">One corner of the box, inclusive.</param>
     /// <param name="max">The opposite corner, inclusive.</param>
     /// <param name="ct">Cancels the wait.</param>
     /// <exception cref="TimeoutException">The chunks did not load in time.</exception>
-    public Task ReloadChunksAsync(BlockPos min, BlockPos max, CancellationToken ct = default) =>
-        _host.EnsureChunksLoadedAsync(min, max, ct: ct);
+    public async Task ReloadChunksAsync(BlockPos min, BlockPos max, CancellationToken ct = default)
+    {
+        await _host.EnsureChunksLoadedAsync(min, max, ct: ct);
+
+        // The map's one-chunk lookup cache may hold the absence of a chunk read while it was unloaded.
+        _host.RunOnGameThread(() => WorldSnapshot.ForgetCachedChunk(_host.Server));
+    }
 
     private ICoreServerAPI ServerApi => (ICoreServerAPI)_host.Server.Api;
 
