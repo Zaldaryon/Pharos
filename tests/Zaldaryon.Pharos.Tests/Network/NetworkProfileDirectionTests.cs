@@ -78,3 +78,43 @@ public class NetworkProfileDirectionTests
         Assert.True(new DegradedNetworkProfile(BandwidthKbps: 8).HasDegradation);
     }
 }
+
+/// <summary>Packet filters on the simulator: they select packets, count their drops, and end with their handle.</summary>
+public class NetworkFilterTests
+{
+    private static readonly NetworkPacketInfo Selected = new(PacketDirection.Outbound, Udp: false, PacketId: 23, Channel: "mymod", MessageId: 2, Length: 10);
+    private static readonly NetworkPacketInfo Other = new(PacketDirection.Outbound, Udp: false, PacketId: 23, Channel: "mymod", MessageId: 1, Length: 10);
+
+    [Fact]
+    public void Filter_DropsOnlyTheSelectedPackets_AndCountsThem()
+    {
+        var sim = new NetworkDegradationSimulator(seed: 1);
+        using IDisposable filter = sim.Filter(p => p.Channel == "mymod" && p.MessageId == 2);
+
+        Assert.True(sim.HasFilters);
+        Assert.True(sim.FilterDrops(Selected));
+        Assert.False(sim.FilterDrops(Other));
+        Assert.Equal(1, sim.PacketsDropped);
+    }
+
+    [Fact]
+    public void Filter_EndsWithItsHandle()
+    {
+        var sim = new NetworkDegradationSimulator(seed: 1);
+        IDisposable filter = sim.Filter(_ => true);
+
+        filter.Dispose();
+        filter.Dispose();
+
+        Assert.False(sim.HasFilters);
+        Assert.False(sim.FilterDrops(Selected));
+    }
+
+    [Fact]
+    public void Filter_RejectsADropRateOutsideZeroToOne()
+    {
+        var sim = new NetworkDegradationSimulator(seed: 1);
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => sim.Filter(_ => true, drop: 1.5f));
+    }
+}

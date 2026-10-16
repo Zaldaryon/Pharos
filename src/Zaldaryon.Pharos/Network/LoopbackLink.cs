@@ -32,6 +32,7 @@ internal sealed class LoopbackLink
     private readonly object _lock = new();
     private readonly PacketRecorder _recorder;
     private readonly NetworkDegradationSimulator _degradation;
+    private readonly Func<int, bool, string?> _channelName;
     private readonly Queue<(double At, byte[] Data)> _toServer = new();
     private readonly Queue<(double At, NetIncomingMessage Message)> _toClient = new();
     private readonly List<(double At, Packet_UdpPacket Packet)> _udpToServer = [];
@@ -41,10 +42,11 @@ internal sealed class LoopbackLink
     private double _lastToClientAt;
     private Action<Exception>? _onDisconnected;
 
-    public LoopbackLink(PacketRecorder recorder, NetworkDegradationSimulator degradation)
+    public LoopbackLink(PacketRecorder recorder, NetworkDegradationSimulator degradation, Func<int, bool, string?>? channelName = null)
     {
         _recorder = recorder;
         _degradation = degradation;
+        _channelName = channelName ?? ((_, _) => null);
     }
 
     /// <summary>Whether the wire has been cut.</summary>
@@ -71,6 +73,7 @@ internal sealed class LoopbackLink
     public byte[]? ClientSends(byte[] data)
     {
         Record(data, PacketDirection.Outbound, server: false);
+        if (Filtered(() => PacketDescriber.Tcp(PacketDirection.Outbound, data, _channelName))) return null;
 
         lock (_lock)
         {
@@ -92,6 +95,7 @@ internal sealed class LoopbackLink
         byte[] data = new byte[message.messageLength];
         Array.Copy(message.message, data, message.messageLength);
         Record(data, PacketDirection.Inbound, server: true);
+        if (Filtered(() => PacketDescriber.Tcp(PacketDirection.Inbound, data, _channelName))) return;
 
         lock (_lock)
         {
@@ -116,6 +120,8 @@ internal sealed class LoopbackLink
     /// <summary>A datagram the client sends. Returns it when it may go now.</summary>
     public Packet_UdpPacket? ClientSendsUdp(Packet_UdpPacket packet)
     {
+        if (Filtered(() => PacketDescriber.Udp(PacketDirection.Outbound, packet, _channelName))) return null;
+
         lock (_lock)
         {
             if (IsSevered) return null;
@@ -142,6 +148,8 @@ internal sealed class LoopbackLink
             {
                 foreach (Packet_UdpPacket packet in packets)
                 {
+                    if (Filtered(() => PacketDescriber.Udp(PacketDirection.Inbound, packet, _channelName))) continue;
+
                     PacketDegradationResult fate = _degradation.ProcessPacket(PacketDirection.Inbound);
                     if (fate.Dropped || fate.Corrupted) continue;
 
@@ -201,6 +209,9 @@ internal sealed class LoopbackLink
             _udpToClient.Clear();
         }
     }
+
+    // Whether a filter drops the packet. The packet is described only while a filter is in place.
+    private bool Filtered(Func<NetworkPacketInfo> describe) => _degradation.HasFilters && _degradation.FilterDrops(describe());
 
     private double Latency(PacketDirection direction)
     {

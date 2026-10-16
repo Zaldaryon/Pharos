@@ -98,6 +98,34 @@ public class LiveModNetworkTests : ClientServerScenarioBase
     }
 
     [ClientServerScenario]
+    public async Task Filter_DropsOnlyTheSelectedServerMessage()
+    {
+        // The first message tells the test the id the server's SyncPacket has on the channel.
+        long mark = Client!.ModNetwork.Mark();
+        ServerHost!.RunOnGameThread(() => ((Vintagestory.API.Server.ICoreServerAPI)Server!.Api).ChatCommands.ExecuteUnparsed(
+            "/pharosnet sync 1", new TextCommandCallingArgs { Caller = ServerScenarioBase.ConsoleCaller() }, _ => { }));
+        await Client.ModNetwork.WaitForReceivedAsync<SyncPacket>(Channel, p => p.Version == 1, since: mark);
+        int messageId = Assert.Single(Client.ModNetwork.Of<SyncPacket>(Channel, ModMessageDirection.Received), m => m.Sequence > mark).MessageId;
+
+        using (Client.NetworkDegradation.Filter(p => p.Direction == PacketDirection.Inbound && p.Channel == Channel && p.MessageId == messageId))
+        {
+            long dropped = Client.NetworkDegradation.PacketsDropped;
+            ServerHost.RunOnGameThread(() => ((Vintagestory.API.Server.ICoreServerAPI)Server!.Api).ChatCommands.ExecuteUnparsed(
+                "/pharosnet sync 2", new TextCommandCallingArgs { Caller = ServerScenarioBase.ConsoleCaller() }, _ => { }));
+
+            await Session!.StepFramesAsync(120);
+            Assert.DoesNotContain(Client.ModNetwork.Received<SyncPacket>(Channel), p => p.Version == 2);
+            Assert.True(Client.NetworkDegradation.PacketsDropped > dropped, "The filter dropped nothing");
+        }
+
+        // Once the filter is gone, the server's messages reach the client again, and the connection held.
+        ServerHost.RunOnGameThread(() => ((Vintagestory.API.Server.ICoreServerAPI)Server!.Api).ChatCommands.ExecuteUnparsed(
+            "/pharosnet sync 3", new TextCommandCallingArgs { Caller = ServerScenarioBase.ConsoleCaller() }, _ => { }));
+        Assert.Equal(3, (await Client.ModNetwork.WaitForReceivedAsync<SyncPacket>(Channel, p => p.Version == 3, since: mark)).Version);
+        Assert.True(Session.IsConnected);
+    }
+
+    [ClientServerScenario]
     public async Task UdpMessages_AreRecordedAndDelivered()
     {
         long mark = Client!.ModNetwork.Mark();

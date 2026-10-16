@@ -19,6 +19,7 @@ public sealed class NetworkDegradationSimulator
     private long _packetsCorrupted;
     private long _totalLatencyApplied;
     private readonly double[] _busyUntilMs = new double[2];
+    private readonly List<NetworkFilter> _filters = [];
 
     /// <summary>
     /// Creates a new NetworkDegradationSimulator with the default seed.
@@ -232,6 +233,53 @@ public sealed class NetworkDegradationSimulator
         }
     }
 
+    /// <summary>Whether a filter is in place. The link reads packets only while one is.</summary>
+    public bool HasFilters
+    {
+        get { lock (_lock) return _filters.Count > 0; }
+    }
+
+    /// <summary>
+    /// Drops the packets that <paramref name="match"/> selects, with probability <paramref name="drop"/>, whatever the profile is.
+    /// The filter stays in place until the returned handle is disposed. A drop of 1 draws nothing from the random generator.
+    /// </summary>
+    /// <exception cref="ArgumentNullException"><paramref name="match"/> is null.</exception>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="drop"/> is not from 0 to 1.</exception>
+    public IDisposable Filter(Func<NetworkPacketInfo, bool> match, float drop = 1f)
+    {
+        ArgumentNullException.ThrowIfNull(match);
+        if (drop is < 0f or > 1f) throw new ArgumentOutOfRangeException(nameof(drop), drop, "A drop rate is from 0 to 1.");
+
+        var filter = new NetworkFilter(this, match, drop);
+        lock (_lock) _filters.Add(filter);
+        return filter;
+    }
+
+    /// <summary>Whether a filter drops the packet. A drop counts as a dropped packet, and is logged.</summary>
+    internal bool FilterDrops(NetworkPacketInfo info)
+    {
+        lock (_lock)
+        {
+            foreach (NetworkFilter filter in _filters)
+            {
+                if (!filter.Matches(info)) continue;
+                if (filter.Drop < 1f && _random.NextDouble() >= filter.Drop) continue;
+
+                _packetsDropped++;
+                _events.Add(new DegradationEvent(DegradationEventType.PacketDropped,
+                    $"Filter dropped {info.Direction} {(info.Udp ? "UDP" : "TCP")} packet {info.PacketId}: {info.Channel ?? "not a mod message"} {info.MessageId}"));
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    internal void RemoveFilter(NetworkFilter filter)
+    {
+        lock (_lock) _filters.Remove(filter);
+    }
+
     /// <summary>Whether the profile applies to packets in <paramref name="direction"/>.</summary>
     public bool Applies(PacketDirection direction)
     {
@@ -425,3 +473,20 @@ public sealed record DegradationStatistics(
     float DropRate,
     float CorruptionRate,
     float AverageLatency);
+
+/// <summary>A filter a test set with <see cref="NetworkDegradationSimulator.Filter"/>. Disposing it takes the filter out.</summary>
+internal sealed class NetworkFilter(NetworkDegradationSimulator owner, Func<NetworkPacketInfo, bool> match, float drop) : IDisposable
+{
+    private int _disposed;
+
+    /// <summary>The probability that a selected packet is dropped.</summary>
+    public float Drop { get; } = drop;
+
+    public bool Matches(NetworkPacketInfo info) => Volatile.Read(ref _disposed) == 0 && match(info);
+
+    public void Dispose()
+    {
+        if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
+        owner.RemoveFilter(this);
+    }
+}
