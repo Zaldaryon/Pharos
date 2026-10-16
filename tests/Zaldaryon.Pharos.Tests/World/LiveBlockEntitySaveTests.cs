@@ -62,6 +62,27 @@ public class LiveBlockEntitySaveTests : ServerScenarioBase
         Assert.Contains("serialize block entity", error.Message, StringComparison.Ordinal);
     }
 
+    [ServerScenario]
+    public async Task ASaveCounter_ShowsTheTwoSavesOfAReload_AndPassesWhenIgnored()
+    {
+        // The mod advances the counter at every save once it exists. A reload makes two saves: the restart's and the shutdown's.
+        const string counter = "savegame mod data pharossavemod:saves";
+        Host!.RunOnGameThread(() => Api!.WorldManager.SaveGame.StoreData("pharossavemod:saves", BitConverter.GetBytes(0)));
+        ServerTestPlayer player = await CreateTestPlayerAsync(PlayerNames.Next());
+        BlockPos spot = player.Entity!.Pos.AsBlockPos;
+        await Host.SaveWorldAsync();
+        WorldState before = WorldState.Capture(Host, spot, radius: 1);
+
+        await ReloadWorldAsync();
+
+        WorldState after = WorldState.Capture(Host!, spot, radius: 1);
+        int saves = Host!.RunOnGameThread(() => BitConverter.ToInt32(Api!.WorldManager.SaveGame.GetData("pharossavemod:saves")));
+        Assert.Equal(3, saves);
+        Assert.Contains(WorldState.Differences(before, after), line => line.StartsWith(counter + ": ", StringComparison.Ordinal));
+        Assert.Throws<PharosAssertException>(() => PharosAssert.SameWorldState(before, after));
+        PharosAssert.SameWorldState(before, after, counter);
+    }
+
     private void SetCount(BlockPos pos, int count) => Host!.RunOnGameThread(() =>
     {
         object be = Api!.World.BlockAccessor.GetBlockEntity(pos) ?? throw new InvalidOperationException($"There is no block entity at {pos}.");
