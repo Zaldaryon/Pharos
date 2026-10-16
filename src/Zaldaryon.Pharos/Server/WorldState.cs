@@ -22,6 +22,8 @@ namespace Zaldaryon.Pharos.Server;
 /// <remarks>
 /// The mod data is read as it is stored. A chunk or region keeps the mod data a mod changed in memory until the game saves it, so
 /// capture after <see cref="EmbeddedServerHost.SaveWorldAsync()"/> to compare what the save holds.
+/// Entities are serialized when the game saves them, which sets their watched attributes, so capture after a save to compare
+/// with the state after a reload. An entity with AI moves between a save and a later capture, so compare one that stands still.
 /// </remarks>
 public sealed class WorldState
 {
