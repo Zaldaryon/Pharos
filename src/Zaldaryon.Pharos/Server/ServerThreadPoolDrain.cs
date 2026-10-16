@@ -55,8 +55,7 @@ internal sealed class ServerThreadPoolDrain(ServerMain server, ILogger? logger) 
         while (elapsed.ElapsedMilliseconds < TimeoutMs)
         {
             ThreadPool.GetAvailableThreads(out int availableWorkers, out _);
-            ThreadPool.GetMaxThreads(out int maxWorkers, out _);
-            if (availableWorkers == maxWorkers
+            if (availableWorkers > 0
                 && TyronThreadPool.Inst.RunningTasks.IsEmpty
                 && ThreadPool.PendingWorkItemCount == 0)
             {

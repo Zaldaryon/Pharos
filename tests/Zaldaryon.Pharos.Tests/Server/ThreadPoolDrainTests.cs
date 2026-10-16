@@ -348,6 +348,33 @@ public sealed class ThreadPoolDrainTests : ServerScenarioBase
     }
 
     [ServerScenario]
+    public void DisposeDoesNotWaitForUnrelatedThreadPoolWorkers()
+    {
+        var host = Host!;
+        using ManualResetEventSlim releaseWorker = new(false);
+        using ManualResetEventSlim workerStarted = new(false);
+        Assert.True(ThreadPool.QueueUserWorkItem(_ =>
+        {
+            workerStarted.Set();
+            releaseWorker.Wait();
+        }), "The unrelated worker could not be queued.");
+        Assert.True(workerStarted.Wait(TimeSpan.FromSeconds(10)), "The unrelated worker did not start.");
+
+        try
+        {
+            host.Dispose();
+
+            Assert.DoesNotContain(
+                host.Logs.Warnings,
+                entry => entry.Message.StartsWith("Pharos thread pool did not become idle", StringComparison.Ordinal));
+        }
+        finally
+        {
+            releaseWorker.Set();
+        }
+    }
+
+    [ServerScenario]
     public async Task DisposeLogsWhenThreadPoolDrainTimesOut()
     {
         const string caller = "Pharos blocked thread-pool drain timeout test";
