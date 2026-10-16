@@ -126,6 +126,24 @@ public class LiveModNetworkTests : ClientServerScenarioBase
     }
 
     [ClientServerScenario]
+    public async Task Script_OutageHoldsTcpUntilRecover()
+    {
+        // The script's only step is the outage, which lasts until the test changes the profile.
+        Client!.NetworkDegradation.Run(NetworkScript.Begin(new DegradedNetworkProfile(Outage: true)));
+        long mark = Client.ModNetwork.Mark();
+        ServerHost!.RunOnGameThread(() => ((Vintagestory.API.Server.ICoreServerAPI)Server!.Api).ChatCommands.ExecuteUnparsed(
+            "/pharosnet sync 5", new TextCommandCallingArgs { Caller = ServerScenarioBase.ConsoleCaller() }, _ => { }));
+
+        await Session!.StepFramesAsync(120);
+        Assert.DoesNotContain(Client.ModNetwork.Received<SyncPacket>(Channel), p => p.Version == 5);
+
+        // Recovery releases the held message, which then arrives.
+        Client.NetworkDegradation.Configure(DegradedNetworkProfile.None);
+        Assert.Equal(5, (await Client.ModNetwork.WaitForReceivedAsync<SyncPacket>(Channel, p => p.Version == 5, since: mark)).Version);
+        Assert.True(Session.IsConnected);
+    }
+
+    [ClientServerScenario]
     public async Task UdpMessages_AreRecordedAndDelivered()
     {
         long mark = Client!.ModNetwork.Mark();

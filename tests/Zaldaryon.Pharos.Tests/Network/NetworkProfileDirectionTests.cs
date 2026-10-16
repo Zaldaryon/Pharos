@@ -118,3 +118,44 @@ public class NetworkFilterTests
         Assert.Throws<ArgumentOutOfRangeException>(() => sim.Filter(_ => true, drop: 1.5f));
     }
 }
+
+/// <summary>A network script: its steps take effect on the link's clock, and an outage holds TCP and drops datagrams.</summary>
+public class NetworkScriptTests
+{
+    [Fact]
+    public void Script_AppliesEachStepAtItsTime()
+    {
+        var sim = new NetworkDegradationSimulator(seed: 1);
+        DegradedNetworkProfile poor = DegradedNetworkProfile.PoorMobile;
+        sim.Run(NetworkScript.Begin(DegradedNetworkProfile.None).Then(500, poor).Then(1000, DegradedNetworkProfile.None));
+
+        Assert.Equal(DegradedNetworkProfile.None, sim.Profile);
+        sim.Elapse(499);
+        Assert.Equal(DegradedNetworkProfile.None, sim.Profile);
+        sim.Elapse(1);
+        Assert.Equal(poor, sim.Profile);
+        sim.Elapse(500);
+        Assert.Equal(DegradedNetworkProfile.None, sim.Profile);
+    }
+
+    [Fact]
+    public void Outage_DropsDatagrams_AndEndsWithItsStep()
+    {
+        var sim = new NetworkDegradationSimulator(seed: 1);
+        sim.Run(NetworkScript.Begin(new DegradedNetworkProfile(Outage: true)).Then(1000, DegradedNetworkProfile.None));
+
+        Assert.True(sim.IsOutage);
+        Assert.Equal(1000, sim.OutageEndMs);
+        Assert.True(sim.ProcessPacket(PacketDirection.Outbound).Dropped);
+
+        sim.Elapse(1000);
+        Assert.False(sim.IsOutage);
+        Assert.Equal(double.PositiveInfinity, sim.OutageEndMs);
+    }
+
+    [Fact]
+    public void Script_RejectsATimeBeforeItStarts()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => NetworkScript.Begin(DegradedNetworkProfile.None).Then(-1, DegradedNetworkProfile.None));
+    }
+}

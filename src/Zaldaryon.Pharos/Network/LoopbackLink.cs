@@ -58,9 +58,11 @@ internal sealed class LoopbackLink
         List<byte[]> tcp = [];
         List<Packet_UdpPacket> udp = [];
 
+        _degradation.Elapse(dtMs);
         lock (_lock)
         {
             _nowMs += dtMs;
+            ReleaseHeldIfRecovered();
             while (_toServer.Count > 0 && _toServer.Peek().At <= _nowMs) tcp.Add(_toServer.Dequeue().Data);
             TakeDue(_udpToServer, udp);
         }
@@ -81,6 +83,7 @@ internal sealed class LoopbackLink
 
             double leave = _degradation.Departure(PacketDirection.Outbound, data.Length, _nowMs);
             double at = Math.Max(leave + Latency(PacketDirection.Outbound), _lastToServerAt);
+            if (_degradation.IsOutage) at = Math.Max(at, _degradation.OutageEndMs);
             _lastToServerAt = at;
             if (at <= _nowMs && _toServer.Count == 0) return data;
 
@@ -103,6 +106,7 @@ internal sealed class LoopbackLink
 
             double leave = _degradation.Departure(PacketDirection.Inbound, message.messageLength, _nowMs);
             double at = Math.Max(leave + Latency(PacketDirection.Inbound), _lastToClientAt);
+            if (_degradation.IsOutage) at = Math.Max(at, _degradation.OutageEndMs);
             _lastToClientAt = at;
             _toClient.Enqueue((at, message));
         }
@@ -207,6 +211,29 @@ internal sealed class LoopbackLink
             _toClient.Clear();
             _udpToServer.Clear();
             _udpToClient.Clear();
+        }
+    }
+
+    // TCP packets held by an outage that has ended are due now. The last-send times follow them, or no new packet would ever leave.
+    private void ReleaseHeldIfRecovered()
+    {
+        if (_degradation.IsOutage) return;
+
+        ReleaseHeld(_toServer, _nowMs);
+        ReleaseHeld(_toClient, _nowMs);
+        if (double.IsPositiveInfinity(_lastToServerAt)) _lastToServerAt = _nowMs;
+        if (double.IsPositiveInfinity(_lastToClientAt)) _lastToClientAt = _nowMs;
+    }
+
+    private static void ReleaseHeld<T>(Queue<(double At, T Item)> queue, double nowMs)
+    {
+        if (!queue.Any(p => double.IsPositiveInfinity(p.At))) return;
+
+        List<(double At, T Item)> items = [.. queue];
+        queue.Clear();
+        foreach ((double at, T item) in items)
+        {
+            queue.Enqueue((double.IsPositiveInfinity(at) ? nowMs : at, item));
         }
     }
 

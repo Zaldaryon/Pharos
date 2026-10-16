@@ -20,6 +20,8 @@ public sealed class NetworkDegradationSimulator
     private long _totalLatencyApplied;
     private readonly double[] _busyUntilMs = new double[2];
     private readonly List<NetworkFilter> _filters = [];
+    private readonly List<(double AtMs, DegradedNetworkProfile Profile)> _timeline = [];
+    private double _clockMs;
 
     /// <summary>
     /// Creates a new NetworkDegradationSimulator with the default seed.
@@ -142,6 +144,9 @@ public sealed class NetworkDegradationSimulator
         lock (_lock)
         {
             _profile = DegradedNetworkProfile.None;
+            _timeline.Clear();
+            _filters.Clear();
+            Array.Clear(_busyUntilMs);
             _random = new Random(_seed);
             _packetsProcessed = 0;
             _packetsDropped = 0;
@@ -230,6 +235,64 @@ public sealed class NetworkDegradationSimulator
             _totalLatencyApplied += effectiveLatency;
 
             return effectiveLatency;
+        }
+    }
+
+    /// <summary>Whether the link is down: the profile is an outage.</summary>
+    internal bool IsOutage
+    {
+        get { lock (_lock) return _profile.Outage; }
+    }
+
+    /// <summary>
+    /// When the outage ends, in link milliseconds: the next step of the script, or never (infinity) when no step is due. TCP packets
+    /// sent during an outage arrive at this time.
+    /// </summary>
+    internal double OutageEndMs
+    {
+        get { lock (_lock) return _timeline.Count > 0 ? _timeline[0].AtMs : double.PositiveInfinity; }
+    }
+
+    /// <summary>
+    /// Starts a script on the link's clock: each step takes effect at its time after now. A step at time zero takes effect at once.
+    /// A script replaces the one before it.
+    /// </summary>
+    /// <exception cref="ArgumentNullException"><paramref name="script"/> is null.</exception>
+    public void Run(NetworkScript script)
+    {
+        ArgumentNullException.ThrowIfNull(script);
+        lock (_lock)
+        {
+            _timeline.Clear();
+            foreach ((int atMs, DegradedNetworkProfile profile) in script.Steps)
+            {
+                _timeline.Add((_clockMs + atMs, profile));
+            }
+
+            ApplyDueSteps();
+        }
+    }
+
+    // Advances the simulator's clock by the link's time step, and applies the script steps that are now due.
+    internal void Elapse(double dtMs)
+    {
+        lock (_lock)
+        {
+            _clockMs += dtMs;
+            ApplyDueSteps();
+        }
+    }
+
+    private void ApplyDueSteps()
+    {
+        while (_timeline.Count > 0 && _timeline[0].AtMs <= _clockMs)
+        {
+            DegradedNetworkProfile next = _timeline[0].Profile;
+            _timeline.RemoveAt(0);
+            _profile = next;
+            _events.Add(new DegradationEvent(
+                DegradationEventType.ProfileChanged,
+                $"Script changed the profile: Latency={next.LatencyMs}ms, Drop={next.PacketDropRate:P0}, Outage={next.Outage}"));
         }
     }
 
@@ -327,6 +390,13 @@ public sealed class NetworkDegradationSimulator
     {
         lock (_lock)
         {
+            if (_profile.Outage && AppliesTo(direction))
+            {
+                _packetsProcessed++;
+                _packetsDropped++;
+                return new PacketDegradationResult(Dropped: true, Corrupted: false, LatencyMs: 0);
+            }
+
             if (!_profile.HasDegradation || !AppliesTo(direction))
             {
                 _packetsProcessed++;
