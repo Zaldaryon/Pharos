@@ -50,4 +50,18 @@ public class LiveSaveReloadTests : ServerScenarioBase
         object be = Api!.World.BlockAccessor.GetBlockEntity(pos) ?? throw new InvalidOperationException($"There is no block entity at {pos}.");
         return (IInventory)(be.GetType().GetProperty("Inventory")?.GetValue(be) ?? be.GetType().GetField("Inventory")!.GetValue(be))!;
     }
+
+    [ServerScenario]
+    public async Task AfterReloadingTheWorld_ABlockWrite_LandsInTheNewServer()
+    {
+        ServerTestPlayer player = await CreateTestPlayerAsync(PlayerNames.Next());
+        BlockPos spot = player.Entity!.Pos.AsBlockPos.AddCopy(4, 0, 0);
+        await Host!.SaveWorldAsync();
+        await ReloadWorldAsync();
+
+        this.SetBlock(spot, "game:rock-granite");
+
+        string code = Host!.RunOnGameThread(() => Api!.World.BlockAccessor.GetBlock(spot).Code.ToString());
+        Assert.Equal("game:rock-granite", code);
+    }
 }
