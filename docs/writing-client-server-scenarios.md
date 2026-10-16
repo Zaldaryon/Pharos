@@ -204,6 +204,28 @@ public async Task ClientReconnects_AfterPacketLoss()
 }
 ```
 
+The profile also caps the bandwidth per direction (`BandwidthKbps`: packets queue behind each other), applies to one direction
+only (`Direction`), and can take the link down (`Outage`: datagrams are dropped and TCP packets are held until the profile changes).
+`NetworkScript` runs a timeline of profiles on the link's clock, so an outage and its recovery need no frame counting:
+
+```csharp
+Client.NetworkDegradation.Run(NetworkScript.Begin(DegradedNetworkProfile.None)
+    .Then(1000, new DegradedNetworkProfile(Outage: true))
+    .Then(3000, DegradedNetworkProfile.None));
+```
+
+`Filter` drops the packets a predicate selects, whatever the profile is. The predicate sees the direction, the transport, the packet id,
+and for a mod's message the channel name and the message id. The filter stays until its handle is disposed:
+
+```csharp
+using (Client.NetworkDegradation.Filter(p => p.Channel == "mymod" && p.MessageId == 2))
+{
+    await Session.HoldAsync(PlayerAction.Forward, 60);
+}
+```
+
+A filter that drops over TCP stands in for a lost message: the link drops the whole message, which TCP itself never does.
+
 ## Data Files
 
 `[DataFiles]` puts files, such as mod configs, into the server's data folder, the client's, or both, before they boot. `{{pharos:port:NAME}}` placeholders get the same free port on both sides, read back with `DataFilePort("NAME")`. Each side's mod API reads its own folder. See [Data files](data-files.md).

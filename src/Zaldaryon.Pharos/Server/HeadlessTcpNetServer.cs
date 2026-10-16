@@ -29,6 +29,6 @@ internal sealed class HeadlessTcpNetServer : DummyTcpNetServer
 
         NetIncomingMessage message = base.ReadMessage();
         if (message is not null) _connection ??= message.SenderConnection;
-        return message;
+        return message!;
     }
 }
