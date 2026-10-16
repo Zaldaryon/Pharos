@@ -579,7 +579,8 @@ using (Host.Faults.ThrowIn<MyModSystem>(nameof(MyModSystem.OnTick), times: 1))
 
 using (Host.Faults.FailSaves())
 {
-    // Each database write of a save on the game thread throws; the game logs each one and the save completes without storing them.
+    // Each database write of a save on the game thread throws. The game logs some of these and the save completes; the chunk writes
+    // escape the save, which then throws. Either way the failed writes store nothing.
 }
 
 using (Host.Faults.DelayChunkLoads(ticks: 100))
