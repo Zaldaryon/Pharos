@@ -247,6 +247,34 @@ public sealed class FailureArtifactWriterTests : IDisposable
         Assert.Equal(JsonValueKind.Null, Clock(null, "NoServer").ValueKind);
     }
 
+    [Fact]
+    public void Write_SavesASoakRun_AsCsvAndAsASummaryInRunInfo()
+    {
+        SoakReport soak = new(days: 1, speed: 1440, tickMs: 50);
+        soak.AddSample(new SoakSample(
+            Tick: 100, TotalDays: 0.5, Simulated: TimeSpan.FromHours(1), Wall: TimeSpan.FromSeconds(2),
+            TickP50: null, TickP99: null, TickMax: null, ManagedBytes: 1, ManagedBytesAfterGc: null,
+            Entities: 9, LoadedChunks: 1, TickListeners: 2, Callbacks: 0, RandomTickPasses: 0, Checkpoint: false));
+        soak.AddBreach(new SoakBreach("entities", 5, 9, Tick: 100, TotalDays: 0.5, Gating: true));
+
+        FailureReport report = FailureArtifactWriter.Write(new ScenarioFailure
+        {
+            DisplayName = "Zaldaryon.Pharos.Tests.Reporting.FailureArtifactWriterTests.Soaked",
+            TestClass = typeof(FailureArtifactWriterTests),
+            MethodName = "Soaked",
+            Exception = new InvalidOperationException("it broke"),
+            Soak = soak,
+        });
+
+        Assert.Contains("soak.csv", report.Files);
+        Assert.StartsWith("tick,total_days,game_seconds,", File.ReadAllText(Path.Combine(report.Directory, "soak.csv")));
+
+        using JsonDocument run = JsonDocument.Parse(File.ReadAllText(Path.Combine(report.Directory, "run.json")));
+        JsonElement summary = run.RootElement.GetProperty("soak");
+        Assert.False(summary.GetProperty("completed").GetBoolean());
+        Assert.Equal("entities", summary.GetProperty("breaches")[0].GetProperty("budget").GetString());
+    }
+
     private static ScenarioFailure Failure(string displayName, string method) => new()
     {
         DisplayName = displayName,

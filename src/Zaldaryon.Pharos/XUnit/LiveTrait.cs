@@ -24,6 +24,9 @@ public static class PharosTraits
 
     /// <summary>Tests that measure throughput and take long to run.</summary>
     public const string Benchmark = "Benchmark";
+
+    /// <summary>Tests that run game days of a real server, and run only in the nightly full lane.</summary>
+    public const string Soak = "Soak";
 }
 
 /// <summary>

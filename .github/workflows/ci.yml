@@ -15,6 +15,11 @@ on:
   schedule:
     - cron: "17 3 * * *"
   workflow_dispatch:
+    inputs:
+      soak:
+        description: "Run the soak tests, which play game days and take a long time"
+        type: boolean
+        default: false
   workflow_call:
 
 # A new push to a pull request supersedes the run in progress. Adding a label other than
@@ -63,8 +68,8 @@ jobs:
             # Documentation alone needs no build.
             if ! git diff --name-only "$BASE_SHA" "$HEAD_SHA" | grep -qvE '(\.md$|^docs/|^LICENSE$)'; then run=false; fi
           fi
-          filter=""
-          [ "$full" = "true" ] || filter="Category!=Live&Category!=Benchmark"
+          filter="Category!=Soak"
+          [ "$full" = "true" ] || filter="Category!=Live&Category!=Benchmark&Category!=Soak"
           echo "run=$run" >> "$GITHUB_OUTPUT"
           echo "full=$full" >> "$GITHUB_OUTPUT"
           echo "filter=$filter" >> "$GITHUB_OUTPUT"
@@ -288,6 +293,69 @@ jobs:
         if: always()
         run: docker logs vs 2>&1 | tail -200
 
+  soak-linux:
+    name: Soak (Linux)
+    needs: plan
+    if: needs.plan.outputs.run == 'true' && (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.soak))
+    runs-on: ubuntu-latest
+    # A soak run plays game days on the virtual clock, and the nightly budget is 120 minutes.
+    timeout-minutes: 120
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Install Mesa and Xvfb
+        run: |
+          timeout 600 sudo apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Retries=3 update
+          timeout 600 sudo apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Retries=3 install -y mesa-utils libgl1-mesa-dri xvfb libopenal1 libglfw3 libglfw3-dev libcairo2 libcairo2-dev
+
+      - name: Set up Vintage Story
+        id: vs
+        uses: ./.github/actions/setup-vintage-story
+        with:
+          version: ${{ env.VS_VERSION }}
+          mesa: "false"
+          xvfb: "false"
+
+      - name: Build
+        env:
+          VINTAGE_STORY: ${{ steps.vs.outputs.path }}
+        run: dotnet build Pharos.sln -c Release
+
+      - name: Stage assets
+        run: ln -sfn ${{ steps.vs.outputs.path }}/assets ./assets
+
+      - name: Soak tests with Mesa headless
+        env:
+          VINTAGE_STORY: ${{ steps.vs.outputs.path }}
+          LD_LIBRARY_PATH: ${{ steps.vs.outputs.path }}/Lib:${{ steps.vs.outputs.path }}:/usr/lib/x86_64-linux-gnu
+          LIBGL_ALWAYS_SOFTWARE: 1
+          GALLIUM_DRIVER: llvmpipe
+          MESA_LOADER_DRIVER_OVERRIDE: llvmpipe
+          LIBGL_ALWAYS_INDIRECT: 0
+          MESA_GL_VERSION_OVERRIDE: "4.5"
+          MESA_GLSL_VERSION_OVERRIDE: "450"
+          ALSOFT_DRIVERS: null
+          PHAROS_VS_PLAYERNAME: ${{ secrets.PHAROS_VS_PLAYERNAME }}
+          PHAROS_VS_PLAYERUID: ${{ secrets.PHAROS_VS_PLAYERUID }}
+          PHAROS_VS_SESSIONKEY: ${{ secrets.PHAROS_VS_SESSIONKEY }}
+          PHAROS_VS_SESSIONSIGNATURE: ${{ secrets.PHAROS_VS_SESSIONSIGNATURE }}
+          PHAROS_ARTIFACTS: ${{ github.workspace }}/artifacts/pharos
+        run: xvfb-run -a -s "-screen 0 1280x720x24" dotnet test Pharos.sln -c Release --no-build --filter "Category=Soak"
+
+      - name: Upload soak reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pharos-soak-${{ github.run_attempt }}
+          path: ${{ github.workspace }}/artifacts/pharos
+          if-no-files-found: warn
+
   test-windows:
     name: Build and Test (Windows, shard ${{ matrix.shard }})
     needs: plan
@@ -362,8 +430,12 @@ jobs:
           # Software rendering on the Windows runner is the slowest lane; the watchdog only
           # catches hangs, so it gets twice the time.
           PHAROS_TIMEOUT_SCALE: "2"
+          TEST_FILTER: ${{ needs.plan.outputs.filter }}
           SHARD_FILTER: ${{ matrix.filter }}
-        run: dotnet test Pharos.sln -c Release --no-build --filter "$env:SHARD_FILTER"
+        run: |
+          $filter = $env:SHARD_FILTER
+          if ($env:TEST_FILTER) { $filter = "($env:TEST_FILTER)&($env:SHARD_FILTER)" }
+          dotnet test Pharos.sln -c Release --no-build --filter "$filter"
 
       - name: Upload failure artifacts
         if: failure() || cancelled()

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.IO;
 using System.Reflection;
 using System.Threading;
@@ -50,6 +51,10 @@ public sealed partial class EmbeddedServerHost : IDisposable, IAsyncDisposable
     private readonly bool _ownsDataPath;
     private readonly MethodInfo? _waitOnBuildServerAssetsPacket;
     private int _tickCount;
+    private ServerSimulation? _simulation;
+
+    /// <summary>The soak run this test made most recently, for a failure's soak.csv; cleared when the test ends.</summary>
+    internal SoakReport? LastSoakReport { get; set; }
     private Exception? _serverException;
     private readonly ConcurrentQueue<(Action action, TaskCompletionSource tcs)> _gameThreadQueue = new();
     private readonly ConcurrentQueue<(Func<object?> func, TaskCompletionSource<object?> tcs)> _gameThreadFuncQueue = new();
@@ -77,6 +82,15 @@ public sealed partial class EmbeddedServerHost : IDisposable, IAsyncDisposable
     /// <see cref="CalendarDriver"/>.
     /// </summary>
     public CalendarDriver Calendar => _calendar ??= new CalendarDriver(this);
+
+    /// <summary>Plays the server forward in game days, for soak tests.</summary>
+    public ServerSimulation Simulate => _simulation ??= new ServerSimulation(this);
+
+    /// <summary>
+    /// The wall-clock time each tick's server processing took, in stopwatch ticks, while a soak run
+    /// records them. Null otherwise. Written on the game thread.
+    /// </summary>
+    internal List<long>? TickTimes { get; set; }
 
     /// <summary>
     /// Optimum's counters on an Optimum build. They belong to the whole process, so the client's
@@ -268,6 +282,9 @@ public sealed partial class EmbeddedServerHost : IDisposable, IAsyncDisposable
     /// the UDP queue the headless players share, so the host stops emptying it.
     /// </summary>
     internal void MarkLoopbackClientAttached() => _players.LoopbackClientAttached = true;
+
+    /// <summary>Whether a real client reads this server's loopback socket, which a soak run cannot step.</summary>
+    internal bool LoopbackClientAttached => _players.LoopbackClientAttached;
 
     private EmbeddedServerHost(
         ServerMain server,
@@ -642,7 +659,9 @@ public sealed partial class EmbeddedServerHost : IDisposable, IAsyncDisposable
         try
         {
             _faults?.BeforeTick();
+            long processStarted = Stopwatch.GetTimestamp();
             Server.Process();
+            TickTimes?.Add(Stopwatch.GetTimestamp() - processStarted);
             _tickCount++;
         }
         catch (Exception ex)

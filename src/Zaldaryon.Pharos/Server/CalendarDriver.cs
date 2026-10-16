@@ -154,6 +154,32 @@ public sealed class CalendarDriver
         _frozenMultiplier = null;
     });
 
+    /// <summary>
+    /// Sets the baseline time speed, as <c>/time speed</c> does, and returns the speed it replaces.
+    /// Banks the time already passed first, so the change starts from now.
+    /// </summary>
+    internal float ReplaceBaselineSpeed(float speed) => _host.RunOnGameThread(() =>
+    {
+        GameCalendar calendar = Calendar;
+        calendar.Tick();
+        float previous = calendar.TimeSpeedModifiers.TryGetValue("baseline", out float value) ? value : 60f;
+        calendar.SetTimeSpeedModifier("baseline", speed);
+        calendar.Update();
+        Broadcast();
+        return previous;
+    });
+
+    /// <summary>
+    /// The pace of time: game seconds per real second, the hours in a day, the total days so far, and
+    /// whether time stands still. Read in one step on the game thread.
+    /// </summary>
+    internal (double GameSecondsPerSecond, float HoursPerDay, double TotalDays, bool IsFrozen) Pace() => _host.RunOnGameThread(() =>
+    {
+        GameCalendar calendar = Calendar;
+        double rate = calendar.SpeedOfTime * calendar.CalendarSpeedMul;
+        return (rate, calendar.HoursPerDay, calendar.TotalDays, rate == 0);
+    });
+
     private T Read<T>(System.Func<GameCalendar, T> read) => _host.RunOnGameThread(() => read(Calendar));
 
     private GameCalendar Calendar => (GameCalendar)_host.Server.Calendar;

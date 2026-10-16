@@ -115,4 +115,6 @@ Every test marked with a scenario attribute is `Category=Live`: it boots a real 
 dotnet test --filter "Category!=Live"
 ```
 
+The soak tests (`Category=Soak`) are also `Category=Live`. A downstream project that filters on `Category=Live` takes them too, so it should add `&Category!=Soak` to keep them out of a quick run.
+
 This repository's CI runs only the quick tests on pull requests. It runs the whole suite on `main`, every night, for pull requests labeled `full-ci`, and before every release. See [CONTRIBUTING.md](../CONTRIBUTING.md#ci-pipeline).

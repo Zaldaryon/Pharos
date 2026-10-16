@@ -592,6 +592,40 @@ await Host.WaitForBackgroundWorkAsync();      // relight, random ticks, spawner,
 - **Failure artifacts:** a failure's `run.json` records the clock under `serverClock`.
 - **Cost:** Pharos patches the server's time reads once per process, before anything boots, whether or not a test uses the clock. That takes about 0.4 s, and longer in a process where nothing has used Harmony yet. Without a clock, the patched reads return what the game's stopwatch says.
 
+## Soak Tests
+
+`Host.Simulate.DaysAsync(days, speed, monitor)` plays the server forward in game days on the virtual clock. The speed is the calendar's baseline time speed, the value `/time speed` sets. The game's default is 60, where one game day is 2880 seconds of server time. A run at speed 120 halves that, which is how the nightly `ThreeDays_NoLeaks` fits its budget, because a tick costs about 33 ms in that test. A day is the calendar's day, so the run ends on the first tick that reaches it, and a change of pace during the run, such as sleeping, is honored.
+
+```csharp
+[ServerScenario(TimeoutMs = 3_600_000), Soak]
+public async Task ThreeDays_NoLeaks()
+{
+    await CreateTestPlayerAsync(PlayerNames.Next());
+    SoakReport report = await Host!.Simulate.DaysAsync(3, speed: 120, monitor: m => m
+        .EntitiesBelow(500)
+        .ManagedMemoryGrowthBelow(64_000_000)
+        .TickListenersStable()
+        .TickMs.P99Below(50));
+
+    report.SaveCsv(SoakReport.ArtifactPath("ThreeDays_NoLeaks.csv"));
+}
+```
+
+The budgets gate the run or only report on it:
+
+- Gating budgets fail the run at the first reading that breaks them. `EntitiesBelow`, `LoadedChunksBelow` and `TickListenersBelow` are checked at every sample. `ManagedMemoryGrowthBelow` and `TickListenersStable` are checked at checkpoints, after the background work is idle and the heap is collected. Growth is measured from the baseline, which is taken at the first checkpoint after the warm-up.
+- Tick time budgets, `TickMs.P50Below` and `TickMs.P99Below`, are advisory. Wall-clock tick time depends on the machine, so a breach is recorded and written to the CSV, and it fails the run only when `PHAROS_SOAK_TIMING=enforce` is set.
+
+Samples are taken each game hour, and checkpoints each game day. `SampleEvery`, `CheckpointEvery` and `WarmUp` on the monitor change them.
+
+Random block ticks and the creature spawner run on their own threads, on real time. The report counts their finished passes (`RandomTickPasses`, `SpawnerPasses`) instead of driving them, so a run without a player shows none.
+
+Opening a virtual clock costs the calendar its first 250 ms, which is 5 ticks at 50 ms. At speed 1440 one game day takes 2405 ticks rather than 2400. The cause is not isolated yet; the run still ends on the calendar's day.
+
+A failed soak run keeps its readings in `soak.csv` and a `soak` summary in `run.json`, next to the failure. `SoakReport.ArtifactPath` returns a path under the failure artifact root, in the `soak` folder, which the nightly run uploads.
+
+The soak tests run only in the nightly run and in a manual run with `soak` set. The quick lane and the full lane leave them out.
+
 ## Faults
 
 `Host.Faults` injects server-side failures. Each fault lasts until it is disposed, and the scenario disposes the rest when it ends,
