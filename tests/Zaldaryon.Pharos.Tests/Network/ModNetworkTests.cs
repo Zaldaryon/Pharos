@@ -4,6 +4,7 @@ using Xunit;
 using Zaldaryon.Pharos.Bootstrap;
 using Zaldaryon.Pharos.Core;
 using Zaldaryon.Pharos.Network;
+using Zaldaryon.Pharos.Tests.Support;
 using Zaldaryon.Pharos.XUnit;
 
 namespace Zaldaryon.Pharos.Tests.Network;
@@ -170,5 +171,32 @@ public class LiveModNetworkTests : ClientServerScenarioBase
         Assert.Contains("PharosNetMod.SyncAck", noType.Message);
         await Assert.ThrowsAsync<InvalidOperationException>(() => Client!.ModNetwork.DeliverAsync(Channel, new Unhandled { N = 1 }));
         await Assert.ThrowsAsync<TimeoutException>(() => Client!.ModNetwork.WaitForSentAsync<SyncAck>(Channel, maxFrames: 5));
+    }
+}
+
+/// <summary>A headless player's link names a mod's messages, as the engine client's does, so a filter can select a channel on it.</summary>
+[Collection("Sequential")]
+[Trait(PharosTraits.Category, PharosTraits.Live)]
+[ServerMods("TestMods/pharosnetmod")]
+public class HeadlessModChannelTests : ServerScenarioBase
+{
+    private const string Channel = "pharosnet";
+
+    [ServerScenario]
+    public async Task AHeadlessPlayer_NamesTheChannelOfAModMessage()
+    {
+        ServerTestPlayer bob = await CreateTestPlayerAsync(PlayerNames.Next());
+        var seen = new System.Collections.Concurrent.ConcurrentQueue<NetworkPacketInfo>();
+        using IDisposable watch = bob.Network.Simulator.Filter(p =>
+        {
+            seen.Enqueue(p);
+            return false;
+        });
+
+        Host!.RunOnGameThread(() => ((Vintagestory.API.Server.ICoreServerAPI)Server!.Api).ChatCommands.ExecuteUnparsed(
+            "/pharosnet sync 3", new TextCommandCallingArgs { Caller = ServerScenarioBase.ConsoleCaller() }, _ => { }));
+
+        Assert.True(await Host.TickUntilAsync(() => seen.Any(p => p.Channel == Channel), maxTicks: 120),
+            "No packet on the pharosnet channel reached the headless player's link.");
     }
 }

@@ -85,7 +85,7 @@ internal sealed class HeadlessPlayerConnection
 
         // The player's packets pass through a link, which degrades them only once the player's network is configured.
         NetworkDegradationSimulator degradation = new();
-        LoopbackLink link = new(new PacketRecorder(), degradation);
+        LoopbackLink link = new(new PacketRecorder(), degradation, (channelId, udp) => ServerChannelName(server, channelId, udp));
         LinkedTcpNetClient client = new(link);
         client.SetNetwork(network);
 
@@ -193,6 +193,28 @@ internal sealed class HeadlessPlayerConnection
         _frozen = true;
         ConnectedClient? client = server.GetClientByPlayername(playerName);
         if (client is not null) client.IsSinglePlayerClient = false;
+    }
+
+    private static readonly System.Reflection.FieldInfo? s_serverChannels = typeof(NetworkAPI).GetField("channels", BindingFlags.Instance | BindingFlags.NonPublic);
+    private static readonly System.Reflection.FieldInfo? s_serverUdpChannels = typeof(NetworkAPI).GetField("channelsUdp", BindingFlags.Instance | BindingFlags.NonPublic);
+
+    // The name of the mod channel with this id on the server, or null when none is registered. It names a headless player's messages
+    // as the client names its own, so a filter can select a channel on either.
+    private static string? ServerChannelName(ServerMain server, int channelId, bool udp)
+    {
+        if (server.Api is not Vintagestory.API.Server.ICoreServerAPI api || api.Network is not NetworkAPI network) return null;
+
+        System.Reflection.FieldInfo? field = udp ? s_serverUdpChannels : s_serverChannels;
+        if (field?.GetValue(network) is not System.Collections.IEnumerable channels) return null;
+
+        foreach (object entry in channels)
+        {
+            Type pair = entry.GetType();
+            if ((int)pair.GetProperty("Key")!.GetValue(entry)! != channelId) continue;
+            return ModChannels.Name((NetworkChannelBase)pair.GetProperty("Value")!.GetValue(entry)!);
+        }
+
+        return null;
     }
 
     private static bool IsPing(byte[] data)
