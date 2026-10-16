@@ -34,4 +34,14 @@ public class PharosTraitsTests
         Assert.Equal(PharosTraits.Category, trait.Key);
         Assert.Equal(PharosTraits.Live, trait.Value);
     }
+
+    [Fact]
+    public void SoakAttribute_GivesTheSoakCategory()
+    {
+        Assert.True(typeof(ITraitAttribute).IsAssignableFrom(typeof(SoakAttribute)));
+        KeyValuePair<string, string> trait = Assert.Single(new SoakTraitDiscoverer().GetTraits(null!));
+
+        Assert.Equal(PharosTraits.Category, trait.Key);
+        Assert.Equal(PharosTraits.Soak, trait.Value);
+    }
 }
