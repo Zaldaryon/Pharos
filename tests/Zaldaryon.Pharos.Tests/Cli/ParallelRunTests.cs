@@ -268,6 +268,29 @@ public class RunCommandTests : IDisposable
     }
 
     [Fact]
+    public async Task AWorkerThatCrashes_IsReportedWhateverTheSystemLanguage()
+    {
+        // vstest writes its messages in the worker's language, and the abort is recognized by its English text. The worker is therefore
+        // asked for English output, so a Portuguese system still reports the crash. The locale is set for the worker only.
+        StringWriter stdout = new();
+        RunOptions options = Options("FullyQualifiedName~ParallelRunProbes&Category!=ProbeFailure") with
+        {
+            WorkerEnvironment = new Dictionary<string, string>
+            {
+                ["PHAROS_PROBE_CRASH"] = typeof(ParallelRunProbes.First).FullName!,
+                ["LANG"] = "pt_BR.UTF-8",
+                ["LC_ALL"] = "pt_BR.UTF-8",
+            },
+        };
+
+        int exit = await RunCommand.RunAsync(options, stdout, new StringWriter(), CancellationToken.None);
+
+        Assert.Equal(RunCommand.ExitFailed, exit);
+        IReadOnlyList<TrxResult> results = Trx.Results(XDocument.Load(Path.Combine(_results, "pharos.trx")));
+        Assert.Contains(results, r => r.FullyQualifiedName == typeof(ParallelRunProbes.First).FullName + ".(worker aborted)" && r.Failed);
+    }
+
+    [Fact]
     public async Task AWorkerThatCrashes_FailsItsClass_AndTheOthersStillRun()
     {
         StringWriter stdout = new();

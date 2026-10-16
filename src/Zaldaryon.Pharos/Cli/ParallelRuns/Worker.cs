@@ -121,6 +121,11 @@ internal sealed class Worker
         foreach ((string key, string value) in _environment) start.Environment[key] = value;
         foreach ((string key, string value) in extraEnvironment) start.Environment[key] = value;
 
+        // Trx.Abort recognizes a crashed test host by its English messages, and vstest writes them in the system language. The worker
+        // is asked for English output, so the abort is reported on any system.
+        start.Environment["DOTNET_CLI_UI_LANGUAGE"] = "en";
+        start.Environment["VSLANG"] = "1033";
+
         int? exitCode = null;
         bool timedOut = false;
         bool cancelled = false;
