@@ -66,6 +66,7 @@ public sealed class ServerSimulation
             if (!clock.IsActive) throw new InvalidOperationException("The virtual clock is not active.");
             if (!clock.FollowsCalendar) throw new InvalidOperationException("A soak run needs a virtual clock that follows the calendar, so the days pass on the calendar.");
             if (_host.Calendar.Pace().IsFrozen) throw new InvalidOperationException("The calendar is frozen, so the days would not pass. Unfreeze it first.");
+            if (_host.LoopbackClientAttached) throw new NotSupportedException("A soak run cannot step a loopback client, which reads the server's socket itself.");
 
             return await RunAsync(clock, days, speed, budgets, ct).ConfigureAwait(false);
         }

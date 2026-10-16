@@ -283,6 +283,9 @@ public sealed partial class EmbeddedServerHost : IDisposable, IAsyncDisposable
     /// </summary>
     internal void MarkLoopbackClientAttached() => _players.LoopbackClientAttached = true;
 
+    /// <summary>Whether a real client reads this server's loopback socket, which a soak run cannot step.</summary>
+    internal bool LoopbackClientAttached => _players.LoopbackClientAttached;
+
     private EmbeddedServerHost(
         ServerMain server,
         DummyNetwork tcpNetwork,
