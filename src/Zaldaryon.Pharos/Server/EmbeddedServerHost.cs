@@ -640,6 +640,7 @@ public sealed partial class EmbeddedServerHost : IDisposable, IAsyncDisposable
 
         try
         {
+            _faults?.BeforeTick();
             Server.Process();
             _tickCount++;
         }

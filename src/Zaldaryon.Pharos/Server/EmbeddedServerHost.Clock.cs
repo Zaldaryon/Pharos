@@ -163,6 +163,7 @@ public sealed partial class EmbeddedServerHost
     /// </summary>
     internal void ResetVirtualClock()
     {
+        _faults?.Clear();
         EndVirtualClock();
         lock (_clockLock) _lastClock = null;
     }
