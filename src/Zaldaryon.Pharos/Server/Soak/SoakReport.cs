@@ -36,6 +36,9 @@ public sealed class SoakReport
     /// <summary>The ticks the run processed.</summary>
     public long Ticks { get; internal set; }
 
+    /// <summary>The calendar days the run moved, from its first reading to its last.</summary>
+    public double CalendarDays { get; internal set; }
+
     /// <summary>The game time the virtual clock moved.</summary>
     public TimeSpan Simulated { get; internal set; }
 
@@ -68,7 +71,7 @@ public sealed class SoakReport
     public string ToCsv()
     {
         StringBuilder csv = new();
-        csv.Append("tick,total_days,simulated_seconds,wall_seconds,tick_p50_ms,tick_p99_ms,tick_max_ms,")
+        csv.Append("tick,total_days,game_seconds,wall_seconds,tick_p50_ms,tick_p99_ms,tick_max_ms,")
             .Append("managed_bytes,managed_bytes_after_gc,entities,loaded_chunks,tick_listeners,callbacks,")
             .Append("random_tick_passes,checkpoint\n");
         foreach (SoakSample sample in _samples)

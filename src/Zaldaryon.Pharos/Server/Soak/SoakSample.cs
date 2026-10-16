@@ -5,7 +5,7 @@ namespace Zaldaryon.Pharos.Server;
 /// </summary>
 /// <param name="Tick">The ticks the run has processed when the reading was taken.</param>
 /// <param name="TotalDays">The calendar's total days when the reading was taken.</param>
-/// <param name="Simulated">The game time the virtual clock has moved so far.</param>
+/// <param name="Simulated">The game time the run has covered so far, measured on the calendar.</param>
 /// <param name="Wall">The wall-clock time the run has taken so far.</param>
 /// <param name="TickP50">The median tick time over every tick so far, or null before the first tick.</param>
 /// <param name="TickP99">The 99th percentile tick time over every tick so far, or null before the first tick.</param>

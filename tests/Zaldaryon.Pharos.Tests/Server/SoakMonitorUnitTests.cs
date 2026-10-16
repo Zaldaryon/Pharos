@@ -101,7 +101,7 @@ public class SoakMonitorUnitTests
 
         string[] lines = report.ToCsv().Split('\n');
 
-        Assert.Equal("tick,total_days,simulated_seconds,wall_seconds,tick_p50_ms,tick_p99_ms,tick_max_ms,managed_bytes,managed_bytes_after_gc,entities,loaded_chunks,tick_listeners,callbacks,random_tick_passes,checkpoint", lines[0]);
+        Assert.Equal("tick,total_days,game_seconds,wall_seconds,tick_p50_ms,tick_p99_ms,tick_max_ms,managed_bytes,managed_bytes_after_gc,entities,loaded_chunks,tick_listeners,callbacks,random_tick_passes,checkpoint", lines[0]);
         Assert.Equal("7,0.5,5400,2,1.5,,,1000,,4,2,3,1,0,false", lines[1]);
     }
 
