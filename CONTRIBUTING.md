@@ -87,6 +87,8 @@ CI runs in two lanes.
   - for a pull request labeled `full-ci`;
   - before every release.
 
+The soak tests (`Category=Soak`) are the exception to the full lane: it leaves them out. They run in their own job, every night and by hand with the `soak` input set.
+
 Pull requests that only change documentation skip the build. A new push to a pull request cancels the run in progress.
 
 Keep `full-ci` for pull requests that need the full platform checks before merging. Ordinary pull requests use the quick lane; pushes to `main` still run the full lane. The full suite runs in three shards on each platform. Their filters live in `scripts/ci-shards.json`; the last shard includes everything outside the first two, so a new namespace remains covered. Package and mod smoke checks run once on Linux.
