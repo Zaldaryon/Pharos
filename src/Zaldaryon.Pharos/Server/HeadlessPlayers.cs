@@ -32,6 +32,7 @@ internal sealed class HeadlessPlayers
     private readonly List<ServerTestPlayer> _players = [];
     private readonly object _lock = new();
     private DummyUdpNetClient? _udpDrain;
+    private long? _lastNetworkMs;
     private HeadlessUdpNetServer? _udpIngress;
 
     public HeadlessPlayers(EmbeddedServerHost host)
@@ -134,6 +135,11 @@ internal sealed class HeadlessPlayers
     /// <summary>Called on the game thread after every server pass.</summary>
     public void AfterTick()
     {
+        // Each player's link moves on by the server time that passed, so its latency and script run on the server's clock.
+        long now = _host.ServerNowMs;
+        double dt = _lastNetworkMs is { } last ? Math.Max(0, now - last) : 0;
+        _lastNetworkMs = now;
+
         ServerTestPlayer[] players;
         lock (_lock)
         {
@@ -143,6 +149,7 @@ internal sealed class HeadlessPlayers
 
         foreach (ServerTestPlayer player in players)
         {
+            player.AdvanceNetwork(dt);
             player.ReceivePending();
         }
 

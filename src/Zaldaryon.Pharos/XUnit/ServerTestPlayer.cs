@@ -562,6 +562,11 @@ public sealed class ServerTestPlayer : IServerTestPlayer, IDisposable
     internal void RunBotOnGameThread(Action action) => OnGameThread(action);
 
     /// <summary>
+    /// Moves the player's link on by <paramref name="dtMs"/>. Called on the game thread every tick, before its packets are read.
+    /// </summary>
+    internal void AdvanceNetwork(double dtMs) => _connection?.AdvanceLink(dtMs);
+
+    /// <summary>
     /// Takes the packets the server queued for this player. Called on the game thread every tick.
     /// </summary>
     internal void ReceivePending()
@@ -573,6 +578,12 @@ public sealed class ServerTestPlayer : IServerTestPlayer, IDisposable
             Received.Add(packet);
         }
     }
+
+    /// <summary>
+    /// The player's network: how its link is degraded, scripted, severed and frozen. The player must be joined.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">The player is not joined to an embedded server.</exception>
+    public PlayerNetwork Network => new(RequireBotConnection());
 
     /// <summary>
     /// Cuts the player's connection without the leave packet a quitting client sends. The server reads a lost connection on its next

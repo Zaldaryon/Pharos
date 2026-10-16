@@ -3,6 +3,7 @@ using Vintagestory.API.Config;
 using Vintagestory.Client;
 using Vintagestory.Common;
 using Vintagestory.Server;
+using Zaldaryon.Pharos.Network;
 using Vintagestory.Server.Network;
 
 namespace Zaldaryon.Pharos.Server;
@@ -31,12 +32,16 @@ internal sealed class HeadlessPlayerConnection
 {
     private const int FirstPlayerSlot = 2;
 
-    private readonly DummyTcpNetClient _client;
+    private readonly LinkedTcpNetClient _client;
+    private readonly LoopbackLink _link;
     private readonly DummyNetwork _network;
 
-    private HeadlessPlayerConnection(DummyTcpNetClient client, HeadlessTcpNetServer socket, DummyNetwork network, int slot)
+    private HeadlessPlayerConnection(LinkedTcpNetClient client, LoopbackLink link, NetworkDegradationSimulator degradation,
+        HeadlessTcpNetServer socket, DummyNetwork network, int slot)
     {
         _client = client;
+        _link = link;
+        Degradation = degradation;
         Socket = socket;
         _network = network;
         Slot = slot;
@@ -44,6 +49,15 @@ internal sealed class HeadlessPlayerConnection
 
     /// <summary>The server-side socket installed for this player.</summary>
     public HeadlessTcpNetServer Socket { get; }
+
+    /// <summary>Degrades the player's link: its latency, drops, bandwidth, filters and scripts.</summary>
+    public NetworkDegradationSimulator Degradation { get; }
+
+    /// <summary>
+    /// Moves the player's link on by <paramref name="dtMs"/> milliseconds, delivering the packets that are due to the server. Called
+    /// once per server tick, before the player's packets are read.
+    /// </summary>
+    internal void AdvanceLink(double dtMs) => _link.Advance(dtMs, data => _client.Deliver(data), _ => { });
 
     /// <summary>Cuts the player's connection without the leave packet: the server reads a lost connection and drops the player.</summary>
     /// <remarks>Safe from any thread.</remarks>
@@ -65,11 +79,14 @@ internal sealed class HeadlessPlayerConnection
         HeadlessTcpNetServer socket = new();
         socket.SetNetwork(network);
 
-        DummyTcpNetClient client = new();
+        // The player's packets pass through a link, which degrades them only once the player's network is configured.
+        NetworkDegradationSimulator degradation = new();
+        LoopbackLink link = new(new PacketRecorder(), degradation);
+        LinkedTcpNetClient client = new(link);
         client.SetNetwork(network);
 
         int slot = InstallSocket(server, socket);
-        HeadlessPlayerConnection connection = new(client, socket, network, slot);
+        HeadlessPlayerConnection connection = new(client, link, degradation, socket, network, slot);
 
         // The server treats the first queued message as the connection itself, so queueing the
         // token query both connects and starts the handshake, exactly like a real client.
