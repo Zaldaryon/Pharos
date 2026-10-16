@@ -130,7 +130,8 @@ public class RecipeDriverTests : ServerScenarioBase
             { null, null, null },
         });
         Assert.Null(short_.Recipe);
-        GridMiss miss = short_.NearMisses.First(m => m.Recipe.Contains("basket", StringComparison.Ordinal));
+        // Two basket recipes take cattail tops, so the near misses are not in a fixed order: the one for the matched recipe is named by its name.
+        GridMiss miss = Assert.Single(short_.NearMisses, m => m.Recipe == enough.Recipe);
         Assert.Equal("game:cattailtops x2", miss.Expected);
         Assert.Equal("game:cattailtops x1", miss.Found);
     }
