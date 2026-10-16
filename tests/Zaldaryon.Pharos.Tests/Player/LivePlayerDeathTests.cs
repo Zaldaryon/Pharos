@@ -3,6 +3,7 @@ using Vintagestory.API.Common.Entities;
 using Vintagestory.API.MathTools;
 using Zaldaryon.Pharos.Bootstrap;
 using Zaldaryon.Pharos.Player;
+using Zaldaryon.Pharos.Tests.XUnit;
 using Zaldaryon.Pharos.XUnit;
 using Xunit;
 
@@ -11,7 +12,7 @@ namespace Zaldaryon.Pharos.Tests.Player;
 /// <summary>Damaging, killing and respawning a headless player on a live survival server.</summary>
 [Collection("Sequential")]
 [ServerWorld(seed: 4242, playStyle: "surviveandbuild", Isolation = WorldIsolation.Restart)]
-public class LivePlayerDeathTests : ServerScenarioBase
+public class LivePlayerDeathTests : ThreadPoolWarningScenarioBase
 {
     [ServerScenario]
     public async Task DamageAsync_GoesThroughTheBehaviour()

@@ -316,7 +316,7 @@ public sealed class RecipeDriver
             if (wanted && AvailableVoxels(be) <= 0)
             {
                 // ItemClay: when the form has no voxels left, one clay from the hand becomes 25 more.
-                if (hand.Itemstack is null || hand.Itemstack.Collectible.GetType().Name != ClayItem)
+                if (hand.Itemstack is null || hand.Itemstack.StackSize <= 0 || hand.Itemstack.Collectible.GetType().Name != ClayItem)
                 {
                     throw new InvalidOperationException($"The clay form at {pos} needs more clay to add the voxel ({x}, {layer}, {z}); the player holds none.");
                 }
@@ -329,7 +329,10 @@ public sealed class RecipeDriver
             be.OnReceivedClientPacket(player, UserOverPacket, UserOverData(x, layer, z, mouseMode: !wanted));
             if (Voxels3(be)[x, layer, z] == now[x, layer, z] && api.World.BlockAccessor.GetBlock(pos).Code.Path == ClayFormBlock)
             {
-                throw new InvalidOperationException($"The clay form at {pos} did not change the voxel ({x}, {layer}, {z}) that {outputCode} needs.");
+                throw new InvalidOperationException(
+                    $"The clay form at {pos} did not change the voxel ({x}, {layer}, {z}) that {outputCode} needs " +
+                    $"(available voxels: {AvailableVoxels(be)}, held clay: {hand.Itemstack?.StackSize ?? 0}, " +
+                    $"voxel now: {Voxels3(be)[x, layer, z]}).");
             }
         }
 

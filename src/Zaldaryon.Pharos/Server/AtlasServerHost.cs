@@ -73,6 +73,7 @@ public sealed class AtlasServerHost : IDisposable
             DataPath = dataPath
         };
         ServerMain.Logger = (Logger)new ServerLogger(progArgs);
+        TyronThreadPool.Inst.Logger = ServerMain.Logger;
         Lang.PreLoad((ILogger)(object)ServerMain.Logger, GamePaths.AssetsPath, "en");
 
         DummyNetwork tcpNetwork = new();
@@ -154,6 +155,7 @@ public sealed class AtlasServerHost : IDisposable
     {
         if (_disposed) return;
         _disposed = true;
+        var logger = ServerMain.Logger;
 
         try
         {
@@ -177,6 +179,11 @@ public sealed class AtlasServerHost : IDisposable
             // Ignore server stop failures during teardown
         }
 
+        ServerThreadPoolDrain stopThreadPoolDrain = new(Server, logger);
+        if (!stopThreadPoolDrain.WaitForQuietPeriod()) stopThreadPoolDrain.LogTimeout(logger, "after Stop");
+
+        ServerThreadPoolDrain.TryInstallBeforeThreadPoolDisposal(Server, logger);
+
         try
         {
             Server.Dispose();
@@ -185,6 +192,9 @@ public sealed class AtlasServerHost : IDisposable
         {
             // Ignore server dispose failures during teardown
         }
+
+        ServerThreadPoolDrain disposeThreadPoolDrain = new(Server, logger);
+        if (!disposeThreadPoolDrain.WaitForQuietPeriod()) disposeThreadPoolDrain.LogTimeout(logger, "after Server.Dispose");
 
         if (_ownsDataPath && Directory.Exists(DataPath))
         {

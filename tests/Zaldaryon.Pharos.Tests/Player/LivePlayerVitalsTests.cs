@@ -2,6 +2,7 @@ using Vintagestory.API.Common;
 using Zaldaryon.Pharos.Bootstrap;
 using Zaldaryon.Pharos.Player;
 using Zaldaryon.Pharos.Server;
+using Zaldaryon.Pharos.Tests.XUnit;
 using Zaldaryon.Pharos.XUnit;
 using Xunit;
 
@@ -10,7 +11,7 @@ namespace Zaldaryon.Pharos.Tests.Player;
 /// <summary>A survival player's health, hunger, oxygen and body temperature, on a live server.</summary>
 [Collection("Sequential")]
 [ServerWorld(seed: 4242, playStyle: "surviveandbuild", Isolation = WorldIsolation.Restart)]
-public class LivePlayerVitalsTests : ServerScenarioBase
+public class LivePlayerVitalsTests : ThreadPoolWarningScenarioBase
 {
     [ServerScenario]
     public async Task AJoinedPlayer_CarriesTheSurvivalBehaviors()

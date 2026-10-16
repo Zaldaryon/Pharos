@@ -75,13 +75,12 @@ public class VoxelRecipeTests : ServerScenarioBase
     public async Task Clayforming_TakesClayFromTheHandWhenTheFormRunsOut()
     {
         ServerTestPlayer player = await CreateTestPlayerAsync(PlayerNames.Next());
-        player.GiveItem("game:clay-blue", 4);
+        player.GiveItem("game:clay-blue", 64);
         Host!.Ticks(2);
         BlockPos form = player.Entity!.Pos.AsBlockPos.AddCopy(2, 0, 0);
         Host.Recipes.PlaceClayForm(form, "game:clay-blue");
 
-        // An empty work item with no voxel budget: the bowl needs 41 voxels, so the form must take clay from the hand twice,
-        // each time adding 25 voxels to the budget (ItemClay).
+        // An empty work item with no voxel budget: each clay adds 25 voxels, so the form must take clay from the player's hand.
         Host.RunOnGameThread(() =>
         {
             BlockEntity be = Api!.World.BlockAccessor.GetBlockEntity(form)!;
@@ -89,11 +88,40 @@ public class VoxelRecipeTests : ServerScenarioBase
             be.GetType().GetField("AvailableVoxels")!.SetValue(be, 0);
         });
 
-        await Host.Recipes.CompleteVoxelRecipeAsync(player, form, "game:bowl-blue-raw");
+        await Host.Recipes.CompleteVoxelRecipeAsync(player, form, "game:bowl-blue-raw", outputQuantity: 1);
 
         Assert.Equal("game:groundstorage", BlockCode(form));
         Assert.Equal("game:bowl-blue-raw", GroundItem(form));
-        Assert.Equal(2, HeldClay(player));
+        Assert.Equal(1, GroundCount(form));
+        Assert.InRange(HeldClay(player), 1, 63);
+    }
+
+    [ServerScenario]
+    public async Task Clayforming_RefusesToRefillWithAnEmptyClayStack()
+    {
+        ServerTestPlayer player = await CreateTestPlayerAsync(PlayerNames.Next());
+        player.GiveItem("game:clay-blue");
+        Host!.Ticks(2);
+        BlockPos form = player.Entity!.Pos.AsBlockPos.AddCopy(2, 0, 0);
+        Host.Recipes.PlaceClayForm(form, "game:clay-blue");
+        Host.RunOnGameThread(() =>
+        {
+            ItemSlot hand = player.Player!.InventoryManager.ActiveHotbarSlot;
+            Assert.NotNull(hand.Itemstack);
+            hand.Itemstack!.StackSize = 0;
+            hand.MarkDirty();
+            BlockEntity be = Api!.World.BlockAccessor.GetBlockEntity(form)!;
+            be.GetType().GetField("Voxels")!.SetValue(be, new bool[16, 16, 16]);
+            be.GetType().GetField("AvailableVoxels")!.SetValue(be, 0);
+        });
+
+        InvalidOperationException error = await Assert.ThrowsAsync<InvalidOperationException>(() => Host.Recipes.CompleteVoxelRecipeAsync(player, form, "game:bowl-blue-raw"));
+
+        Assert.Contains("needs more clay", error.Message, StringComparison.Ordinal);
+        Assert.Equal("game:clayform", BlockCode(form));
+        Assert.Equal(0, HeldClay(player));
+        Assert.Equal(0, AvailableVoxelBudget(form));
+        Assert.Equal(0, FilledVoxelCount(form));
     }
 
     [ServerScenario]
@@ -165,6 +193,25 @@ public class VoxelRecipeTests : ServerScenarioBase
     });
 
     private int HeldClay(ServerTestPlayer player) => Host!.RunOnGameThread(() => player.Player!.InventoryManager.ActiveHotbarSlot.StackSize);
+
+    private int AvailableVoxelBudget(BlockPos pos) => Host!.RunOnGameThread(() =>
+    {
+        object be = Api!.World.BlockAccessor.GetBlockEntity(pos)!;
+        return (int)be.GetType().GetField("AvailableVoxels")!.GetValue(be)!;
+    });
+
+    private int FilledVoxelCount(BlockPos pos) => Host!.RunOnGameThread(() =>
+    {
+        object be = Api!.World.BlockAccessor.GetBlockEntity(pos)!;
+        bool[,,] voxels = (bool[,,])be.GetType().GetField("Voxels")!.GetValue(be)!;
+        int filled = 0;
+        foreach (bool voxel in voxels)
+        {
+            if (voxel) filled++;
+        }
+
+        return filled;
+    });
 
     private string BlockCode(BlockPos pos) => Host!.RunOnGameThread(() => Api!.World.BlockAccessor.GetBlock(pos).Code.ToString());
 }

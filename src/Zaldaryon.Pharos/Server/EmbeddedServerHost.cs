@@ -385,9 +385,8 @@ public sealed partial class EmbeddedServerHost : IDisposable, IAsyncDisposable
             DataPath = dataPath
         };
         ServerMain.Logger = (Logger)new ServerLogger(progArgs);
-
-        // The game sets the thread pool's logger when it starts; this host does not start the game's Main, so it sets it here.
-        TyronThreadPool.Inst.Logger ??= (ILogger)(object)ServerMain.Logger;
+        // Refresh the singleton logger for every host; a prior scenario may have disposed its logger.
+        TyronThreadPool.Inst.Logger = ServerMain.Logger;
         LogCapture logs = new(EnumAppSide.Server);
         logs.Attach(ServerMain.Logger);
         Lang.PreLoad((ILogger)(object)ServerMain.Logger, GamePaths.AssetsPath, "en");
@@ -485,9 +484,8 @@ public sealed partial class EmbeddedServerHost : IDisposable, IAsyncDisposable
             DataPath = dataPath
         };
         ServerMain.Logger = (Logger)new ServerLogger(progArgs);
-
-        // The game sets the thread pool's logger when it starts; this host does not start the game's Main, so it sets it here.
-        TyronThreadPool.Inst.Logger ??= (ILogger)(object)ServerMain.Logger;
+        // Refresh the singleton logger for every host; a prior scenario may have disposed its logger.
+        TyronThreadPool.Inst.Logger = ServerMain.Logger;
         LogCapture logs = new(EnumAppSide.Server);
         logs.Attach(ServerMain.Logger);
         Lang.PreLoad((ILogger)(object)ServerMain.Logger, GamePaths.AssetsPath, "en");
@@ -894,13 +892,19 @@ public sealed partial class EmbeddedServerHost : IDisposable, IAsyncDisposable
     /// <summary>
     /// Asynchronously stops the server and cleans up resources.
     /// </summary>
-    public async ValueTask DisposeAsync()
+    /// <remarks>Uses a dedicated long-running task because teardown waits for thread-pool callbacks.</remarks>
+    public ValueTask DisposeAsync()
     {
-        if (_disposed) return;
+        if (_disposed) return ValueTask.CompletedTask;
         _random?.ReleaseOnDispose();
         _disposed = true;
 
-        await Task.Run(DisposeOnGameThread).ConfigureAwait(false);
+        Task disposal = Task.Factory.StartNew(
+            DisposeOnGameThread,
+            CancellationToken.None,
+            TaskCreationOptions.LongRunning,
+            TaskScheduler.Default);
+        return new ValueTask(disposal);
     }
 
     private void DisposeOnGameThread()
@@ -990,6 +994,8 @@ public sealed partial class EmbeddedServerHost : IDisposable, IAsyncDisposable
 
     private void DrainAndDisposeCore()
     {
+        var logger = ServerMain.Logger;
+
         // Wait for background BuildServerAssetsPacket tasks to settle
         try
         {
@@ -1013,52 +1019,72 @@ public sealed partial class EmbeddedServerHost : IDisposable, IAsyncDisposable
             // Ignore server stop failures during teardown
         }
 
+        // ServerMain.Stop clears its logger watchers before returning. Reattach before waiting
+        // for any server threads that did not stop cleanly, and keep capture active through the
+        // final server disposal and scratch cleanup.
+        if (logger is not null) Logs.Reattach(logger);
         WaitForServerThreadsToShutDown();
+        ServerThreadPoolDrain stopThreadPoolDrain = new(Server, logger);
+        if (!stopThreadPoolDrain.WaitForQuietPeriod()) stopThreadPoolDrain.LogTimeout(logger, "after Stop");
 
-        // Dispose server with exception containment for known ServerSystemMonitor NRE
+        ServerThreadPoolDrain.TryInstallBeforeThreadPoolDisposal(Server, logger);
+
         try
         {
-            Server.Dispose();
-        }
-        catch (NullReferenceException nre)
-        {
-            // Known NRE in ServerSystemMonitor.Dispose() during teardown
             try
             {
-                ServerMain.Logger?.Warning("ServerSystemMonitor.Dispose() NRE during teardown (expected): {0}", nre.Message);
+                Server.Dispose();
             }
-            catch
+            catch (NullReferenceException nre)
             {
-                // Ignore logging failures
-            }
-        }
-        catch
-        {
-            // Ignore other server dispose failures during teardown
-        }
-
-        // Cleanup scratch directory if we own it
-        if (_ownsDataPath && Directory.Exists(DataPath))
-        {
-            try
-            {
-                Directory.Delete(DataPath, recursive: true);
-            }
-            catch (Exception ex)
-            {
-                // A scratch directory that outlives the host is a real leak, so name the locked
-                // file instead of dropping the failure on the floor. On an Optimum build this is
-                // how a world database still held open at teardown announces itself.
+                // Known NRE in ServerSystemMonitor.Dispose() during teardown
                 try
                 {
-                    ServerMain.Logger?.Warning(
-                        "Scratch data path {0} survived teardown: {1}", DataPath, ex.Message);
+                    logger?.Warning("ServerSystemMonitor.Dispose() NRE during teardown (expected): {0}", nre.Message);
                 }
                 catch
                 {
                     // Ignore logging failures
                 }
             }
+            catch
+            {
+                // Ignore other server dispose failures during teardown
+            }
+
+            // ServerMain.Dispose tears down systems before it disposes TyronThreadPool and the
+            // logger. Those system disposals can queue callbacks after the first quiet period.
+            // Reattach after Server.Dispose too, then give those callbacks their own bounded drain.
+            if (logger is not null) Logs.Reattach(logger);
+            ServerThreadPoolDrain disposeThreadPoolDrain = new(Server, logger);
+            if (!disposeThreadPoolDrain.WaitForQuietPeriod()) disposeThreadPoolDrain.LogTimeout(logger, "after Server.Dispose");
+
+            // Cleanup scratch directory if we own it
+            if (_ownsDataPath && Directory.Exists(DataPath))
+            {
+                try
+                {
+                    Directory.Delete(DataPath, recursive: true);
+                }
+                catch (Exception ex)
+                {
+                    // A scratch directory that outlives the host is a real leak, so name the locked
+                    // file instead of dropping the failure on the floor. On an Optimum build this
+                    // is how a world database still held open at teardown announces itself.
+                    try
+                    {
+                        logger?.Warning("Scratch data path {0} survived teardown: {1}", DataPath, ex.Message);
+                    }
+                    catch
+                    {
+                        // Ignore logging failures
+                    }
+                }
+            }
+        }
+        finally
+        {
+            logger?.ClearWatchers();
         }
     }
 }
