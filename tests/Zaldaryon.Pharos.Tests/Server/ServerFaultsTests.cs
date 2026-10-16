@@ -1,6 +1,8 @@
 using System.Runtime.CompilerServices;
+using Vintagestory.API.MathTools;
 using Xunit;
 using Zaldaryon.Pharos.Server;
+using Zaldaryon.Pharos.Tests.Support;
 using Zaldaryon.Pharos.XUnit;
 
 namespace Zaldaryon.Pharos.Tests.Server;
@@ -60,6 +62,37 @@ public class ServerFaultsTests : ServerScenarioBase
         Assert.Equal(5, ticker.Calls);
         await Task.CompletedTask;
     }
+
+    [ServerScenario]
+    public async Task FailSaves_SaveThrowsAndNothingPersists()
+    {
+        ServerTestPlayer player = await CreateTestPlayerAsync(PlayerNames.Next());
+        BlockPos chest = player.Entity!.Pos.AsBlockPos.AddCopy(4, 0, 0);
+        await Host!.EnsureChunksLoadedAsync(chest, chest);
+        this.SetBlock(chest, "game:chest-east");
+
+        using (ServerFault fault = Host.Faults.FailSaves())
+        {
+            // The game logs each failed write and goes on, so the save completes, and it logs the injected failure.
+            await Host.SaveWorldAsync();
+            Assert.True(fault.Hits > 0);
+            Assert.Contains(Host.Logs.Errors, e => e.Message.Contains("disk full", StringComparison.Ordinal));
+        }
+
+        // The failed writes stored nothing, so a crash after the save keeps none of the chest.
+        await RestartWorldAsync(RestartMode.Crash);
+        await Host!.EnsureChunksLoadedAsync(chest, chest);
+        Assert.NotEqual("game:chest-east", BlockCodeAt(chest));
+
+        // With the fault gone, a save stores the chest, and a crash keeps it.
+        this.SetBlock(chest, "game:chest-east");
+        await Host.SaveWorldAsync();
+        await RestartWorldAsync(RestartMode.Crash);
+        await Host!.EnsureChunksLoadedAsync(chest, chest);
+        Assert.Equal("game:chest-east", BlockCodeAt(chest));
+    }
+
+    private string BlockCodeAt(BlockPos pos) => Host!.RunOnGameThread(() => Api!.World.BlockAccessor.GetBlock(pos).Code.ToString());
 
     [ServerScenario]
     public async Task SlowTicks_NeedsAVirtualClock()

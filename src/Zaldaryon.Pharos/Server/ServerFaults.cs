@@ -62,6 +62,22 @@ public sealed class ServerFaults
         return fault;
     }
 
+    /// <summary>
+    /// Makes every database write of a save the test makes on the game thread throw <paramref name="exception"/>. The game logs each
+    /// failed write as an error and goes on, as it does when the disk is full: the save completes, and it stores none of the writes
+    /// that failed. Background saves on the chunk thread are left alone, since a failure there stops the server.
+    /// </summary>
+    /// <remarks>
+    /// The write methods of the game's database connection are patched when the first such fault is added, and the patch stays.
+    /// </remarks>
+    public ServerFault FailSaves(Exception? exception = null)
+    {
+        var fault = new FailSavesFault(this, exception ?? new IOException("disk full"), _host);
+        Add(fault);
+        FaultPatches.AddSave(fault);
+        return fault;
+    }
+
     /// <summary>Disposes every fault still in place.</summary>
     public void Clear()
     {
@@ -128,7 +144,7 @@ public abstract class ServerFault : IDisposable
     {
     }
 
-    protected void RecordHit() => Interlocked.Increment(ref _hits);
+    internal void RecordHit() => Interlocked.Increment(ref _hits);
 }
 
 internal sealed class SlowTickFault(ServerFaults owner, int every, int delayMs) : ServerFault(owner)
@@ -169,4 +185,18 @@ internal sealed class ThrowInFault(ServerFaults owner, MethodInfo method, int ti
         RecordHit();
         return true;
     }
+}
+
+internal sealed class FailSavesFault(ServerFaults owner, Exception exception, EmbeddedServerHost host) : ServerFault(owner)
+{
+    internal Exception Exception { get; } = exception;
+
+    // Only a save the game runs on the game thread, while the server is saving, fails.
+    internal bool Applies => host.IsOnGameThread && host.Server.Saving;
+
+    internal override void BeforeTick(EmbeddedServerHost host)
+    {
+    }
+
+    internal override void Ended() => FaultPatches.RemoveSave(this);
 }
