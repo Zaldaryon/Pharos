@@ -583,7 +583,23 @@ public sealed class ServerTestPlayer : IServerTestPlayer, IDisposable
     /// The player's network: how its link is degraded, scripted, severed and frozen. The player must be joined.
     /// </summary>
     /// <exception cref="InvalidOperationException">The player is not joined to an embedded server.</exception>
-    public PlayerNetwork Network => new(RequireBotConnection());
+    public PlayerNetwork Network => new(RequireBotConnection(), this);
+
+    /// <summary>
+    /// Freezes the player's connection: it stops reading and answering the server's pings. The server then times the player out once the
+    /// game's ping timeout has passed in simulated time, as it would for a client that stopped responding.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">The player is not joined to an embedded server.</exception>
+    public void Freeze() => FreezeNetwork();
+
+    internal void FreezeNetwork()
+    {
+        HeadlessPlayerConnection connection = RequireBotConnection();
+        EmbeddedServerHost host = RequireBotHost();
+        ServerMain server = _server ?? throw new InvalidOperationException("The player is not connected to a server.");
+        string name = _joinedName ?? _playerUid;
+        host.RunOnGameThread(() => connection.Freeze(server, name));
+    }
 
     /// <summary>
     /// Cuts the player's connection without the leave packet a quitting client sends. The server reads a lost connection on its next

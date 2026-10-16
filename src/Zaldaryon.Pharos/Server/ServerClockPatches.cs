@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Reflection;
 using System.Reflection.Emit;
+using System.Runtime.CompilerServices;
 using HarmonyLib;
 using Vintagestory.Common;
 using Vintagestory.Server;
@@ -108,9 +109,40 @@ internal static class ServerClockPatches
                 Trace.TraceWarning($"Pharos could not let the calendar follow the virtual clock: {ex.Message}");
             }
 
+            try
+            {
+                harmony.Patch(AccessTools.Method(typeof(ServerSystemNotifyPing), nameof(ServerSystemNotifyPing.OnServerTick)),
+                    prefix: new HarmonyMethod(typeof(ServerClockPatches), nameof(PingsOnVirtualSeconds)));
+                s_rewritten.Add($"{typeof(ServerSystemNotifyPing).FullName}.{nameof(ServerSystemNotifyPing.OnServerTick)}");
+            }
+            catch (Exception ex)
+            {
+                Trace.TraceWarning($"Pharos could not let the server's pings follow the virtual clock: {ex.Message}");
+            }
+
             Supported = tick && getter;
             InstallTime = took.Elapsed;
         }
+    }
+
+    private static readonly ConditionalWeakTable<ServerSystemNotifyPing, StrongBox<long>> s_nextPingMs = new();
+    private static readonly MethodInfo s_pingTimerTick = AccessTools.Method(typeof(ServerSystemNotifyPing), "PingTimerTick")
+        ?? throw new InvalidOperationException("The game's ping system has no PingTimerTick.");
+
+    // The game times its pings with the wall clock. Under a virtual clock the ping timer runs once per simulated second instead, so a
+    // player who stops answering is timed out after the same simulated time on any machine. Without a virtual clock the game runs as it is.
+    private static bool PingsOnVirtualSeconds(ServerSystemNotifyPing __instance)
+    {
+        ServerClockState? clock = Current;
+        if (clock is not { IsVirtual: true }) return true;
+
+        StrongBox<long> next = s_nextPingMs.GetValue(__instance, _ => new StrongBox<long>(-1));
+        long now = clock.Read();
+        if (next.Value >= 0 && now < next.Value) return false;
+
+        next.Value = now + 1000;
+        s_pingTimerTick.Invoke(__instance, null);
+        return false;
     }
 
     /// <summary>Throws when the game could not be patched for a virtual clock.</summary>

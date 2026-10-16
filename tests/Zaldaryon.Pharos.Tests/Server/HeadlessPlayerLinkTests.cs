@@ -77,4 +77,32 @@ public class HeadlessPlayerLinkTests : ServerScenarioBase
         Assert.True(ticks < 60, $"The chat '{message}' never reached {receiver.PlayerName}.");
         return ticks;
     }
+
+    [ServerScenario]
+    public async Task Freeze_ServerTimesPlayerOut()
+    {
+        // One tick is one simulated second, so the game's ping timeout is counted in ticks.
+        using VirtualClock clock = Host!.UseVirtualClock(tickMs: 1000);
+        ServerTestPlayer bob = await CreateTestPlayerAsync(PlayerNames.Next());
+        ServerTestPlayer alice = await CreateTestPlayerAsync(PlayerNames.Next());
+
+        // Both players answer the server's pings while they are connected.
+        clock.Advance(TimeSpan.FromSeconds(200), TimeSpan.FromSeconds(1));
+        Assert.True(bob.IsConnected);
+
+        bob.Network.Freeze();
+
+        // The timeout is 150 seconds: bob is still there after 149 of them, and gone once it has passed.
+        clock.Advance(TimeSpan.FromSeconds(149), TimeSpan.FromSeconds(1));
+        Assert.True(bob.IsConnected, "The server dropped bob before the ping timeout.");
+        Assert.True(alice.IsConnected, "The server dropped a player that answered its pings.");
+
+        for (int i = 0; i < 11 && bob.IsConnected; i++)
+        {
+            clock.Advance(TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
+        }
+
+        Assert.False(bob.IsConnected, "The server kept a frozen player past the ping timeout.");
+        Assert.True(alice.IsConnected);
+    }
 }

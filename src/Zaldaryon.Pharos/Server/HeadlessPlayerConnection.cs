@@ -32,7 +32,11 @@ internal sealed class HeadlessPlayerConnection
 {
     private const int FirstPlayerSlot = 2;
 
+    private const int PingId = 2;
+    private const int PingReplyId = 2;
+
     private readonly LinkedTcpNetClient _client;
+    private volatile bool _frozen;
     private readonly LoopbackLink _link;
     private readonly DummyNetwork _network;
 
@@ -164,14 +168,43 @@ internal sealed class HeadlessPlayerConnection
     public List<byte[]> DrainReceived()
     {
         List<byte[]> packets = [];
+        if (_frozen) return packets;
+
         while (_client.ReadMessage() is { } message)
         {
             byte[] data = new byte[message.messageLength];
             Array.Copy(message.message, data, message.messageLength);
             packets.Add(data);
+
+            // Answers the server's ping, as a real client does, so the server sees the player as responsive.
+            if (IsPing(data)) Send(new Packet_Client { Id = PingReplyId });
         }
 
         return packets;
+    }
+
+    /// <summary>
+    /// Freezes the player: it reads nothing and answers no ping, so the server times it out once it has waited too long. The server
+    /// also stops treating the player as a single-player client, which the game never times out.
+    /// </summary>
+    /// <remarks>Runs on the server's game thread.</remarks>
+    public void Freeze(ServerMain server, string playerName)
+    {
+        _frozen = true;
+        ConnectedClient? client = server.GetClientByPlayername(playerName);
+        if (client is not null) client.IsSinglePlayerClient = false;
+    }
+
+    private static bool IsPing(byte[] data)
+    {
+        try
+        {
+            return Packet_ServerSerializer.DeserializeBuffer(data, data.Length, new Packet_Server()).Id == PingId;
+        }
+        catch (Exception)
+        {
+            return false;
+        }
     }
 
     /// <summary>
