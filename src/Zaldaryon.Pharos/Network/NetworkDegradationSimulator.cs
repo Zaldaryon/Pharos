@@ -18,6 +18,7 @@ public sealed class NetworkDegradationSimulator
     private long _packetsDropped;
     private long _packetsCorrupted;
     private long _totalLatencyApplied;
+    private readonly double[] _busyUntilMs = new double[2];
 
     /// <summary>
     /// Creates a new NetworkDegradationSimulator with the default seed.
@@ -231,14 +232,54 @@ public sealed class NetworkDegradationSimulator
         }
     }
 
+    /// <summary>Whether the profile applies to packets in <paramref name="direction"/>.</summary>
+    public bool Applies(PacketDirection direction)
+    {
+        lock (_lock) return AppliesTo(direction);
+    }
+
+    // Callers without a direction, such as the first version of the API, are in both.
+    private bool AppliesTo(PacketDirection? direction) =>
+        _profile.Direction is not { } only || direction is null || only == direction;
+
     /// <summary>
-    /// Processes a packet through the degradation simulator, returning the result.
+    /// The time a packet of <paramref name="bytes"/> leaves the link in <paramref name="direction"/>, in link milliseconds. With a
+    /// bandwidth cap, packets queue behind the ones before them and each takes <c>bytes * 8 / BandwidthKbps</c> milliseconds. Without a
+    /// cap, or in the other direction, the packet leaves at <paramref name="nowMs"/>. It never draws from the random generator.
     /// </summary>
-    public PacketDegradationResult ProcessPacket()
+    public double Departure(PacketDirection direction, int bytes, double nowMs)
     {
         lock (_lock)
         {
-            if (!_profile.HasDegradation)
+            if (_profile.BandwidthKbps <= 0 || !Applies(direction)) return nowMs;
+
+            int slot = (int)direction;
+            double start = Math.Max(nowMs, _busyUntilMs[slot]);
+            _busyUntilMs[slot] = start + bytes * 8.0 / _profile.BandwidthKbps;
+            return _busyUntilMs[slot];
+        }
+    }
+
+    /// <summary>The latency one packet in <paramref name="direction"/> pays; 0 when the profile does not apply to it.</summary>
+    public int GetEffectiveLatency(PacketDirection direction)
+    {
+        lock (_lock) return AppliesTo(direction) ? GetEffectiveLatencyInternal() : 0;
+    }
+
+    /// <summary>
+    /// Processes a packet through the degradation simulator, returning the result.
+    /// </summary>
+    public PacketDegradationResult ProcessPacket() => ProcessPacket(null);
+
+    /// <summary>
+    /// Processes a packet in <paramref name="direction"/> through the degradation simulator, returning the result. A profile for one
+    /// direction leaves the other alone.
+    /// </summary>
+    public PacketDegradationResult ProcessPacket(PacketDirection? direction)
+    {
+        lock (_lock)
+        {
+            if (!_profile.HasDegradation || !AppliesTo(direction))
             {
                 _packetsProcessed++;
                 return new PacketDegradationResult(

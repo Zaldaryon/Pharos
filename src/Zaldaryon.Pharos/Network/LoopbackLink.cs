@@ -76,7 +76,8 @@ internal sealed class LoopbackLink
         {
             if (IsSevered) return null;
 
-            double at = Math.Max(_nowMs + Latency(), _lastToServerAt);
+            double leave = _degradation.Departure(PacketDirection.Outbound, data.Length, _nowMs);
+            double at = Math.Max(leave + Latency(PacketDirection.Outbound), _lastToServerAt);
             _lastToServerAt = at;
             if (at <= _nowMs && _toServer.Count == 0) return data;
 
@@ -96,7 +97,8 @@ internal sealed class LoopbackLink
         {
             if (IsSevered) return;
 
-            double at = Math.Max(_nowMs + Latency(), _lastToClientAt);
+            double leave = _degradation.Departure(PacketDirection.Inbound, message.messageLength, _nowMs);
+            double at = Math.Max(leave + Latency(PacketDirection.Inbound), _lastToClientAt);
             _lastToClientAt = at;
             _toClient.Enqueue((at, message));
         }
@@ -118,11 +120,13 @@ internal sealed class LoopbackLink
         {
             if (IsSevered) return null;
 
-            PacketDegradationResult fate = _degradation.ProcessPacket();
+            PacketDegradationResult fate = _degradation.ProcessPacket(PacketDirection.Outbound);
             if (fate.Dropped || fate.Corrupted) return null;
-            if (fate.LatencyMs <= 0 && _udpToServer.Count == 0) return packet;
 
-            _udpToServer.Add((_nowMs + fate.LatencyMs, packet));
+            double at = _degradation.Departure(PacketDirection.Outbound, Packet_UdpPacketSerializer.GetSize(packet), _nowMs) + fate.LatencyMs;
+            if (at <= _nowMs && _udpToServer.Count == 0) return packet;
+
+            _udpToServer.Add((at, packet));
             return null;
         }
     }
@@ -138,8 +142,11 @@ internal sealed class LoopbackLink
             {
                 foreach (Packet_UdpPacket packet in packets)
                 {
-                    PacketDegradationResult fate = _degradation.ProcessPacket();
-                    if (!fate.Dropped && !fate.Corrupted) _udpToClient.Add((_nowMs + fate.LatencyMs, packet));
+                    PacketDegradationResult fate = _degradation.ProcessPacket(PacketDirection.Inbound);
+                    if (fate.Dropped || fate.Corrupted) continue;
+
+                    double at = _degradation.Departure(PacketDirection.Inbound, Packet_UdpPacketSerializer.GetSize(packet), _nowMs) + fate.LatencyMs;
+                    _udpToClient.Add((at, packet));
                 }
             }
 
@@ -195,11 +202,11 @@ internal sealed class LoopbackLink
         }
     }
 
-    private double Latency()
+    private double Latency(PacketDirection direction)
     {
         // TCP is reliable: it pays the latency and jitter of a lossy network, never the loss.
         if (!_degradation.IsActive) return 0;
-        return Math.Max(0, _degradation.GetEffectiveLatency());
+        return Math.Max(0, _degradation.GetEffectiveLatency(direction));
     }
 
     private void TakeDue(List<(double At, Packet_UdpPacket Packet)> queue, List<Packet_UdpPacket> into)

@@ -7,11 +7,15 @@ namespace Zaldaryon.Pharos.Network;
 /// <param name="PacketDropRate">Probability of dropping a packet (0.0 to 1.0). Default 0.</param>
 /// <param name="JitterMs">Maximum random variance to add to latency in milliseconds. Default 0.</param>
 /// <param name="CorruptionRate">Probability of corrupting a packet (0.0 to 1.0). Default 0.</param>
+/// <param name="BandwidthKbps">The most the link carries per direction, in kilobits per second; packets queue behind each other. 0 for no cap.</param>
+/// <param name="Direction">The only direction the profile applies to; null applies it to both.</param>
 public sealed record DegradedNetworkProfile(
     int LatencyMs = 0,
     float PacketDropRate = 0f,
     int JitterMs = 0,
-    float CorruptionRate = 0f)
+    float CorruptionRate = 0f,
+    int BandwidthKbps = 0,
+    PacketDirection? Direction = null)
 {
     /// <summary>
     /// A profile with no degradation (perfect network).
@@ -48,11 +52,12 @@ public sealed record DegradedNetworkProfile(
         LatencyMs >= 0 &&
         PacketDropRate >= 0f && PacketDropRate <= 1f &&
         JitterMs >= 0 &&
-        CorruptionRate >= 0f && CorruptionRate <= 1f;
+        CorruptionRate >= 0f && CorruptionRate <= 1f &&
+        BandwidthKbps >= 0;
 
     /// <summary>
     /// Returns whether this profile has any active degradation.
     /// </summary>
     public bool HasDegradation =>
-        LatencyMs > 0 || PacketDropRate > 0f || JitterMs > 0 || CorruptionRate > 0f;
+        LatencyMs > 0 || PacketDropRate > 0f || JitterMs > 0 || CorruptionRate > 0f || BandwidthKbps > 0;
 }
