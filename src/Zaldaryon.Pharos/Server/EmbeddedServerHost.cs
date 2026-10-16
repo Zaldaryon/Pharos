@@ -385,6 +385,9 @@ public sealed partial class EmbeddedServerHost : IDisposable, IAsyncDisposable
             DataPath = dataPath
         };
         ServerMain.Logger = (Logger)new ServerLogger(progArgs);
+
+        // The game sets the thread pool's logger when it starts; this host does not start the game's Main, so it sets it here.
+        TyronThreadPool.Inst.Logger ??= (ILogger)(object)ServerMain.Logger;
         LogCapture logs = new(EnumAppSide.Server);
         logs.Attach(ServerMain.Logger);
         Lang.PreLoad((ILogger)(object)ServerMain.Logger, GamePaths.AssetsPath, "en");
@@ -482,6 +485,9 @@ public sealed partial class EmbeddedServerHost : IDisposable, IAsyncDisposable
             DataPath = dataPath
         };
         ServerMain.Logger = (Logger)new ServerLogger(progArgs);
+
+        // The game sets the thread pool's logger when it starts; this host does not start the game's Main, so it sets it here.
+        TyronThreadPool.Inst.Logger ??= (ILogger)(object)ServerMain.Logger;
         LogCapture logs = new(EnumAppSide.Server);
         logs.Attach(ServerMain.Logger);
         Lang.PreLoad((ILogger)(object)ServerMain.Logger, GamePaths.AssetsPath, "en");

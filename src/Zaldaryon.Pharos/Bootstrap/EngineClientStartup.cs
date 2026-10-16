@@ -98,6 +98,7 @@ internal static class EngineClientStartup
         HeadlessWindow window = new(options);
 
         ClientLogger logger = new();
+        TyronThreadPool.Inst.Logger ??= logger;
         LogCapture logs = new(EnumAppSide.Client);
         logs.Attach(logger);
         ClientPlatformWindows platform = new(logger);
