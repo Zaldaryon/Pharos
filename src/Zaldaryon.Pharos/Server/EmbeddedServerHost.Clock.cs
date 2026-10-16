@@ -169,6 +169,7 @@ public sealed partial class EmbeddedServerHost
         _faults?.Clear();
         EndVirtualClock();
         lock (_clockLock) _lastClock = null;
+        LastSoakReport = null;
     }
 
     /// <summary>The clock in use, or the last one used since the test began, for run.json.</summary>

@@ -78,6 +78,7 @@ public sealed class ServerSimulation
     private async Task<SoakReport> RunAsync(VirtualClock clock, double days, float speed, SoakMonitor budgets, CancellationToken ct)
     {
         SoakReport report = new(days, speed, clock.TickMs);
+        _host.LastSoakReport = report;
         List<long> timings = [];
         long randomTicksAtStart = BackgroundWork.Finished(BackgroundWork.Kind.RandomTicks);
         long spawnerAtStart = BackgroundWork.Finished(BackgroundWork.Kind.Spawner);

@@ -39,6 +39,9 @@ internal sealed record ScenarioFailure
     /// <summary>How the server's time ran during the test, for run.json; read from <see cref="Server"/> when not set.</summary>
     public ServerClockInfo? ServerClock { get; init; }
 
+    /// <summary>The soak run the test made, for soak.csv and run.json; read from <see cref="Server"/> when not set.</summary>
+    public SoakReport? Soak { get; init; }
+
     /// <summary>The frames the client stepped during the test, when known.</summary>
     public long? Frames { get; init; }
 
@@ -257,6 +260,11 @@ internal static class FailureArtifactWriter
         {
             Step("boot-diagnostics.txt", files, problems, () =>
                 File.WriteAllText(Path.Combine(directory, "boot-diagnostics.txt"), boot.Result.Describe() + Environment.NewLine, new UTF8Encoding(false)));
+        }
+
+        if ((failure.Soak ?? failure.Server?.LastSoakReport) is { } soak)
+        {
+            Step("soak.csv", files, problems, () => soak.SaveCsv(Path.Combine(directory, "soak.csv")));
         }
 
         if (failure.AddFiles != null)
@@ -480,6 +488,29 @@ internal static class FailureArtifactWriter
                 ["followsCalendar"] = clock.FollowsCalendar,
                 ["active"] = clock.Active,
                 ["simulatedMs"] = clock.SimulatedMs,
+            } : null,
+            ["soak"] = (failure.Soak ?? failure.Server?.LastSoakReport) is { } soak ? new Dictionary<string, object?>
+            {
+                ["days"] = soak.Days,
+                ["speed"] = soak.Speed,
+                ["tickMs"] = soak.TickMs,
+                ["ticks"] = soak.Ticks,
+                ["calendarDays"] = soak.CalendarDays,
+                ["gameSeconds"] = soak.Simulated.TotalSeconds,
+                ["wallSeconds"] = soak.WallTime.TotalSeconds,
+                ["completed"] = soak.Completed,
+                ["samples"] = soak.Samples.Count,
+                ["randomTickPasses"] = soak.RandomTickPasses,
+                ["spawnerPasses"] = soak.SpawnerPasses,
+                ["breaches"] = soak.Breaches.Select(b => new Dictionary<string, object?>
+                {
+                    ["budget"] = b.Budget,
+                    ["limit"] = b.Limit,
+                    ["value"] = b.Value,
+                    ["tick"] = b.Tick,
+                    ["totalDays"] = b.TotalDays,
+                    ["gating"] = b.Gating,
+                }).ToArray(),
             } : null,
             ["runId"] = RunId,
             ["timeUtc"] = DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture),

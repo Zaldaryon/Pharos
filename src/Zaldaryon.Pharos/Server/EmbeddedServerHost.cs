@@ -52,6 +52,9 @@ public sealed partial class EmbeddedServerHost : IDisposable, IAsyncDisposable
     private readonly MethodInfo? _waitOnBuildServerAssetsPacket;
     private int _tickCount;
     private ServerSimulation? _simulation;
+
+    /// <summary>The soak run this test made most recently, for a failure's soak.csv; cleared when the test ends.</summary>
+    internal SoakReport? LastSoakReport { get; set; }
     private Exception? _serverException;
     private readonly ConcurrentQueue<(Action action, TaskCompletionSource tcs)> _gameThreadQueue = new();
     private readonly ConcurrentQueue<(Func<object?> func, TaskCompletionSource<object?> tcs)> _gameThreadFuncQueue = new();

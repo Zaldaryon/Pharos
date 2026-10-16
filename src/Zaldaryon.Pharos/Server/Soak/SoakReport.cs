@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text;
 using Zaldaryon.Pharos.Performance;
+using Zaldaryon.Pharos.Reporting;
 
 namespace Zaldaryon.Pharos.Server;
 
@@ -88,6 +89,12 @@ public sealed class SoakReport
 
         return csv.ToString();
     }
+
+    /// <summary>
+    /// A path for a file a soak test saves: under the failure artifact root, in the <c>soak</c> folder,
+    /// which the nightly run uploads with the other artifacts.
+    /// </summary>
+    public static string ArtifactPath(string fileName) => Path.Combine(FailureArtifactWriter.Root, "soak", fileName);
 
     /// <summary>Writes <see cref="ToCsv"/> to <paramref name="path"/>, creating its folder.</summary>
     public void SaveCsv(string path)
