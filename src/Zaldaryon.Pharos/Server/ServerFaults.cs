@@ -78,6 +78,24 @@ public sealed class ServerFaults
         return fault;
     }
 
+    /// <summary>
+    /// Holds back the chunks the server loads: for the next <paramref name="ticks"/> ticks, the chunk thread starts no load, so a column
+    /// requested now is still missing until the ticks are done. A load already under way can still finish.
+    /// </summary>
+    /// <remarks>
+    /// The fault counts ticks, not time, so the hold is the same on every machine. The hold is a lower bound: once the ticks are done,
+    /// loads take as long as they take on the chunk thread.
+    /// </remarks>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="ticks"/> is not positive.</exception>
+    public ServerFault DelayChunkLoads(int ticks)
+    {
+        if (ticks < 1) throw new ArgumentOutOfRangeException(nameof(ticks), ticks, "A delay needs at least one tick.");
+        var fault = new DelayChunkLoadsFault(this, ticks);
+        Add(fault);
+        FaultPatches.AddChunkDelay(fault);
+        return fault;
+    }
+
     /// <summary>Disposes every fault still in place.</summary>
     public void Clear()
     {
@@ -199,4 +217,22 @@ internal sealed class FailSavesFault(ServerFaults owner, Exception exception, Em
     }
 
     internal override void Ended() => FaultPatches.RemoveSave(this);
+}
+
+internal sealed class DelayChunkLoadsFault(ServerFaults owner, int ticks) : ServerFault(owner)
+{
+    // Written on the game thread, read on the chunk thread.
+    private long _ticks;
+
+    internal override void BeforeTick(EmbeddedServerHost host) => Interlocked.Increment(ref _ticks);
+
+    // Asked by the chunk thread before each load pass: true while the loads are held.
+    internal bool Holds()
+    {
+        if (Volatile.Read(ref _ticks) >= ticks) return false;
+        RecordHit();
+        return true;
+    }
+
+    internal override void Ended() => FaultPatches.RemoveChunkDelay(this);
 }

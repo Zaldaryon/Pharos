@@ -21,6 +21,7 @@ internal static class FaultPatches
     private static readonly object s_lock = new();
     private static readonly List<ThrowInFault> s_throws = [];
     private static readonly List<FailSavesFault> s_saves = [];
+    private static readonly List<DelayChunkLoadsFault> s_chunkDelays = [];
     private static readonly HashSet<MethodBase> s_patched = [];
     private static Harmony? s_harmony;
 
@@ -60,6 +61,31 @@ internal static class FaultPatches
         }
     }
 
+    /// <summary>Registers a chunk delay, patching the chunk supply's tick on the first one.</summary>
+    internal static void AddChunkDelay(DelayChunkLoadsFault fault)
+    {
+        lock (s_lock)
+        {
+            if (s_chunkDelays.Count == 0)
+            {
+                s_harmony ??= new Harmony(HarmonyId);
+                Type supply = AccessTools.TypeByName("Vintagestory.Server.ServerSystemSupplyChunks")
+                    ?? throw new InvalidOperationException("The game has no chunk supply system.");
+                MethodInfo tick = AccessTools.Method(supply, "OnSeparateThreadTick")
+                    ?? throw new InvalidOperationException("The chunk supply system has no OnSeparateThreadTick.");
+                if (s_patched.Add(tick)) s_harmony.Patch(tick, prefix: new HarmonyMethod(typeof(FaultPatches), nameof(HoldChunkLoads)));
+            }
+
+            s_chunkDelays.Add(fault);
+        }
+    }
+
+    /// <summary>Forgets a chunk delay.</summary>
+    internal static void RemoveChunkDelay(DelayChunkLoadsFault fault)
+    {
+        lock (s_lock) s_chunkDelays.Remove(fault);
+    }
+
     /// <summary>Forgets a save fault.</summary>
     internal static void RemoveSave(FailSavesFault fault)
     {
@@ -70,6 +96,20 @@ internal static class FaultPatches
     internal static void Remove(ThrowInFault fault)
     {
         lock (s_lock) s_throws.Remove(fault);
+    }
+
+    // The chunk thread's load pass is skipped while a delay holds the loads. Returning false skips the original.
+    private static bool HoldChunkLoads()
+    {
+        lock (s_lock)
+        {
+            foreach (DelayChunkLoadsFault fault in s_chunkDelays)
+            {
+                if (fault.Holds()) return false;
+            }
+        }
+
+        return true;
     }
 
     // The database writes of a game-thread save throw the fault's exception; the chunk thread's writes always go through.

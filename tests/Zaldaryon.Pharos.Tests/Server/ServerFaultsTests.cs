@@ -92,6 +92,30 @@ public class ServerFaultsTests : ServerScenarioBase
         Assert.Equal("game:chest-east", BlockCodeAt(chest));
     }
 
+    [ServerScenario]
+    public async Task DelayChunkLoads_HoldsColumnsForTicks()
+    {
+        ServerTestPlayer player = await CreateTestPlayerAsync(PlayerNames.Next());
+
+        // A column far from the player, so nothing has loaded it yet.
+        BlockPos far = player.Entity!.Pos.AsBlockPos.AddCopy(640, 0, 0);
+
+        using (ServerFault hold = Host!.Faults.DelayChunkLoads(ticks: 100))
+        {
+            // Asking for the column and waiting 99 ticks times out: the chunk thread starts no load while the hold lasts.
+            await Assert.ThrowsAsync<TimeoutException>(() => Host.EnsureChunksLoadedAsync(far, far, maxTicks: 99));
+            Assert.False(IsLoaded(far));
+            Assert.True(hold.Hits > 0);
+        }
+
+        // Once the hold is gone, the column loads.
+        await Host.EnsureChunksLoadedAsync(far, far);
+        Assert.True(IsLoaded(far));
+    }
+
+    private bool IsLoaded(BlockPos pos) => Host!.RunOnGameThread(() =>
+        Host.Server.GetLoadedChunk(Host.Server.WorldMap.ChunkIndex3D(pos.X / 32, pos.Y / 32, pos.Z / 32)) is not null);
+
     private string BlockCodeAt(BlockPos pos) => Host!.RunOnGameThread(() => Api!.World.BlockAccessor.GetBlock(pos).Code.ToString());
 
     [ServerScenario]
