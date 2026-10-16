@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using Xunit;
 using Zaldaryon.Pharos.Server;
 using Zaldaryon.Pharos.XUnit;
@@ -36,9 +37,43 @@ public class ServerFaultsTests : ServerScenarioBase
     }
 
     [ServerScenario]
+    public async Task ThrowIn_FailsTickListenerOnceThenRecovers()
+    {
+        using VirtualClock clock = Host!.UseVirtualClock(tickMs: 50);
+        var ticker = new Ticker();
+        Host.RunOnGameThread(() => Api!.Event.RegisterGameTickListener(ticker.OnTick, 20));
+
+        using (ServerFault fault = Host.Faults.ThrowIn<Ticker>(nameof(Ticker.OnTick), times: 1))
+        {
+            // Four ticks: the first call to the listener throws, the others succeed.
+            clock.Advance(TimeSpan.FromMilliseconds(200), TimeSpan.FromMilliseconds(50));
+
+            Assert.Equal(1, fault.Hits);
+            Assert.Equal(3, ticker.Calls);
+
+            // The server logs the injected throw once as an error, and carries on.
+            Assert.Single(Host.Logs.Errors.Where(e => e.Message.Contains("Injected fault in OnTick", StringComparison.Ordinal)));
+        }
+
+        // With the fault gone, the listener runs on every tick again.
+        clock.Advance(TimeSpan.FromMilliseconds(100), TimeSpan.FromMilliseconds(50));
+        Assert.Equal(5, ticker.Calls);
+        await Task.CompletedTask;
+    }
+
+    [ServerScenario]
     public async Task SlowTicks_NeedsAVirtualClock()
     {
         Assert.Throws<InvalidOperationException>(() => Host!.Faults.SlowTicks(every: 4, delayMs: 500));
         await Task.CompletedTask;
+    }
+
+    /// <summary>A tick listener a fault can make throw. Its method is not inlined, so the fault can patch it.</summary>
+    private sealed class Ticker
+    {
+        public int Calls { get; private set; }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        public void OnTick(float dt) => Calls++;
     }
 }

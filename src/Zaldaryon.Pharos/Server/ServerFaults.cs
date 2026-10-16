@@ -1,3 +1,6 @@
+using System.Reflection;
+using HarmonyLib;
+
 namespace Zaldaryon.Pharos.Server;
 
 /// <summary>
@@ -32,6 +35,30 @@ public sealed class ServerFaults
 
         var fault = new SlowTickFault(this, every, delayMs);
         Add(fault);
+        return fault;
+    }
+
+    /// <summary>
+    /// Makes the next <paramref name="times"/> calls of <paramref name="method"/> on <typeparamref name="T"/> throw an
+    /// <see cref="InjectedFaultException"/>, then lets the calls through again. A tick listener that throws is logged by the server as
+    /// a fatal error, and the tick goes on without it.
+    /// </summary>
+    /// <remarks>
+    /// The method is patched when the first fault names it, and the patch stays in place. An inlined method cannot be patched, so the
+    /// target has to be reached through a delegate or a virtual call, and it is marked <c>NoInlining</c> in tests.
+    /// </remarks>
+    /// <exception cref="ArgumentException"><paramref name="method"/> is empty, or <typeparamref name="T"/> has no such method.</exception>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="times"/> is not positive.</exception>
+    public ServerFault ThrowIn<T>(string method, int times = 1, Type[]? parameters = null) where T : class
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(method);
+        if (times < 1) throw new ArgumentOutOfRangeException(nameof(times), times, "A fault throws at least once.");
+        MethodInfo target = AccessTools.Method(typeof(T), method, parameters)
+            ?? throw new ArgumentException($"{typeof(T).Name} has no method {method}.", nameof(method));
+
+        var fault = new ThrowInFault(this, target, times);
+        Add(fault);
+        FaultPatches.Add(fault);
         return fault;
     }
 
@@ -90,10 +117,16 @@ public abstract class ServerFault : IDisposable
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
         _owner.Remove(this);
+        Ended();
     }
 
     /// <summary>Called on the game thread before each tick, while the fault is in place.</summary>
     internal abstract void BeforeTick(EmbeddedServerHost host);
+
+    /// <summary>Called once, after the fault has been taken out of its registry.</summary>
+    internal virtual void Ended()
+    {
+    }
 
     protected void RecordHit() => Interlocked.Increment(ref _hits);
 }
@@ -107,5 +140,33 @@ internal sealed class SlowTickFault(ServerFaults owner, int every, int delayMs) 
         _ticks++;
         if (_ticks % every != 0) return;
         if (host.TryStretchNextTick(delayMs)) RecordHit();
+    }
+}
+
+internal sealed class ThrowInFault(ServerFaults owner, MethodInfo method, int times) : ServerFault(owner)
+{
+    private int _remaining = times;
+
+    internal MethodInfo Method { get; } = method;
+
+    internal override void BeforeTick(EmbeddedServerHost host)
+    {
+    }
+
+    internal override void Ended() => FaultPatches.Remove(this);
+
+    // Takes one throw from the count, when any is left.
+    internal bool TryTake()
+    {
+        int current;
+        do
+        {
+            current = Volatile.Read(ref _remaining);
+            if (current <= 0) return false;
+        }
+        while (Interlocked.CompareExchange(ref _remaining, current - 1, current) != current);
+
+        RecordHit();
+        return true;
     }
 }
