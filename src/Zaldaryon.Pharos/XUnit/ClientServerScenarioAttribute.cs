@@ -21,6 +21,8 @@ namespace Zaldaryon.Pharos.XUnit;
 [AttributeUsage(AttributeTargets.Method, AllowMultiple = false, Inherited = true)]
 public sealed class ClientServerScenarioAttribute : Xunit.FactAttribute, ITraitAttribute
 {
+    /// <summary>Whether the scenario runs only through an explicit name filter or PHAROS_RUN_EXPLICIT=1.</summary>
+    public bool Explicit { get; set; }
     /// <summary>
     /// The default timeout in milliseconds for client-server scenario tests (180 seconds).
     /// </summary>

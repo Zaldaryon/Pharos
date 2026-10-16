@@ -84,6 +84,37 @@ Task WaitForConditionAsync(Func<bool> condition, int maxTicks = 300);
 dying and players respawning, as typed records to assert on and wait for. See
 [Game events](inspection-api.md#game-events-record-and-assert).
 
+### Tick Based Assertions and Sequences
+
+`SucceedWhenAsync` retries an assertion once per server tick and reports the last assertion
+failure when its budget expires. Client scenarios poll once per deterministic frame. A sequence
+uses that same clock and one total tick or frame budget:
+
+```csharp
+await SucceedWhenAsync(() => Assert.Equal("lit", GetBlock(lamp).Variant["state"]), maxTicks: 200);
+
+await Sequence()
+    .Then(() => SetBlock(lever, "game:lever-on"))
+    .Idle(10)
+    .WaitUntil(() => Assert.True(Door(doorPos).Open))
+    .FailIf(() => Assert.True(Player.Vitals.Health < 10))
+    .RunAsync(maxTicks: 400);
+```
+
+`FailIf` remains active through each later action and tick. Its assertion passing fails the
+sequence. Only clock advances consume the sequence's single budget; `Then` and `FailIf` themselves
+do not consume ticks or frames.
+
+Call `PharosAssert.Skip(reason)` from a scenario body to report a runtime skip, for example when a
+required mod is not loaded. Mark a slow manual check `[ClientScenario(Explicit = true)]` to skip it
+by default. `pharos run --filter "FullyQualifiedName~MyScenario"` opts in for that name-filtered
+run; `PHAROS_RUN_EXPLICIT=1` opts in for a direct test run. A broad filter such as
+`Category=Live` does not opt explicit scenarios in. `pharos run` opts in only when the entire filter
+is one positive `Name=`/`Name~` or `FullyQualifiedName=`/`FullyQualifiedName~` selector; negated,
+combined, or parenthesized filters do not opt in. VSTest does not expose its filter to the scenario
+runner, so a direct `dotnet test --filter` still needs `PHAROS_RUN_EXPLICIT=1` (or set the variable
+explicitly in the process environment).
+
 ### Entities, AI and pathfinding
 
 `Host.Entities` creates entities on the server game thread and waits on their lifecycle or position.

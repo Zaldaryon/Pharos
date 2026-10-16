@@ -4,6 +4,23 @@ using Zaldaryon.Pharos.Cli.ParallelRuns;
 
 namespace Zaldaryon.Pharos.Tests.Cli;
 
+public sealed class ExplicitRunFilterTests
+{
+    [Theory]
+    [InlineData("FullyQualifiedName~MyScenario", true)]
+    [InlineData("Name=MyScenario", true)]
+    [InlineData("FullyQualifiedName!~MyScenario", false)]
+    [InlineData("FullyQualifiedName!=MyScenario", false)]
+    [InlineData("(FullyQualifiedName~MyScenario)|Category=Live", false)]
+    [InlineData("FullyQualifiedName~MyScenario&Category=Live", false)]
+    [InlineData("Category=Live|FullyQualifiedName~MyScenario", false)]
+    [InlineData("(Name=MyScenario)", false)]
+    [InlineData("Category=Live", false)]
+    [InlineData(null, false)]
+    public void NameFiltersOptInToExplicitScenarios(string? filter, bool expected) =>
+        Assert.Equal(expected, RunCommand.SelectsByTestName(filter));
+}
+
 public class RunOptionsTests
 {
     [Fact]

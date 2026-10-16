@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Globalization;
 using System.Reflection;
+using System.Collections.Concurrent;
 using Xunit;
 using Xunit.Abstractions;
 using Xunit.Sdk;
@@ -17,6 +18,9 @@ internal sealed record ScenarioTestInfo(string DisplayName, Type TestClass, stri
     /// <summary>The seed the test runs with, from <see cref="SeededAttribute"/>, or null when it is not seeded.</summary>
     public ScenarioRandomSeed? RandomSeed { get; init; }
 
+    /// <summary>Reason this running scenario requested a dynamic skip.</summary>
+    public string? DynamicSkipReason { get; set; }
+
     private static readonly AsyncLocal<ScenarioTestInfo?> s_current = new();
 
     /// <summary>The scenario test running on this flow, set before its class is created.</summary>
@@ -25,6 +29,46 @@ internal sealed record ScenarioTestInfo(string DisplayName, Type TestClass, stri
         get => s_current.Value;
         internal set => s_current.Value = value;
     }
+}
+
+/// <summary>Internal signal used to turn a body-time skip into xUnit's skipped result message.</summary>
+internal sealed class ScenarioSkipException(string reason) : Exception(reason);
+
+internal static class ScenarioSkipDispatch
+{
+    private static readonly ConcurrentDictionary<ITest, string> s_reasons = new();
+
+    public static void Set(ITest test, string reason) => s_reasons[test] = reason;
+
+    public static bool TryTake(ITest test, out string reason) => s_reasons.TryRemove(test, out reason!);
+}
+
+internal sealed class ScenarioSkipTracker
+{
+    private readonly ConcurrentDictionary<ITest, byte> _skipped = new();
+
+    public int Count => _skipped.Count;
+
+    public void MarkSkipped(ITest test) => _skipped.TryAdd(test, 0);
+}
+
+internal sealed class ScenarioSkipMessageBus(IMessageBus inner, ScenarioSkipTracker tracker) : IMessageBus
+{
+    public bool QueueMessage(IMessageSinkMessage message)
+    {
+        if (message is ITestPassed passed && ScenarioSkipDispatch.TryTake(passed.Test, out string reason))
+        {
+            tracker.MarkSkipped(passed.Test);
+            return inner.QueueMessage(new TestSkipped(passed.Test, reason));
+        }
+        if (message is ITestFailed failed)
+            ScenarioSkipDispatch.TryTake(failed.Test, out _);
+        if (message is ITestFinished finished)
+            ScenarioSkipDispatch.TryTake(finished.Test, out _);
+        return inner.QueueMessage(message);
+    }
+
+    public void Dispose() { }
 }
 
 /// <summary>
@@ -161,11 +205,11 @@ public sealed class ScenarioTestCase : XunitTestCase
 
     /// <summary>The attribute's skip reason, or else the one <see cref="RequireGameVersionAttribute"/> gives.</summary>
     protected override string GetSkipReason(IAttributeInfo factAttribute) =>
-        base.GetSkipReason(factAttribute) ?? GameVersionSkip.Of(TestMethod, ex => InitializationException = ex)!;
+        base.GetSkipReason(factAttribute) ?? ScenarioExplicitSkip.Of(TestMethod) ?? GameVersionSkip.Of(TestMethod, ex => InitializationException = ex)!;
 
     /// <inheritdoc />
     public override Task<RunSummary> RunAsync(IMessageSink diagnosticMessageSink, IMessageBus messageBus, object[] constructorArguments, ExceptionAggregator aggregator, CancellationTokenSource cancellationTokenSource) =>
-        new ScenarioTestCaseRunner(this, DisplayName, SkipReason, constructorArguments, TestMethodArguments, messageBus, aggregator, cancellationTokenSource, ScenarioTimeouts.Of(TestMethod)).RunAsync();
+        new ScenarioTestCaseRunner(this, DisplayName, SkipReason, constructorArguments, TestMethodArguments, messageBus, aggregator, cancellationTokenSource, ScenarioTimeouts.Of(TestMethod), new ScenarioSkipTracker()).RunAsync();
 }
 
 /// <summary>A scenario theory whose data is enumerated when it runs.</summary>
@@ -190,11 +234,28 @@ public sealed class ScenarioTheoryTestCase : XunitTheoryTestCase
 
     /// <inheritdoc cref="ScenarioTestCase" />
     protected override string GetSkipReason(IAttributeInfo factAttribute) =>
-        base.GetSkipReason(factAttribute) ?? GameVersionSkip.Of(TestMethod, ex => InitializationException = ex)!;
+        base.GetSkipReason(factAttribute) ?? ScenarioExplicitSkip.Of(TestMethod) ?? GameVersionSkip.Of(TestMethod, ex => InitializationException = ex)!;
 
     /// <inheritdoc />
     public override Task<RunSummary> RunAsync(IMessageSink diagnosticMessageSink, IMessageBus messageBus, object[] constructorArguments, ExceptionAggregator aggregator, CancellationTokenSource cancellationTokenSource) =>
-        new ScenarioTheoryTestCaseRunner(this, DisplayName, SkipReason, constructorArguments, diagnosticMessageSink, messageBus, aggregator, cancellationTokenSource, ScenarioTimeouts.Of(TestMethod)).RunAsync();
+        new ScenarioTheoryTestCaseRunner(this, DisplayName, SkipReason, constructorArguments, diagnosticMessageSink, messageBus, aggregator, cancellationTokenSource, ScenarioTimeouts.Of(TestMethod), new ScenarioSkipTracker()).RunAsync();
+}
+
+internal static class ScenarioExplicitSkip
+{
+    public const string RunExplicitVariable = "PHAROS_RUN_EXPLICIT";
+
+    public static string? Of(ITestMethod testMethod)
+    {
+        MethodInfo? method = testMethod.Method.ToRuntimeMethod();
+        if (method?.GetCustomAttributes().FirstOrDefault(a => a.GetType().GetProperty("Explicit")?.PropertyType == typeof(bool)) is not { } attribute ||
+            attribute.GetType().GetProperty("Explicit")?.GetValue(attribute) is not true)
+            return null;
+
+        return Environment.GetEnvironmentVariable(RunExplicitVariable) == "1"
+            ? null
+            : $"Explicit scenario. Select it by name with pharos run --filter or set {RunExplicitVariable}=1.";
+    }
 }
 
 // Reads [RequireGameVersion], [RequireOptimum] and [SkipOnOptimum] where the test runs. A range
@@ -227,20 +288,34 @@ internal static class GameVersionSkip
 
 internal sealed class ScenarioTestCaseRunner(
     IXunitTestCase testCase, string displayName, string skipReason, object[] constructorArguments, object[] testMethodArguments,
-    IMessageBus messageBus, ExceptionAggregator aggregator, CancellationTokenSource cancellationTokenSource, int timeoutMs)
+    IMessageBus messageBus, ExceptionAggregator aggregator, CancellationTokenSource cancellationTokenSource, int timeoutMs, ScenarioSkipTracker skipTracker)
     : XunitTestCaseRunner(testCase, displayName, skipReason, constructorArguments, testMethodArguments, messageBus, aggregator, cancellationTokenSource)
 {
     protected override XunitTestRunner CreateTestRunner(ITest test, IMessageBus messageBus, Type testClass, object[] constructorArguments, MethodInfo testMethod, object[] testMethodArguments, string skipReason, IReadOnlyList<BeforeAfterTestAttribute> beforeAfterAttributes, ExceptionAggregator aggregator, CancellationTokenSource cancellationTokenSource) =>
-        new ScenarioTestRunner(test, messageBus, testClass, constructorArguments, testMethod, testMethodArguments, skipReason, beforeAfterAttributes, new ExceptionAggregator(aggregator), cancellationTokenSource, timeoutMs);
+        new ScenarioTestRunner(test, new ScenarioSkipMessageBus(messageBus, skipTracker), testClass, constructorArguments, testMethod, testMethodArguments, skipReason, beforeAfterAttributes, new ExceptionAggregator(aggregator), cancellationTokenSource, timeoutMs);
+
+    protected override async Task<RunSummary> RunTestAsync()
+    {
+        RunSummary summary = await base.RunTestAsync().ConfigureAwait(false);
+        summary.Skipped += skipTracker.Count;
+        return summary;
+    }
 }
 
 internal sealed class ScenarioTheoryTestCaseRunner(
     IXunitTestCase testCase, string displayName, string skipReason, object[] constructorArguments, IMessageSink diagnosticMessageSink,
-    IMessageBus messageBus, ExceptionAggregator aggregator, CancellationTokenSource cancellationTokenSource, int timeoutMs)
+    IMessageBus messageBus, ExceptionAggregator aggregator, CancellationTokenSource cancellationTokenSource, int timeoutMs, ScenarioSkipTracker skipTracker)
     : XunitTheoryTestCaseRunner(testCase, displayName, skipReason, constructorArguments, diagnosticMessageSink, messageBus, aggregator, cancellationTokenSource)
 {
     protected override XunitTestRunner CreateTestRunner(ITest test, IMessageBus messageBus, Type testClass, object[] constructorArguments, MethodInfo testMethod, object[] testMethodArguments, string skipReason, IReadOnlyList<BeforeAfterTestAttribute> beforeAfterAttributes, ExceptionAggregator aggregator, CancellationTokenSource cancellationTokenSource) =>
-        new ScenarioTestRunner(test, messageBus, testClass, constructorArguments, testMethod, testMethodArguments, skipReason, beforeAfterAttributes, new ExceptionAggregator(aggregator), cancellationTokenSource, timeoutMs);
+        new ScenarioTestRunner(test, new ScenarioSkipMessageBus(messageBus, skipTracker), testClass, constructorArguments, testMethod, testMethodArguments, skipReason, beforeAfterAttributes, new ExceptionAggregator(aggregator), cancellationTokenSource, timeoutMs);
+
+    protected override async Task<RunSummary> RunTestAsync()
+    {
+        RunSummary summary = await base.RunTestAsync().ConfigureAwait(false);
+        summary.Skipped += skipTracker.Count;
+        return summary;
+    }
 }
 
 internal sealed class ScenarioTestRunner(
@@ -356,14 +431,23 @@ internal sealed class ScenarioTestInvoker(
             }
             else if (bodyAggregator.HasExceptions)
             {
-                Aggregator.Add(bodyAggregator.ToException());
+                Exception bodyFailure = bodyAggregator.ToException();
+                if (bodyFailure is ScenarioSkipException skip)
+                {
+                    if (ScenarioTestInfo.Current is { } currentInfo)
+                    {
+                        currentInfo.DynamicSkipReason = skip.Message;
+                        ScenarioSkipDispatch.Set(Test, skip.Message);
+                    }
+                }
+                else Aggregator.Add(bodyFailure);
             }
         }
 
         // The body ran on an invoker of its own: its time is this test's time.
         Timer.Aggregate(TimeSpan.FromSeconds((double)elapsed));
 
-        if (lifecycle == null) return elapsed;
+        if (lifecycle == null || ScenarioTestInfo.Current?.DynamicSkipReason != null) return elapsed;
 
         if (!Aggregator.HasExceptions)
         {

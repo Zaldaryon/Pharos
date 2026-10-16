@@ -184,6 +184,12 @@ public static partial class RunCommand
         int parallel = Math.Min(options.Parallel, groups.Count);
 
         Dictionary<string, string> environment = new(options.WorkerEnvironment);
+        // A name filter is an explicit request for the selected scenario. Broad trait filters
+        // such as Category=Live do not opt every explicit scenario into the run.
+        if (SelectsByTestName(options.Filter) && string.IsNullOrEmpty(Environment.GetEnvironmentVariable(Zaldaryon.Pharos.XUnit.Execution.ScenarioExplicitSkip.RunExplicitVariable)))
+        {
+            environment[Zaldaryon.Pharos.XUnit.Execution.ScenarioExplicitSkip.RunExplicitVariable] = "1";
+        }
         // One id for the whole run in every failure's run.json.
         if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable(Reporting.FailureArtifactWriter.RunIdVariable)))
         {
@@ -287,6 +293,9 @@ public static partial class RunCommand
             .Any(m => m.Groups[1].Value.Equals("DisplayName", StringComparison.OrdinalIgnoreCase) || m.Groups[1].Value.Equals("Name", StringComparison.OrdinalIgnoreCase));
     }
 
+    internal static bool SelectsByTestName(string? filter) =>
+        !string.IsNullOrWhiteSpace(filter) && ExplicitNameFilterPattern().IsMatch(filter);
+
     /// <summary>
     /// <paramref name="filter"/> with <c>FullyQualifiedName</c> spelt as listing expects: running
     /// takes any case, listing only the exact one.
@@ -298,6 +307,11 @@ public static partial class RunCommand
     // A property name and the operator after it.
     [System.Text.RegularExpressions.GeneratedRegex(@"(?<![\\\w.])([A-Za-z_][\w.]*)(?=\s*(?:!=|!~|=|~))")]
     private static partial System.Text.RegularExpressions.Regex PropertyPattern();
+
+    // Opt in only when the entire expression is one positive name selector. VSTest filters can
+    // combine and negate terms, so finding a name property somewhere in the expression is unsafe.
+    [System.Text.RegularExpressions.GeneratedRegex(@"^\s*(?:FullyQualifiedName|Name)\s*(?:=|~)\s*[^!|&()]+\s*$", System.Text.RegularExpressions.RegexOptions.IgnoreCase)]
+    private static partial System.Text.RegularExpressions.Regex ExplicitNameFilterPattern();
 
     // How long each test took in the last run's merged TRX, if there is one.
     private static IReadOnlyDictionary<string, TimeSpan>? PreviousDurations(string trxPath)

@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using Xunit;
 using Xunit.Sdk;
+using Zaldaryon.Pharos.Assertions;
 using Zaldaryon.Pharos.Platform;
 using Zaldaryon.Pharos.XUnit;
 using Zaldaryon.Pharos.XUnit.Execution;
@@ -64,6 +65,18 @@ public class ScenarioPipelineTests
 
         Assert.Equal(["init", "before", "body", "check", "capture:failed", "dispose"], Recorder.Events);
         Assert.Contains("logged an error", result.FailureMessage);
+    }
+
+    [Fact]
+    public async Task DynamicSkip_RunsTeardownWithoutCheckingLoggedErrorsOrCapturingFailure()
+    {
+        Recorder.Reset();
+
+        ScenarioRunnerHarness.RunResult result = await ScenarioRunnerHarness.RunAsync(typeof(Sample), nameof(Sample.Skips));
+
+        Assert.Empty(result.Failed);
+        Assert.Contains("mod absent", Assert.Single(result.Skipped).Reason);
+        Assert.Equal(["init", "before", "body", "dispose"], Recorder.Events);
     }
 
     [Fact]
@@ -406,6 +419,13 @@ public class ScenarioPipelineTests
         {
             Recorder.Add("body");
             Assert.True(false, "the world is wrong");
+        }
+
+        [ServerScenario]
+        public void Skips()
+        {
+            Recorder.Add("body");
+            PharosAssert.Skip("mod absent");
         }
 
         [ClientServerScenario(TimeoutMs = 200)]
