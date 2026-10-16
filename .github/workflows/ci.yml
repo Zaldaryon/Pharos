@@ -376,7 +376,7 @@ jobs:
       matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
     env:
       VS_CACHE_PATH: C:\vintagestory-cache
-      PHAROS_CACHE: ${{ runner.temp }}/pharos-cache
+      PHAROS_CACHE: C:\pharos-cache
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
