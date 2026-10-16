@@ -104,6 +104,7 @@ public static class HeadlessClientBootstrap
 
             // 5. Initialize platform
             ClientLogger logger = new();
+            TyronThreadPool.Inst.Logger ??= logger;
             LogCapture logs = new(EnumAppSide.Client);
             logs.Attach(logger);
             ClientPlatformWindows platform = new(logger);

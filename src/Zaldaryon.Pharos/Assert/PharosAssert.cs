@@ -1,3 +1,4 @@
+using Vintagestory.API.MathTools;
 using Zaldaryon.Pharos.Server;
 using static System.FormattableString;
 using Zaldaryon.Pharos.Culling;
@@ -567,6 +568,42 @@ public static class PharosAssert
                 $"Expected mod '{modId}' to be detected, but it was not in ActiveMockMods. " +
                 $"Active mods: [{string.Join(", ", snapshot.ActiveMockMods)}].");
         }
+    }
+
+    /// <summary>
+    /// Asserts that two captures of a world hold the same state: the same blocks, fluids, block-entity trees and entities, in the
+    /// same places. Paths that start with an <paramref name="ignore"/> entry are left out.
+    /// </summary>
+    /// <param name="before">The state before the change, such as a save and reload.</param>
+    /// <param name="after">The state after it.</param>
+    /// <param name="ignore">Paths to leave out, such as <c>savegame mod data</c> for a counter that a save advances.</param>
+    /// <exception cref="PharosAssertException">Thrown when the states differ, listing up to 50 differences, each with its path, before and after.</exception>
+    public static void SameWorldState(WorldState before, WorldState after, params string[] ignore)
+    {
+        ArgumentNullException.ThrowIfNull(before);
+        ArgumentNullException.ThrowIfNull(after);
+
+        IReadOnlyList<string> differences = WorldState.Differences(before, after, ignore);
+        if (differences.Count == 0)
+        {
+            return;
+        }
+
+        const int Shown = 50;
+        BlockPos c = after.Center;
+        var message = new System.Text.StringBuilder();
+        message.Append($"World state differs in {differences.Count} place(s) around {c.X},{c.InternalY},{c.Z} r={after.Radius}:");
+        foreach (string line in differences.Take(Shown))
+        {
+            message.Append(Environment.NewLine).Append("  ").Append(line);
+        }
+
+        if (differences.Count > Shown)
+        {
+            message.Append(Environment.NewLine).Append($"  ... {differences.Count - Shown} more");
+        }
+
+        throw new PharosAssertException(message.ToString());
     }
 
     /// <summary>

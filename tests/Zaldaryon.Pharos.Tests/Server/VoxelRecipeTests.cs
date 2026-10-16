@@ -97,6 +97,25 @@ public class VoxelRecipeTests : ServerScenarioBase
     }
 
     [ServerScenario]
+    public async Task Clayforming_ChoosesTheRecipeByOutputQuantity()
+    {
+        ServerTestPlayer player = await CreateTestPlayerAsync(PlayerNames.Next());
+        player.GiveItem("game:clay-blue", 8);
+        Host!.Ticks(2);
+        BlockPos form = player.Entity!.Pos.AsBlockPos.AddCopy(2, 0, 0);
+        Host.Recipes.PlaceClayForm(form, "game:clay-blue");
+
+        // The game makes one blue bowl, or four under the same output code. No recipe makes two, so asking for two finds none.
+        InvalidOperationException none = await Assert.ThrowsAsync<InvalidOperationException>(() => Host.Recipes.CompleteVoxelRecipeAsync(player, form, "game:bowl-blue-raw", outputQuantity: 2));
+        Assert.Contains("x2", none.Message, StringComparison.Ordinal);
+
+        // Four is the recipe with four bowls on the ground, not the single bowl the default picks.
+        await Host.Recipes.CompleteVoxelRecipeAsync(player, form, "game:bowl-blue-raw", outputQuantity: 4);
+        Assert.Equal("game:bowl-blue-raw", GroundItem(form));
+        Assert.Equal(4, GroundCount(form));
+    }
+
+    [ServerScenario]
     public async Task Clayforming_RefusesAMaterialTheRecipeDoesNotUse()
     {
         ServerTestPlayer player = await CreateTestPlayerAsync(PlayerNames.Next());
@@ -135,6 +154,14 @@ public class VoxelRecipeTests : ServerScenarioBase
         object inventory = be.GetType().GetProperty("Inventory")?.GetValue(be) ?? be.GetType().GetField("Inventory")!.GetValue(be)!;
         var slot = (ItemSlot)((IEnumerable<ItemSlot>)inventory)?.First()!;
         return slot.Itemstack?.Collectible.Code.ToString() ?? "nothing";
+    });
+
+    // The items on the ground in all of the storage's slots: four bowls take four slots, one each.
+    private int GroundCount(BlockPos pos) => Host!.RunOnGameThread(() =>
+    {
+        object be = Api!.World.BlockAccessor.GetBlockEntity(pos)!;
+        object inventory = be.GetType().GetProperty("Inventory")?.GetValue(be) ?? be.GetType().GetField("Inventory")!.GetValue(be)!;
+        return ((IEnumerable<ItemSlot>)inventory).Sum(slot => slot.Itemstack?.StackSize ?? 0);
     });
 
     private int HeldClay(ServerTestPlayer player) => Host!.RunOnGameThread(() => player.Player!.InventoryManager.ActiveHotbarSlot.StackSize);

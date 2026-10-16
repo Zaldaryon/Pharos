@@ -1,0 +1,11 @@
+{
+  "type": "code",
+  "modid": "pharossavemod",
+  "name": "Pharos Save Mod",
+  "version": "1.0.0",
+  "side": "Universal",
+  "requiredOnClient": false,
+  "description": "Code mod the save and reload tests stage: a block entity that keeps its count, one that forgets it when read back, and one that fails to serialize a negative count.",
+  "authors": ["Pharos"],
+  "dependencies": { "game": "" }
+}

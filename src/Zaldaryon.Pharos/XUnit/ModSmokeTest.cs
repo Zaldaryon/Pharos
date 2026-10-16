@@ -1,6 +1,8 @@
 using System.Globalization;
 using Vintagestory.API.Common;
+using Vintagestory.API.MathTools;
 using Vintagestory.API.Server;
+using Zaldaryon.Pharos.Assertions;
 using Zaldaryon.Pharos.Bootstrap;
 using Zaldaryon.Pharos.Player;
 using Zaldaryon.Pharos.Server;
@@ -35,6 +37,12 @@ public abstract class ModSmokeTest : ClientServerScenarioBase
     /// <summary>Server console commands to run once the player has joined. Each must succeed.</summary>
     protected virtual IReadOnlyList<string> SmokeCommands => [];
 
+    /// <summary>
+    /// Whether the play ends with a save, a reload and a comparison of the area around the join. Entities are left out: they
+    /// move while the player plays, and the save serializes them. See <c>docs/smoke-test.md</c>.
+    /// </summary>
+    protected virtual bool SmokeSaveReload => false;
+
     /// <inheritdoc />
     protected override bool FailOnLoggedErrors => true;
 
@@ -52,6 +60,7 @@ public abstract class ModSmokeTest : ClientServerScenarioBase
     public async Task ModBootsJoinsAndPlays()
     {
         AssertAlive("joining");
+        BlockPos? origin = SmokeSaveReload ? JoinedAt() : null;
 
         foreach (string command in SmokeCommands)
         {
@@ -83,6 +92,11 @@ public abstract class ModSmokeTest : ClientServerScenarioBase
         }
 
         AssertAlive("playing");
+
+        if (origin is { } joined)
+        {
+            await SaveAndReloadAsync(joined).ConfigureAwait(false);
+        }
     }
 
     /// <summary>Refuses a smoke test without mods before booting anything.</summary>
@@ -95,6 +109,24 @@ public abstract class ModSmokeTest : ClientServerScenarioBase
         }
 
         return base.InitializeAsync();
+    }
+
+    // Where the player stands on the server at the join.
+    private BlockPos JoinedAt() => ServerHost!.RunOnGameThread(() =>
+        ((ICoreServerAPI)ServerHost.Server.Api).World.AllOnlinePlayers.First(p => p.PlayerName == PlayerName).Entity.Pos.AsBlockPos);
+
+    /// <summary>Saves the world, reloads it, and fails when the area around <paramref name="origin"/> differs.</summary>
+    private async Task SaveAndReloadAsync(BlockPos origin)
+    {
+        EmbeddedServerHost server = ServerHost ?? throw new InvalidOperationException("The server is gone.");
+        await server.SaveWorldAsync().ConfigureAwait(false);
+        WorldState before = WorldState.Capture(server, origin, radius: 8);
+
+        await ReloadWorldAsync().ConfigureAwait(false);
+        AssertAlive("reloading the world");
+
+        WorldState after = WorldState.Capture(ServerHost!, origin, radius: 8);
+        PharosAssert.SameWorldState(before, after, "entity ");
     }
 
     private async Task TurnAsync(float yawPerFrame, float pitchPerFrame, int frames)

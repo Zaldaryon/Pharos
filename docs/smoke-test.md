@@ -18,10 +18,28 @@ The run fails when:
 - the client or the server logs an error;
 - the play takes longer than its watchdog (five minutes);
 - with `--strict` or `[StrictBoot]`, either side logged a warning while booting (see
-  [Boot diagnostics](boot-diagnostics.md)).
+  [Boot diagnostics](boot-diagnostics.md));
+- with `--save-reload` or `SmokeSaveReload`, the world changes across a save and a reload (see
+  [Save and reload](#save-and-reload)).
 
 A failed run saves its [failure artifacts](failure-artifacts.md): a screenshot, the logs, the
 boot diagnostics and `run.json`.
+
+## Save and reload
+
+With `--save-reload`, the run ends by saving the world, reloading it, and comparing the blocks,
+fluids, block entities and mod data within eight blocks of where the player joined. The compare
+lists each difference, such as a block entity whose count a mod does not save:
+
+```
+World state differs in 1 place(s) around 512,3,512 r=8:
+  block entity 514,3,512/count: 5 -> 0
+```
+
+Entities are left out. They move while the player plays, and saving an entity sets its watched
+attributes, so an entity's state is not the same before and after a save even when nothing was
+lost. A mod that needs its entities to survive a reload should test them with
+`PharosAssert.SameWorldState` on a standing entity, as `LiveEntitySaveTests` does.
 
 ## The `pharos` command
 
@@ -39,6 +57,7 @@ xvfb-run -a pharos smoke --mod bin/Release/mymod.zip --strict
 | `--frames <n>` | Frames to play, the server ticking once per frame. 600 by default, ten seconds of game time. |
 | `--command <text>` | A server console command to run after the join, as an admin. Repeatable. Each must succeed. |
 | `--strict` | Fail on any warning logged while booting. |
+| `--save-reload` | After the play, save the world, reload it, and fail when the area around the player differs. |
 | `--allow <regex>` | A boot warning that `--strict` lets pass. Repeatable. |
 | `--allow-error <text>` | A fragment of a logged error to let pass. Repeatable. |
 | `--timeout <seconds>` | How long the play may take, 300 by default, scaled by `PHAROS_TIMEOUT_SCALE`. |

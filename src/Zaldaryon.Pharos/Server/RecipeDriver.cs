@@ -185,12 +185,16 @@ public sealed class RecipeDriver
     /// <param name="player">The player who works the block. The block checks the player's reach and permissions.</param>
     /// <param name="pos">The knapping surface or clay form.</param>
     /// <param name="outputCode">The code of the recipe's output, such as <c>game:knifeblade-flint</c> or <c>game:bowl-blue-raw</c>.</param>
+    /// <param name="outputQuantity">
+    /// The output's stack size. A clay form has a recipe for one item and one for four under the same output code, so the size
+    /// picks one; a knapping surface has one recipe per output and does not use it.
+    /// </param>
     /// <exception cref="ArgumentNullException">A parameter is null.</exception>
     /// <exception cref="InvalidOperationException">
     /// The player is not connected or cannot work, the block is neither a knapping surface nor a clay form, no recipe makes
     /// <paramref name="outputCode"/> from the block's material, or the block cannot finish the recipe.
     /// </exception>
-    public Task CompleteVoxelRecipeAsync(ServerTestPlayer player, BlockPos pos, string outputCode)
+    public Task CompleteVoxelRecipeAsync(ServerTestPlayer player, BlockPos pos, string outputCode, int outputQuantity = 1)
     {
         ArgumentNullException.ThrowIfNull(player);
         ArgumentNullException.ThrowIfNull(pos);
@@ -208,7 +212,7 @@ public sealed class RecipeDriver
                     CompleteKnappingOnGameThread(serverPlayer, pos, outputCode);
                     break;
                 case ClayFormEntity:
-                    CompleteClayformingOnGameThread(serverPlayer, pos, outputCode);
+                    CompleteClayformingOnGameThread(serverPlayer, pos, outputCode, outputQuantity);
                     break;
                 default:
                     throw new InvalidOperationException($"The block at {pos} is a {be.GetType().Name}, which the game does not form from a recipe.");
@@ -243,7 +247,7 @@ public sealed class RecipeDriver
         });
     }
 
-    private void CompleteClayformingOnGameThread(IServerPlayer player, BlockPos pos, string outputCode)
+    private void CompleteClayformingOnGameThread(IServerPlayer player, BlockPos pos, string outputCode, int outputQuantity)
     {
         ICoreServerAPI api = ServerApi;
         BlockEntity be = api.World.BlockAccessor.GetBlockEntity(pos)!;
@@ -263,9 +267,17 @@ public sealed class RecipeDriver
         ItemStack? material = (ItemStack?)ProcessingDriver.Member(be, "BaseMaterial");
         object registry = api.ModLoader.GetModSystem(RecipeRegistryType)
             ?? throw new InvalidOperationException($"The game's {RecipeRegistryType} is not loaded.");
-        object recipe = ((IEnumerable)ProcessingDriver.Member(registry, "ClayFormingRecipes")!).Cast<object>()
-            .FirstOrDefault(r => OutputCodeOf(r) == outputCode && material is not null && IngredientOf(r).SatisfiesAsIngredient(material))
-            ?? throw new InvalidOperationException($"No clay forming recipe makes {outputCode} from {material?.Collectible.Code.ToString() ?? "nothing"}.");
+        // The game lists the recipe for one item and the recipe for four under the same output code, so the size picks one.
+        List<object> candidates = ((IEnumerable)ProcessingDriver.Member(registry, "ClayFormingRecipes")!).Cast<object>()
+            .Where(r => OutputCodeOf(r) == outputCode && OutputQuantityOf(r) == outputQuantity && material is not null && IngredientOf(r).SatisfiesAsIngredient(material))
+            .ToList();
+        if (candidates.Count != 1)
+        {
+            throw new InvalidOperationException(
+                $"{candidates.Count} clay forming recipes make {outputCode} x{outputQuantity} from {material?.Collectible.Code.ToString() ?? "nothing"}; expected one.");
+        }
+
+        object recipe = candidates[0];
 
         be.OnReceivedClientPacket(player, SelectRecipePacket, SerializerUtil.Serialize((int)ProcessingDriver.Member(recipe, "RecipeId")!));
         var required = (bool[,,])ProcessingDriver.Member(recipe, "Voxels")!;
@@ -396,6 +408,9 @@ public sealed class RecipeDriver
 
     private static string? OutputCodeOf(object recipe) =>
         ((JsonItemStack?)ProcessingDriver.Member(recipe, "Output"))?.ResolvedItemstack?.Collectible.Code.ToString();
+
+    private static int OutputQuantityOf(object recipe) =>
+        ((JsonItemStack?)ProcessingDriver.Member(recipe, "Output"))?.ResolvedItemstack?.StackSize ?? 0;
 
     private static CraftingRecipeIngredient IngredientOf(object recipe) =>
         (CraftingRecipeIngredient)ProcessingDriver.Member(recipe, "Ingredient")!;
