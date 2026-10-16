@@ -580,7 +580,7 @@ using (Host.Faults.ThrowIn<MyModSystem>(nameof(MyModSystem.OnTick), times: 1))
 using (Host.Faults.FailSaves())
 {
     // Each database write of a save on the game thread throws. The game logs some of these and the save completes; the chunk writes
-    // escape the save, which then throws. Either way the failed writes store nothing.
+    // escape the save, which then throws. The game's off-thread saves, which run on the chunk thread after a save, are not failed.
 }
 
 using (Host.Faults.DelayChunkLoads(ticks: 100))
@@ -592,7 +592,8 @@ using (Host.Faults.DelayChunkLoads(ticks: 100))
 `SlowTicks` needs a virtual clock, since a stretch on the wall clock cannot be checked deterministically. `ThrowIn` patches the
 method the first time a fault names it, and the patch stays; an inlined method cannot be patched, so the target must be reached
 through a delegate or a virtual call. `DelayChunkLoads` counts ticks, not time, and it is a lower bound: a load already under way
-can still finish. `FailSaves` affects saves the test makes on the game thread, not the chunk thread's background saves.
+can still finish. `FailSaves` affects saves the test makes on the game thread, not the chunk thread's off-thread saves, so a chunk
+those saves write is stored whatever the fault says.
 
 ## Calendar and Weather
 

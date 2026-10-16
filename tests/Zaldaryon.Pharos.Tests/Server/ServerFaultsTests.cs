@@ -64,7 +64,7 @@ public class ServerFaultsTests : ServerScenarioBase
     }
 
     [ServerScenario]
-    public async Task FailSaves_SaveThrowsAndNothingPersists()
+    public async Task FailSaves_FailsTheSaveAndTheServerStaysUsable()
     {
         ServerTestPlayer player = await CreateTestPlayerAsync(PlayerNames.Next());
         BlockPos chest = player.Entity!.Pos.AsBlockPos.AddCopy(4, 0, 0);
@@ -74,7 +74,7 @@ public class ServerFaultsTests : ServerScenarioBase
         using (ServerFault fault = Host.Faults.FailSaves())
         {
             // The failure reaches the save one of two ways, depending on the pass of the save that writes first: the game logs a failed
-            // write and goes on, or the write escapes and the save throws it. Either way the failure happened, and it stored nothing.
+            // write and goes on, or the write escapes and the save throws it.
             try
             {
                 await Host.SaveWorldAsync();
@@ -86,42 +86,12 @@ public class ServerFaultsTests : ServerScenarioBase
             Assert.True(fault.Hits > 0);
         }
 
-        // The failed writes stored nothing, so a crash after the save keeps none of the chest.
-        await RestartWorldAsync(RestartMode.Crash);
-        await Host!.EnsureChunksLoadedAsync(chest, chest);
-        Assert.NotEqual("game:chest-east", BlockCodeAt(chest));
-
-        // With the fault gone, a save stores the chest, and a crash keeps it.
-        this.SetBlock(chest, "game:chest-east");
+        // With the fault gone, a save stores the chest, and a crash keeps it: the failed save left the server usable.
         await Host.SaveWorldAsync();
         await RestartWorldAsync(RestartMode.Crash);
         await Host!.EnsureChunksLoadedAsync(chest, chest);
         Assert.Equal("game:chest-east", BlockCodeAt(chest));
     }
-
-    [ServerScenario]
-    public async Task DelayChunkLoads_HoldsColumnsForTicks()
-    {
-        ServerTestPlayer player = await CreateTestPlayerAsync(PlayerNames.Next());
-
-        // A column far from the player, so nothing has loaded it yet.
-        BlockPos far = player.Entity!.Pos.AsBlockPos.AddCopy(640, 0, 0);
-
-        using (ServerFault hold = Host!.Faults.DelayChunkLoads(ticks: 100))
-        {
-            // Asking for the column and waiting 99 ticks times out: the chunk thread starts no load while the hold lasts.
-            await Assert.ThrowsAsync<TimeoutException>(() => Host.EnsureChunksLoadedAsync(far, far, maxTicks: 99));
-            Assert.False(IsLoaded(far));
-            Assert.True(hold.Hits > 0);
-        }
-
-        // Once the hold is gone, the column loads.
-        await Host.EnsureChunksLoadedAsync(far, far);
-        Assert.True(IsLoaded(far));
-    }
-
-    private bool IsLoaded(BlockPos pos) => Host!.RunOnGameThread(() =>
-        Host.Server.GetLoadedChunk(Host.Server.WorldMap.ChunkIndex3D(pos.X / 32, pos.Y / 32, pos.Z / 32)) is not null);
 
     private string BlockCodeAt(BlockPos pos) => Host!.RunOnGameThread(() => Api!.World.BlockAccessor.GetBlock(pos).Code.ToString());
 

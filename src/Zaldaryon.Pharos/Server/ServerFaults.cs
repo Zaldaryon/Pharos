@@ -64,8 +64,8 @@ public sealed class ServerFaults
 
     /// <summary>
     /// Makes every database write of a save the test makes on the game thread throw <paramref name="exception"/>. A write the game
-    /// catches is logged as an error, and the save goes on. A write the game does not catch escapes the save, which throws it. Either
-    /// way the failed writes store nothing. Background saves on the chunk thread are left alone, since a failure there stops the server.
+    /// catches is logged as an error, and the save goes on. A write the game does not catch escapes the save, which throws it. The
+    /// game's off-thread saves run on the chunk thread after a save, and they are not failed: a chunk they write is stored.
     /// </summary>
     /// <remarks>
     /// The write methods of the game's database connection are patched when the first such fault is added, and the patch stays.
