@@ -32,6 +32,9 @@ public sealed class ServerSimulation
     /// <summary>The tick, in milliseconds, of a clock the run opens when none is active.</summary>
     public const int DefaultTickMs = 50;
 
+    // The ticks after the clock opens during which the calendar may stand still; see the soak documentation.
+    private const long StartupTicks = 20;
+
     /// <summary>The environment variable that makes the wall-clock tick budgets gate the run.</summary>
     public const string TimingVariable = "PHAROS_SOAK_TIMING";
 
@@ -133,7 +136,8 @@ public sealed class ServerSimulation
                 SoakSample reading = raw with { Simulated = simulated };
                 report.AddSample(reading);
 
-                if (reading.TotalDays <= today) throw new InvalidOperationException($"The calendar did not move in {chunk} ticks at day {today:0.###}.");
+                // Opening the clock costs the calendar its first few ticks, so it may not move at the start.
+                if (reading.TotalDays <= today && ticks > StartupTicks) throw new InvalidOperationException($"The calendar did not move in {chunk} ticks at day {today:0.###}.");
                 today = reading.TotalDays;
                 lastDays = today;
 

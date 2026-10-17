@@ -53,6 +53,7 @@ public sealed partial class EmbeddedServerHost : IDisposable, IAsyncDisposable
     private int _tickCount;
     private ServerSimulation? _simulation;
     private ServerReplay? _replay;
+    private StateHashRecorder? _stateHash;
 
     /// <summary>The soak run this test made most recently, for a failure's soak.csv; cleared when the test ends.</summary>
     internal SoakReport? LastSoakReport { get; set; }
@@ -95,6 +96,15 @@ public sealed partial class EmbeddedServerHost : IDisposable, IAsyncDisposable
     /// records them. Null otherwise. Written on the game thread.
     /// </summary>
     internal List<long>? TickTimes { get; set; }
+
+    /// <summary>Raised on the game thread after each tick's processing, for the state hash recordings.</summary>
+    internal event Action? TickProcessed;
+
+    /// <summary>The virtual clock's tick, or 0 when the wall clock runs the server, which makes its hashes non-repeatable.</summary>
+    internal int TickMsForHashes => VirtualClock?.TickMs ?? 0;
+
+    /// <summary>Hashes the server's state after each tick, for comparing two runs.</summary>
+    public StateHashRecorder StateHash => _stateHash ??= new StateHashRecorder(this);
 
     /// <summary>
     /// Optimum's counters on an Optimum build. They belong to the whole process, so the client's
@@ -667,6 +677,7 @@ public sealed partial class EmbeddedServerHost : IDisposable, IAsyncDisposable
             Server.Process();
             TickTimes?.Add(Stopwatch.GetTimestamp() - processStarted);
             _tickCount++;
+            TickProcessed?.Invoke();
         }
         catch (Exception ex)
         {
