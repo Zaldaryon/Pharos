@@ -42,6 +42,163 @@ public class ScenarioPipelineTests
     }
 
     [Fact]
+    public async Task Retry_StopsWhenRequiredSuccessesAreSatisfied()
+    {
+        Recorder.Reset();
+        Recorder.AttemptBodies = 0;
+        ScenarioRunnerHarness.RunResult result = await ScenarioRunnerHarness.RunAsync(typeof(Sample), nameof(Sample.RequiredSuccesses));
+        Assert.Single(result.Passed);
+        Assert.Equal(3, Recorder.AttemptBodies);
+        Assert.Equal(3, Recorder.Events.Count(e => e == "init"));
+    }
+
+    [Fact]
+    public async Task TheoryRows_RetryIndependentlyAndEmitOneFinalResultPerRow()
+    {
+        Recorder.Reset();
+        Recorder.RowAttempts.Clear();
+        ScenarioRunnerHarness.RunResult result = await ScenarioRunnerHarness.RunAsync(typeof(Sample), nameof(Sample.RetryRows));
+        Assert.Equal(2, result.Passed.Count);
+        Assert.Empty(result.Failed);
+        Assert.Equal(1, Recorder.RowAttempts[1]);
+        Assert.Equal(2, Recorder.RowAttempts[2]);
+        Assert.Equal(2, result.CasesFinished.Count);
+    }
+
+    [Fact]
+    public async Task Retry_RecreatesTheFullScenarioInstanceAndEmitsOneFinalResult()
+    {
+        Recorder.Reset();
+        Recorder.AttemptBodies = 0;
+        Recorder.InstanceCount = 0;
+        DirectoryInfo temp = Directory.CreateTempSubdirectory("pharos-attempts-");
+        string? oldManifestDirectory = Environment.GetEnvironmentVariable(ScenarioAttemptManifestWriter.DirectoryVariable);
+        string? oldArtifactDirectory = Zaldaryon.Pharos.Reporting.FailureArtifactWriter.RootOverride;
+        Environment.SetEnvironmentVariable(ScenarioAttemptManifestWriter.DirectoryVariable, temp.FullName);
+        Zaldaryon.Pharos.Reporting.FailureArtifactWriter.RootOverride = Path.Combine(temp.FullName, "artifacts");
+        Recorder.CaptureArtifacts = true;
+
+        ScenarioRunnerHarness.RunResult result;
+        try
+        {
+            result = await ScenarioRunnerHarness.RunAsync(typeof(Sample), nameof(Sample.FailsOnceThenPasses));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(ScenarioAttemptManifestWriter.DirectoryVariable, oldManifestDirectory);
+            Zaldaryon.Pharos.Reporting.FailureArtifactWriter.RootOverride = oldArtifactDirectory;
+            Recorder.CaptureArtifacts = false;
+        }
+
+        Assert.Single(result.Passed);
+        Assert.Empty(result.Failed);
+        Assert.Equal(1, result.CasesFinished.Count);
+        Assert.Equal(2, Recorder.InstanceCount);
+        Assert.Equal(2, Recorder.Events.Count(e => e == "init"));
+        Assert.Equal(2, Recorder.Events.Count(e => e == "dispose"));
+        Assert.Equal(2, Recorder.Events.Count(e => e == "body"));
+        string output = Assert.Single(result.Passed).Output;
+        Assert.Contains("attempt 1 output", output);
+        Assert.Contains("attempt 2 output", output);
+        Assert.Contains("flaky=true", output);
+        using System.Text.Json.JsonDocument fragment = System.Text.Json.JsonDocument.Parse(File.ReadAllText(Assert.Single(Directory.GetFiles(temp.FullName, "*.json"))));
+        Assert.Equal(typeof(Sample).Assembly.FullName, fragment.RootElement.GetProperty("assembly").GetString());
+        Assert.Equal("Passed", fragment.RootElement.GetProperty("rawOutcome").GetString());
+        Assert.True(fragment.RootElement.GetProperty("flaky").GetBoolean());
+        string[] artifacts = fragment.RootElement.GetProperty("attemptHistory")[0].GetProperty("artifactDirectories").EnumerateArray().Select(a => a.GetString()!).ToArray();
+        Assert.Single(artifacts);
+        Assert.True(Directory.Exists(artifacts[0]));
+    }
+
+    [Fact]
+    public async Task SkipFollowedByEnvironmentCleanupFailure_IsAFailure()
+    {
+        Recorder.Reset();
+
+        ScenarioRunnerHarness.RunResult result = await ScenarioRunnerHarness.RunAsync(typeof(Sample), nameof(Sample.SkipThenCleanupFails));
+
+        Assert.Empty(result.Skipped);
+        Assert.Single(result.Failed);
+        Assert.Contains("skip cleanup failed", result.FailureMessage);
+    }
+
+    [Fact]
+    public async Task Retry_WorksWithoutScenarioLifecycle()
+    {
+        SimpleRetry.AttemptsRun = 0;
+
+        ScenarioRunnerHarness.RunResult result = await ScenarioRunnerHarness.RunAsync(typeof(SimpleRetry), nameof(SimpleRetry.FailsOnceThenPasses));
+
+        Assert.Single(result.Passed);
+        Assert.Equal(2, SimpleRetry.AttemptsRun);
+    }
+
+    [Fact]
+    public async Task AttemptManifestWriteFailure_DoesNotChangeTestOutcome()
+    {
+        string blocker = Path.Combine(Path.GetTempPath(), "pharos-attempt-file-" + Guid.NewGuid().ToString("N"));
+        File.WriteAllText(blocker, "file blocks directory creation");
+        string? oldManifestDirectory = Environment.GetEnvironmentVariable(ScenarioAttemptManifestWriter.DirectoryVariable);
+        Environment.SetEnvironmentVariable(ScenarioAttemptManifestWriter.DirectoryVariable, blocker);
+        try
+        {
+            ScenarioRunnerHarness.RunResult result = await ScenarioRunnerHarness.RunAsync(typeof(SimpleRetry), nameof(SimpleRetry.PassesWithoutManifest));
+            Assert.Single(result.Passed);
+            Assert.Empty(result.Failed);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(ScenarioAttemptManifestWriter.DirectoryVariable, oldManifestDirectory);
+            File.Delete(blocker);
+        }
+    }
+
+    [Fact]
+    public async Task Retry_TreatsAggregateBodyExceptionAsRetryable()
+    {
+        SimpleRetry.AttemptsRun = 0;
+
+        ScenarioRunnerHarness.RunResult result = await ScenarioRunnerHarness.RunAsync(typeof(SimpleRetry), nameof(SimpleRetry.ThrowsAggregateOnceThenPasses));
+
+        Assert.Single(result.Passed);
+        Assert.Equal(2, SimpleRetry.AttemptsRun);
+    }
+
+    [Theory]
+    [InlineData(nameof(DisposeFailure.Passes), "teardown")]
+    [InlineData(nameof(DisposeFailure.Fails), "teardown")]
+    public async Task DisposeFailure_IsClassifiedAsTeardownInAttemptMetadata(string method, string expectedPhase)
+    {
+        DirectoryInfo temp = Directory.CreateTempSubdirectory("pharos-teardown-attempt-");
+        string? oldManifestDirectory = Environment.GetEnvironmentVariable(ScenarioAttemptManifestWriter.DirectoryVariable);
+        Environment.SetEnvironmentVariable(ScenarioAttemptManifestWriter.DirectoryVariable, temp.FullName);
+        try
+        {
+            ScenarioRunnerHarness.RunResult result = await ScenarioRunnerHarness.RunAsync(typeof(DisposeFailure), method);
+            Assert.Single(result.Failed);
+            using System.Text.Json.JsonDocument fragment = System.Text.Json.JsonDocument.Parse(File.ReadAllText(Assert.Single(Directory.GetFiles(temp.FullName, "*.json"))));
+            Assert.Equal(expectedPhase, fragment.RootElement.GetProperty("attemptHistory")[0].GetProperty("phase").GetString());
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(ScenarioAttemptManifestWriter.DirectoryVariable, oldManifestDirectory);
+            temp.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task InvalidAttemptPolicyFailsBeforeConstructingTheScenario()
+    {
+        InvalidPolicy.ConstructorCalls = 0;
+
+        ScenarioRunnerHarness.RunResult result = await ScenarioRunnerHarness.RunAsync(typeof(InvalidPolicy), nameof(InvalidPolicy.NeverRuns));
+
+        Assert.Single(result.Failed);
+        Assert.Contains("RequiredSuccesses", result.FailureMessage);
+        Assert.Equal(0, InvalidPolicy.ConstructorCalls);
+    }
+
+    [Fact]
     public async Task FailingBody_IsCapturedBeforeTeardown_AndTheMessageCarriesTheDetails()
     {
         Recorder.Reset();
@@ -77,6 +234,7 @@ public class ScenarioPipelineTests
         Assert.Empty(result.Failed);
         Assert.Contains("mod absent", Assert.Single(result.Skipped).Reason);
         Assert.Equal(["init", "before", "environments", "body", "dispose"], Recorder.Events);
+        Assert.Equal(1, Recorder.AttemptBodies);
     }
 
     [Fact]
@@ -198,6 +356,7 @@ public class ScenarioPipelineTests
         Assert.Equal(["init", "before", "environments", "environment:apply", "capture:failed", "environment:cleanup", "dispose"], Recorder.Events);
         Assert.Equal(typeof(ScenarioFailedException).FullName, result.FailureType);
         Assert.Contains("environment setup failed", result.FailureMessage);
+        Assert.Equal(1, Recorder.Events.Count(e => e == "environment:apply"));
     }
 
     [Fact]
@@ -212,6 +371,7 @@ public class ScenarioPipelineTests
             Recorder.Events);
         Assert.Equal(typeof(ScenarioFailedException).FullName, result.FailureType);
         Assert.Contains("environment cleanup failed", result.FailureMessage);
+        Assert.Equal(1, Recorder.Events.Count(e => e == "environment:cleanup-fails"));
     }
 
     [Fact]
@@ -422,6 +582,10 @@ public class ScenarioPipelineTests
 
         public static IReadOnlyList<string> Events => [.. s_events];
         public static bool FailCheck { get; set; }
+        public static bool CaptureArtifacts { get; set; }
+        public static int AttemptBodies;
+        public static int InstanceCount;
+        public static ConcurrentDictionary<int, int> RowAttempts { get; } = new();
         public static string? Details { get; set; }
         public static TaskCompletionSource BodyAborted { get; private set; } = new();
         public static ManualResetEventSlim Release { get; private set; } = new();
@@ -432,6 +596,9 @@ public class ScenarioPipelineTests
         {
             s_events.Clear();
             FailCheck = false;
+            CaptureArtifacts = false;
+            AttemptBodies = 0;
+            InstanceCount = 0;
             Details = "captured by the sample";
             BodyAborted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             Release = new ManualResetEventSlim();
@@ -442,6 +609,8 @@ public class ScenarioPipelineTests
     private sealed class Sample : IAsyncLifetime, IScenarioLifecycle
     {
         private ScenarioContext? _environmentContext;
+
+        public Sample() => Interlocked.Increment(ref Recorder.InstanceCount);
 
         public Task InitializeAsync()
         {
@@ -492,6 +661,16 @@ public class ScenarioPipelineTests
         string? IScenarioLifecycle.CaptureFailure(ScenarioTestInfo test, Exception exception, bool timedOut)
         {
             Recorder.Add(timedOut ? "capture:timedOut" : "capture:failed");
+            if (Recorder.CaptureArtifacts)
+            {
+                Zaldaryon.Pharos.Reporting.FailureArtifactWriter.Write(new Zaldaryon.Pharos.Reporting.ScenarioFailure
+                {
+                    DisplayName = test.DisplayName,
+                    TestClass = test.TestClass,
+                    MethodName = test.MethodName,
+                    Exception = exception,
+                });
+            }
             return Recorder.Details;
         }
 
@@ -500,11 +679,28 @@ public class ScenarioPipelineTests
         [ServerScenario]
         public void Passes() => Recorder.Add("body");
 
-        [ServerScenario]
+        [ServerScenario(Attempts = 2)]
+        public void FailsOnceThenPasses()
+        {
+            Recorder.Add("body");
+            if (Interlocked.Increment(ref Recorder.AttemptBodies) == 1) Assert.Fail("first attempt fails");
+        }
+
+        [ServerScenario(Attempts = 3, RequiredSuccesses = 2)]
+        public void RequiredSuccesses()
+        {
+            if (++Recorder.AttemptBodies == 1) Assert.Fail("one failed attempt is allowed");
+        }
+
+        [ServerScenario(Attempts = 2)]
+        [TestEnvironment(typeof(SkipCleanupFailingEnvironment))]
+        public void SkipThenCleanupFails() => PharosAssert.Skip("skip before cleanup");
+
+        [ServerScenario(Attempts = 2)]
         [TestEnvironment(typeof(FailingEnvironment))]
         public void EnvironmentFails() => Recorder.Add("body");
 
-        [ServerScenario]
+        [ServerScenario(Attempts = 2)]
         [TestEnvironment(typeof(CleanupFailingEnvironment))]
         public void CleanupFails() => Recorder.Add("body");
 
@@ -527,14 +723,15 @@ public class ScenarioPipelineTests
             Assert.True(false, "the world is wrong");
         }
 
-        [ServerScenario]
+        [ServerScenario(Attempts = 3)]
         public void Skips()
         {
             Recorder.Add("body");
+            Recorder.AttemptBodies++;
             PharosAssert.Skip("mod absent");
         }
 
-        [ClientServerScenario(TimeoutMs = 200)]
+        [ClientServerScenario(TimeoutMs = 200, Attempts = 3)]
         public async Task StepsForever()
         {
             Recorder.Add("body");
@@ -592,7 +789,59 @@ public class ScenarioPipelineTests
         [MemberData(nameof(Objects))]
         public void ObjectRows(object value) => Assert.Fail("row " + value);
 
+        [ServerTheory(Attempts = 2)]
+        [InlineData(1)]
+        [InlineData(2)]
+        public void RetryRows(int row)
+        {
+            int attempt = Recorder.RowAttempts.AddOrUpdate(row, 1, (_, current) => current + 1);
+            if (row == 2 && attempt == 1) Assert.Fail("first row 2 attempt fails");
+        }
+
         public static IEnumerable<object[]> Objects() => [[new object()]];
+    }
+
+    private sealed class SimpleRetry
+    {
+        public static int AttemptsRun;
+
+        [ServerScenario]
+        public void PassesWithoutManifest() { }
+
+        [ServerScenario(Attempts = 2)]
+        public void FailsOnceThenPasses()
+        {
+            if (Interlocked.Increment(ref AttemptsRun) == 1) throw new InvalidOperationException("first simple attempt");
+        }
+
+        [ServerScenario(Attempts = 2)]
+        public void ThrowsAggregateOnceThenPasses()
+        {
+            if (Interlocked.Increment(ref AttemptsRun) == 1)
+                throw new AggregateException(new InvalidOperationException("first"), new ArgumentException("second"));
+        }
+    }
+
+    private sealed class DisposeFailure : IAsyncLifetime
+    {
+        public Task InitializeAsync() => Task.CompletedTask;
+        public Task DisposeAsync() => Task.FromException(new InvalidOperationException("dispose failed"));
+
+        [ServerScenario]
+        public void Passes() { }
+
+        [ServerScenario]
+        public void Fails() => Assert.Fail("body failed");
+    }
+
+    private sealed class InvalidPolicy
+    {
+        public static int ConstructorCalls;
+
+        public InvalidPolicy() => ConstructorCalls++;
+
+        [ServerScenario(Attempts = 1, RequiredSuccesses = 2)]
+        public void NeverRuns() => Assert.Fail("invalid retry policy must fail before setup");
     }
 
     public sealed class FailingEnvironment : ITestEnvironment
@@ -614,6 +863,15 @@ public class ScenarioPipelineTests
                 Recorder.Add("environment:cleanup-fails");
                 throw new InvalidOperationException("environment cleanup failed");
             });
+            return Task.CompletedTask;
+        }
+    }
+
+    public sealed class SkipCleanupFailingEnvironment : ITestEnvironment
+    {
+        public Task ApplyAsync(ScenarioContext context, CancellationToken cancellationToken)
+        {
+            context.OnCleanup(() => throw new InvalidOperationException("skip cleanup failed"));
             return Task.CompletedTask;
         }
     }

@@ -22,6 +22,15 @@ public sealed record TestChange(
     TimeSpan? AfterDuration,
     string? Message)
 {
+    /// <summary>Whether the second run passed after an earlier failed attempt; null is unknown.</summary>
+    public bool? Flaky { get; init; }
+
+    /// <summary>Flaky metadata from the first run, when a manifest was supplied.</summary>
+    public bool? BeforeFlaky { get; init; }
+
+    /// <summary>Flaky metadata from the second run, when a manifest was supplied.</summary>
+    public bool? AfterFlaky { get; init; }
+
     /// <summary><see cref="BeforeDuration"/> in seconds, for tools that read the JSON.</summary>
     public double? BeforeSeconds => BeforeDuration?.TotalSeconds;
 
@@ -54,7 +63,11 @@ public sealed record RunDiff(
     int BeforeCount,
     int AfterCount,
     int BeforeDuplicates = 0,
-    int AfterDuplicates = 0);
+    int AfterDuplicates = 0)
+{
+    /// <summary>Tests in the second run marked flaky by their scenario attempt manifest.</summary>
+    public IReadOnlyList<TestChange> Flaky { get; init; } = [];
+}
 
 /// <summary>What <c>pharos diff --json</c> prints. Version 1 of the format.</summary>
 internal sealed record DiffReport(
@@ -75,6 +88,7 @@ internal sealed record DiffReport(
     IReadOnlyList<TestChange> Added,
     IReadOnlyList<TestChange> Slower,
     IReadOnlyList<TestChange> Faster,
+    IReadOnlyList<TestChange> Flaky,
     int BeforeCount,
     int AfterCount,
     int BeforeDuplicates,
@@ -111,12 +125,15 @@ public static class DiffCommand
           --fail-on-slower        Count slower tests as regressions
           --fail-on-vanished      Count tests that are gone from the second run as regressions
           --fail-on-skipped       Count tests skipped in the second run, and run before, as regressions
+          --before-manifest <json> Attach flaky metadata from the first pharos-run.json
+          --after-manifest <json>  Attach flaky metadata from the second pharos-run.json
           --json                  Print the comparison as JSON
 
         Reports tests that newly fail (failing in the second run, passing, skipped or absent in
         the first), fixed tests, tests still failing, tests newly skipped, vanished and new tests,
-        and duration changes. Tests are matched by their class, method and display name, so each
-        theory row is compared on its own.
+        and duration changes. With run manifests, it also reports scenarios that passed after an
+        earlier failed attempt. Tests are matched by class, method and display name, so each theory
+        row is compared on its own.
 
         A second run that stopped early (a test host that crashed or was stopped) or has no
         results while the first has some always counts as a regression.
@@ -169,10 +186,10 @@ public static class DiffCommand
         TrxRun before, after;
         try
         {
-            before = Load(options.Before);
-            after = Load(options.After);
+            before = Load(options.Before, options.BeforeManifest);
+            after = Load(options.After, options.AfterManifest);
         }
-        catch (Exception ex) when (ex is IOException or FormatException or System.Xml.XmlException or UnauthorizedAccessException)
+        catch (Exception ex) when (ex is IOException or FormatException or System.Xml.XmlException or UnauthorizedAccessException or JsonException)
         {
             stderr.WriteLine($"Error: {ex.Message}");
             return ExitError;
@@ -194,7 +211,7 @@ public static class DiffCommand
         {
             DiffReport report = new(1, options.Before, options.After, options.SlowerThan, options.MinDelta.TotalSeconds,
                 exitCode != ExitNoRegressions, exitCode, before.Abort, afterAborted,
-                diff.NewFailures, diff.Fixed, diff.StillFailing, diff.NewlySkipped, diff.Vanished, diff.Added, diff.Slower, diff.Faster,
+                diff.NewFailures, diff.Fixed, diff.StillFailing, diff.NewlySkipped, diff.Vanished, diff.Added, diff.Slower, diff.Faster, diff.Flaky,
                 diff.BeforeCount, diff.AfterCount, diff.BeforeDuplicates, diff.AfterDuplicates);
             stdout.WriteLine(JsonSerializer.Serialize(report, s_json));
         }
@@ -212,7 +229,7 @@ public static class DiffCommand
         TimeSpan delta = minDelta ?? TimeSpan.FromSeconds(1);
         (Dictionary<string, TrxResult> first, int firstDuplicates) = ByTest(before);
         (Dictionary<string, TrxResult> second, int secondDuplicates) = ByTest(after);
-        List<TestChange> newFailures = [], fixedTests = [], stillFailing = [], newlySkipped = [], vanished = [], added = [], slower = [], faster = [];
+        List<TestChange> newFailures = [], fixedTests = [], stillFailing = [], newlySkipped = [], vanished = [], added = [], slower = [], faster = [], flaky = [];
 
         foreach ((string key, TrxResult now) in second.OrderBy(e => e.Key, StringComparer.Ordinal))
         {
@@ -220,8 +237,9 @@ public static class DiffCommand
             Kind nowKind = KindOf(now.Outcome);
             Kind? thenKind = then == null ? null : KindOf(then.Outcome);
             TestChange change = new(DisplayName(now), now.FullyQualifiedName, then?.Outcome, now.Outcome, then?.Duration, now.Duration,
-                nowKind == Kind.Failed ? now.Message : null);
+                nowKind == Kind.Failed ? now.Message : null) { Flaky = now.Flaky, BeforeFlaky = then?.Flaky, AfterFlaky = now.Flaky };
             if (then == null) added.Add(change);
+            if (now.Flaky == true) flaky.Add(change);
             if (nowKind == Kind.Failed && thenKind != Kind.Failed) newFailures.Add(change);
             else if (nowKind == Kind.Failed) stillFailing.Add(change);
             else if (nowKind == Kind.Passed && thenKind == Kind.Failed) fixedTests.Add(change);
@@ -242,7 +260,7 @@ public static class DiffCommand
         return new RunDiff(newFailures, fixedTests, stillFailing, newlySkipped, vanished, added,
             [.. slower.OrderByDescending(c => c.AfterDuration - c.BeforeDuration)],
             [.. faster.OrderByDescending(c => c.BeforeDuration - c.AfterDuration)],
-            first.Count, second.Count, firstDuplicates, secondDuplicates);
+            first.Count, second.Count, firstDuplicates, secondDuplicates) { Flaky = flaky };
     }
 
     private enum Kind
@@ -288,13 +306,34 @@ public static class DiffCommand
 
     private sealed record TrxRun(IReadOnlyList<TrxResult> Results, string? Abort);
 
-    private static TrxRun Load(string path)
+    private static TrxRun Load(string path, string? manifestPath)
     {
         if (Directory.Exists(path)) throw new IOException($"{path} is a folder, not a TRX file.");
         if (!File.Exists(path)) throw new FileNotFoundException($"{path} does not exist.", path);
         XDocument trx = XDocument.Load(path);
         if (trx.Root?.Name != Trx.Ns + "TestRun") throw new FormatException($"{path} is not a TRX file: it has no TestRun element.");
         IReadOnlyList<TrxResult> results = Trx.Results(trx);
+        if (manifestPath != null)
+        {
+            if (!File.Exists(manifestPath)) throw new FileNotFoundException($"The manifest {manifestPath} does not exist.", manifestPath);
+            using JsonDocument manifest = JsonDocument.Parse(File.ReadAllText(manifestPath));
+            JsonElement root = manifest.RootElement;
+            if (root.ValueKind != JsonValueKind.Object || !root.TryGetProperty("schemaVersion", out JsonElement version) || version.ValueKind != JsonValueKind.Number || !version.TryGetInt32(out int schemaVersion) || schemaVersion != 1 ||
+                !root.TryGetProperty("tests", out JsonElement testArray) || testArray.ValueKind != JsonValueKind.Array)
+                throw new FormatException($"{manifestPath} is not a supported pharos run manifest (schemaVersion 1 expected).");
+            Dictionary<string, bool?> flaky = [];
+            foreach (JsonElement test in testArray.EnumerateArray())
+            {
+                if (test.ValueKind != JsonValueKind.Object || !test.TryGetProperty("fullyQualifiedName", out JsonElement fqnElement) || fqnElement.ValueKind != JsonValueKind.String || !test.TryGetProperty("displayName", out JsonElement displayElement) || displayElement.ValueKind != JsonValueKind.String) continue;
+                string? fqn = fqnElement.GetString();
+                string? display = displayElement.GetString();
+                bool? value = test.TryGetProperty("flaky", out JsonElement flakyElement) && flakyElement.ValueKind is JsonValueKind.True or JsonValueKind.False
+                    ? flakyElement.GetBoolean()
+                    : null;
+                if (fqn != null && display != null) flaky[fqn + "\0" + display] = value;
+            }
+            results = results.Select(result => result with { Flaky = flaky.GetValueOrDefault(result.FullyQualifiedName + "\0" + result.TestName) }).ToArray();
+        }
         string? abort = Trx.Abort(trx)
             ?? (results.Any(r => r.Outcome == "PassedButRunAborted") ? "The test run was aborted." : null);
         return new TrxRun(results, abort);
@@ -310,12 +349,14 @@ public static class DiffCommand
             output.WriteLine($"Results reported twice for the same test: {diff.BeforeDuplicates} before, {diff.AfterDuplicates} after (the worst of each is compared).");
         }
 
-        Section(output, "New failures", diff.NewFailures, c => $"{c.Test} ({c.Before?.ToLowerInvariant() ?? "new"} -> failed){Detail(c.Message)}");
+        Section(output, "New failures", diff.NewFailures, c => $"{c.Test} ({c.Before?.ToLowerInvariant() ?? "new"} -> failed){Detail(c.Message)}{FlakyColumn(c.Flaky)}");
         Section(output, "Fixed", diff.Fixed, c => c.Test);
-        Section(output, "Still failing", diff.StillFailing, c => c.Test);
+        Section(output, "Still failing", diff.StillFailing, c => c.Test + FlakyColumn(c.Flaky));
         Section(output, "Newly skipped", diff.NewlySkipped, c => $"{c.Test} (was {c.Before?.ToLowerInvariant()})");
         Section(output, "Vanished", diff.Vanished, c => $"{c.Test} (was {c.Before?.ToLowerInvariant()})");
-        Section(output, "New tests", diff.Added, c => $"{c.Test} ({c.After?.ToLowerInvariant()})");
+        Section(output, "New tests", diff.Added, c => $"{c.Test} ({c.After?.ToLowerInvariant()}){FlakyColumn(c.Flaky)}");
+        Section(output, "Flaky", diff.Flaky, c => c.Test + " [flaky=true]");
+        if (diff.NewFailures.Concat(diff.StillFailing).Concat(diff.Added).Concat(diff.Fixed).Concat(diff.Flaky).Any(change => change.Flaky != null)) output.WriteLine("Flaky value: true means the scenario passed after one or more failed attempts; unknown means no attempt metadata was available.");
         Section(output, "Slower", diff.Slower, c => $"{c.Test}: {Seconds(c.BeforeDuration)} -> {Seconds(c.AfterDuration)}");
         Section(output, "Faster", diff.Faster, c => $"{c.Test}: {Seconds(c.BeforeDuration)} -> {Seconds(c.AfterDuration)}");
         output.WriteLine();
@@ -334,6 +375,8 @@ public static class DiffCommand
 
     private static string Detail(string? message) => string.IsNullOrWhiteSpace(message) ? "" : ": " + FirstLine(message);
 
+    private static string FlakyColumn(bool? flaky) => flaky switch { true => " [flaky=true]", false => " [flaky=false]", _ => " [flaky=unknown]" };
+
     private static string Seconds(TimeSpan? time) => string.Create(CultureInfo.InvariantCulture, $"{time?.TotalSeconds ?? 0:0.0}s");
 
     private static readonly JsonSerializerOptions s_json = new()
@@ -347,6 +390,11 @@ public static class DiffCommand
 /// <summary>The options of <c>pharos diff</c>.</summary>
 public sealed record DiffOptions(string Before, string After)
 {
+    /// <summary>Optional pharos run manifest for flaky metadata from the first run.</summary>
+    public string? BeforeManifest { get; init; }
+
+    /// <summary>Optional pharos run manifest for flaky metadata from the second run.</summary>
+    public string? AfterManifest { get; init; }
     /// <summary>How much longer a passing test must take to be reported slower: 0.5 is 50%.</summary>
     public double SlowerThan { get; init; } = 0.5;
 
@@ -373,6 +421,7 @@ public sealed record DiffOptions(string Before, string After)
         double slowerThan = 0.5;
         TimeSpan minDelta = TimeSpan.FromSeconds(1);
         bool failOnSlower = false, failOnVanished = false, failOnSkipped = false, json = false;
+        string? beforeManifest = null, afterManifest = null;
         for (int i = 0; i < args.Count; i++)
         {
             string arg = args[i];
@@ -399,6 +448,12 @@ public sealed record DiffOptions(string Before, string After)
                 case "--fail-on-skipped":
                     failOnSkipped = true;
                     break;
+                case "--before-manifest":
+                    beforeManifest = Value();
+                    break;
+                case "--after-manifest":
+                    afterManifest = Value();
+                    break;
                 case "--json":
                     json = true;
                     break;
@@ -410,7 +465,7 @@ public sealed record DiffOptions(string Before, string After)
         }
 
         if (files.Count != 2) throw new ArgumentException("Name two TRX files: the run before and the run after.");
-        return new DiffOptions(files[0], files[1]) { SlowerThan = slowerThan, MinDelta = minDelta, FailOnSlower = failOnSlower, FailOnVanished = failOnVanished, FailOnSkipped = failOnSkipped, Json = json };
+        return new DiffOptions(files[0], files[1]) { BeforeManifest = beforeManifest, AfterManifest = afterManifest, SlowerThan = slowerThan, MinDelta = minDelta, FailOnSlower = failOnSlower, FailOnVanished = failOnVanished, FailOnSkipped = failOnSkipped, Json = json };
     }
 
     // A day: far longer than any test, and well inside what a TimeSpan holds.

@@ -66,6 +66,26 @@ public sealed record RunOptions
     /// <summary>Prints each worker's command.</summary>
     public bool Verbose { get; init; }
 
+    /// <summary>Number of complete independent runs.</summary>
+    public int Repeat { get; init; } = 1;
+
+    /// <summary>Repeats until a test or worker fails, bounded by <see cref="Max"/>.</summary>
+    public bool UntilFail { get; init; }
+
+    /// <summary>Maximum number of runs for <see cref="UntilFail"/>.</summary>
+    public int? Max { get; init; }
+
+    /// <summary>Run only raw failures from a previous pharos run manifest.</summary>
+    public string? RerunFailed { get; init; }
+
+    /// <summary>Listing-only filter used to narrow discovery without changing worker selection.</summary>
+    internal string? DiscoveryFilter { get; init; }
+
+    /// <summary>Quarantine file to apply; null uses pharos.quarantine.json in the current directory when present.</summary>
+    public string? QuarantineFile { get; init; }
+
+    internal QuarantinePolicy? LoadedQuarantine { get; init; }
+
     /// <summary>Variables set in every worker's environment, for tests of the runner.</summary>
     internal IReadOnlyDictionary<string, string> WorkerEnvironment { get; init; } = new Dictionary<string, string>();
 
@@ -106,6 +126,21 @@ public sealed record RunOptions
                     break;
                 case "--list":
                     options = options with { ListOnly = true };
+                    break;
+                case "--repeat":
+                    options = options with { Repeat = Positive(arg, Value()) };
+                    break;
+                case "--until-fail":
+                    options = options with { UntilFail = true };
+                    break;
+                case "--max":
+                    options = options with { Max = Positive(arg, Value()) };
+                    break;
+                case "--rerun-failed":
+                    options = options with { RerunFailed = Value() };
+                    break;
+                case "--quarantine":
+                    options = options with { QuarantineFile = Value() };
                     break;
                 case "--json":
                     options = options with { Json = true };
@@ -152,6 +187,10 @@ public sealed record RunOptions
         }
 
         if (target == null) throw new ArgumentException("Name the test assembly or project to run.");
+        if (options.UntilFail && options.Max == null) throw new ArgumentException("--until-fail needs --max <n>.");
+        if (!options.UntilFail && options.Max != null) throw new ArgumentException("--max is only valid with --until-fail.");
+        if (options.UntilFail && options.Repeat != 1) throw new ArgumentException("--until-fail cannot be combined with --repeat.");
+        if (options.RerunFailed != null && (options.UntilFail || options.Repeat != 1)) throw new ArgumentException("--rerun-failed cannot be combined with --repeat or --until-fail.");
         return options with { Target = target };
     }
 

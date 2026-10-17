@@ -53,6 +53,31 @@ public class DiffCommandTests : IDisposable
     }
 
     [Fact]
+    public void Compare_ReportsFlakyTestsEvenWhenOutcomeAndDurationDidNotChange()
+    {
+        TrxResult before = R("Stable", "Passed", 2.0);
+        TrxResult after = R("Stable", "Passed", 2.0) with { Flaky = true };
+
+        RunDiff diff = DiffCommand.Compare([before], [after]);
+
+        Assert.Empty(diff.NewFailures);
+        Assert.Empty(diff.Fixed);
+        Assert.Single(diff.Flaky);
+        Assert.Equal("Stable", diff.Flaky[0].Test);
+    }
+
+    [Fact]
+    public void PublicDiffRecords_KeepTheirOriginalConstructorAndDeconstructionShape()
+    {
+        TestChange oldChange = new("A", "Ns.A", null, "Passed", null, null, null);
+        var (test, fqn, before, after, beforeDuration, afterDuration, message) = oldChange;
+        Assert.Equal(("A", "Ns.A", null, "Passed", null, null, null), (test, fqn, before, after, beforeDuration, afterDuration, message));
+
+        RunDiff oldDiff = new([], [], [], [], [], [], [], [], 0, 0);
+        Assert.Empty(oldDiff.Flaky);
+    }
+
+    [Fact]
     public void Run_ExitsOneOnANewFailure_AndZeroWithoutOne()
     {
         string before = Write("before.trx", ("A", "Passed", 1.0), ("B", "Passed", 1.0));
@@ -173,7 +198,7 @@ public class DiffCommandTests : IDisposable
         JsonElement root = json.RootElement;
         Assert.Equal(
             ["schemaVersion", "before", "after", "slowerThan", "minDeltaSeconds", "regressed", "exitCode",
-             "newFailures", "fixed", "stillFailing", "newlySkipped", "vanished", "added", "slower", "faster",
+             "newFailures", "fixed", "stillFailing", "newlySkipped", "vanished", "added", "slower", "faster", "flaky",
              "beforeCount", "afterCount", "beforeDuplicates", "afterDuplicates"],
             root.EnumerateObject().Select(p => p.Name));
         Assert.Equal(1, root.GetProperty("schemaVersion").GetInt32());
@@ -190,6 +215,57 @@ public class DiffCommandTests : IDisposable
         Assert.Equal("00:00:01", failure.GetProperty("afterDuration").GetString());
         Assert.Equal(1.0, failure.GetProperty("afterSeconds").GetDouble());
         Assert.Equal(1, root.GetProperty("afterCount").GetInt32());
+    }
+
+    [Fact]
+    public void Run_AttachesFlakyMetadataFromOptionalRunManifest()
+    {
+        string before = Write("before-flaky.trx", ("A", "Passed", 1.0));
+        string after = Write("after-flaky.trx", ("A", "Failed", 1.0));
+        string manifest = Path.Combine(_folder, "pharos-run.json");
+        File.WriteAllText(manifest, """
+            {"schemaVersion":1,"tests":[{"fullyQualifiedName":"My.Tests.A","displayName":"A","flaky":true}]}
+            """);
+
+        StringWriter output = new();
+        Assert.Equal(DiffCommand.ExitRegressions, DiffCommand.Run([before, after, "--after-manifest", manifest], output, new StringWriter()));
+        Assert.Contains("A (passed -> failed)", output.ToString());
+        Assert.Contains("[flaky=true]", output.ToString());
+
+        output = new StringWriter();
+        DiffCommand.Run([before, after], output, new StringWriter());
+        Assert.Contains("[flaky=unknown]", output.ToString());
+    }
+
+    [Fact]
+    public void Run_ShowsStablePassedTestsThatBecameFlaky()
+    {
+        string before = Write("before-stable-flaky.trx", ("A", "Passed", 1.0));
+        string after = Write("after-stable-flaky.trx", ("A", "Passed", 1.0));
+        string beforeManifest = Path.Combine(_folder, "before-run.json");
+        string afterManifest = Path.Combine(_folder, "after-run.json");
+        File.WriteAllText(beforeManifest, """{"schemaVersion":1,"tests":[{"fullyQualifiedName":"My.Tests.A","displayName":"A","flaky":false}]}""");
+        File.WriteAllText(afterManifest, """{"schemaVersion":1,"tests":[{"fullyQualifiedName":"My.Tests.A","displayName":"A","flaky":true}]}""");
+
+        StringWriter output = new();
+        Assert.Equal(DiffCommand.ExitNoRegressions, DiffCommand.Run([before, after, "--before-manifest", beforeManifest, "--after-manifest", afterManifest], output, new StringWriter()));
+        Assert.Contains("Flaky (1):", output.ToString());
+        Assert.Contains("A [flaky=true]", output.ToString());
+
+        StringWriter jsonOutput = new();
+        DiffCommand.Run([before, after, "--before-manifest", beforeManifest, "--after-manifest", afterManifest, "--json"], jsonOutput, new StringWriter());
+        using JsonDocument report = JsonDocument.Parse(jsonOutput.ToString());
+        JsonElement flaky = Assert.Single(report.RootElement.GetProperty("flaky").EnumerateArray());
+        Assert.False(flaky.GetProperty("beforeFlaky").GetBoolean());
+        Assert.True(flaky.GetProperty("afterFlaky").GetBoolean());
+    }
+
+    [Fact]
+    public void Options_ReadOptionalManifestPaths()
+    {
+        DiffOptions options = DiffOptions.Parse(["before.trx", "after.trx", "--before-manifest", "before.json", "--after-manifest", "after.json"])!;
+        Assert.Equal("before.json", options.BeforeManifest);
+        Assert.Equal("after.json", options.AfterManifest);
     }
 
     [Theory]
@@ -220,6 +296,18 @@ public class DiffCommandTests : IDisposable
         error = new StringWriter();
         Assert.Equal(DiffCommand.ExitError, DiffCommand.Run([_folder, notTrx], new StringWriter(), error));
         Assert.Contains("is a folder", error.ToString());
+    }
+
+    [Fact]
+    public void Run_RejectsMalformedFlakyManifestAsBadInput()
+    {
+        string trx = Write("valid.trx", ("A", "Passed", 1.0));
+        string manifest = Path.Combine(_folder, "malformed-run.json");
+        File.WriteAllText(manifest, "{\"schemaVersion\":\"1\",\"tests\":[]}");
+        StringWriter error = new();
+
+        Assert.Equal(DiffCommand.ExitError, DiffCommand.Run([trx, trx, "--after-manifest", manifest], new StringWriter(), error));
+        Assert.Contains("supported pharos run manifest", error.ToString());
     }
 
     [Fact]

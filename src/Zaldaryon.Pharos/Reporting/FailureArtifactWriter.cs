@@ -11,6 +11,7 @@ using Zaldaryon.Pharos.Bootstrap;
 using Zaldaryon.Pharos.Core;
 using Zaldaryon.Pharos.Server;
 using Zaldaryon.Pharos.Visual;
+using Zaldaryon.Pharos.XUnit.Execution;
 
 namespace Zaldaryon.Pharos.Reporting;
 
@@ -210,6 +211,7 @@ internal static class FailureArtifactWriter
         try
         {
             directory = CreateDirectory(failure);
+            ScenarioAttemptState.Current?.AddArtifactDirectory(directory);
         }
         catch (Exception ex)
         {

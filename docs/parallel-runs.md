@@ -99,6 +99,59 @@ A crash or a hang never hangs the run, and never passes.
   - 1: a test failed, or a worker crashed or hung;
   - 2: the arguments were wrong, or the tests could not be built or listed.
 
+## Repeating flaky scenarios
+
+Pharos scenario Fact and Theory attributes accept `Attempts` and `RequiredSuccesses`. Defaults
+are one attempt and one success. Each attempt creates a fresh scenario instance and runs its
+complete setup, seed, environment, body, cleanup and teardown lifecycle. The runner stops once it
+has enough successful attempts or cannot reach the required count. Only a classified body
+failure is retried; setup, cleanup, teardown, timeout, cancellation, skip and worker failures
+remain failures or skips. xUnit and TRX still receive one final result for each theory row.
+
+Each `pharos run` writes a versioned `pharos-run.json` beside the merged TRX, with raw/final
+outcomes, attempt history, flaky status, worker state and lost tests. Worker attempt fragments
+are diagnostic metadata; if a fragment cannot be written or read, flaky status is unknown and
+the test result is unchanged.
+
+```bash
+pharos run tests/MyMod.Tests --filter "Category=Live" --repeat 5
+pharos run tests/MyMod.Tests --filter "FullyQualifiedName~MyScenario" --until-fail --max 100
+pharos run tests/MyMod.Tests --rerun-failed pharos-run/pharos-run.json
+pharos run tests/MyMod.Tests --quarantine pharos.quarantine.json
+```
+
+`--repeat N` gives every run its own TRX and manifest under `run-001`, `run-002`, and so on,
+then writes `pharos-repeat.json` with the aggregate. `--until-fail` requires a positive `--max`
+and stops at the first raw test or infrastructure failure, even when a test failure is
+quarantined for the command's exit status. `--rerun-failed` selects exact failed method and
+theory display rows from a run manifest; it reports success without starting workers when there
+are no raw test failures.
+
+Quarantine is optional and only changes `pharos run`'s summary and exit code. TRX and manifest
+raw outcomes retain the actual failure. A quarantine entry needs an exact fully qualified method,
+an owner and an ISO `YYYY-MM-DD` expiry; an optional display name narrows it to a theory row.
+Expiry is evaluated in UTC, and the listed day remains valid through that date. Only failures
+whose attempt metadata identifies the body phase can be quarantined. Setup/cleanup/watchdog,
+cancelled, lost and worker-level failures remain failures. A missing or invalid attempt fragment
+fails closed and does not qualify for quarantine.
+The text and JSON summaries count quarantined rows separately from passed, failed and skipped.
+
+Example `pharos.quarantine.json`:
+
+```json
+{
+  "schemaVersion": 1,
+  "entries": [
+    {
+      "fullyQualifiedName": "MyMod.Tests.WorldScenarios.GeneratesCave",
+      "displayName": "GeneratesCave(seed: 17)",
+      "owner": "team-world",
+      "expiresOn": "2026-11-01"
+    }
+  ]
+}
+```
+
 ## In CI
 
 ```yaml
@@ -129,6 +182,10 @@ GitHub's standard Linux runners have four cores: two workers is a good start.
 | `--test-timeout <min>` | 30 | Per test, before vstest stops the test host. |
 | `--worker-timeout <min>` | 60 | Per worker, before it is stopped. |
 | `--json` | | JSON lines instead of text. |
+| `--repeat <n>` | 1 | Run independent complete runs and aggregate their manifests. |
+| `--until-fail --max <n>` | | Repeat until any raw test or infrastructure failure, bounded by `n`. |
+| `--rerun-failed <manifest>` | | Rerun raw failed test rows from a `pharos-run.json` manifest. |
+| `--quarantine <json>` | | Apply an expiring, exact-name quarantine file to eligible body failures. |
 | `-c`, `--configuration <c>` | Release | A project's build configuration. |
 | `--no-build` | | Use a project's last build. |
 | `--game <path>` | `VINTAGE_STORY` | The game install workers use. |
@@ -148,6 +205,7 @@ GitHub's standard Linux runners have four cores: two workers is a good start.
 
 ```bash
 pharos diff main.trx pr.trx --slower-than 50% --json > diff.json
+pharos diff main.trx pr.trx --before-manifest main/pharos-run.json --after-manifest pr/pharos-run.json
 ```
 
 | Option | Default | |
@@ -158,6 +216,12 @@ pharos diff main.trx pr.trx --slower-than 50% --json > diff.json
 | `--fail-on-vanished` | off | Count tests gone from the second run as regressions. |
 | `--fail-on-skipped` | off | Count newly skipped tests as regressions. |
 | `--json` | off | Print the comparison as JSON. |
+| `--before-manifest <json>` | | Attach flaky metadata from the first run manifest. |
+| `--after-manifest <json>` | | Attach flaky metadata from the second run manifest. |
+
+The text and JSON comparison reports a `flaky` value when its run manifest contains attempt
+metadata. `true` means the test passed after an earlier failed attempt, `false` means it did not,
+and an absent value means the metadata is unknown (for example, a legacy TRX or missing fragment).
 
 Tests are matched by their class, method and display name, so each theory row is compared on its
 own. A theory row whose display name changes from run to run (a GUID, a time, or arguments the

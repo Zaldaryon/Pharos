@@ -12,6 +12,7 @@ internal sealed record TrxResult(
     string? Message,
     string? StackTrace)
 {
+    public bool? Flaky { get; init; }
     public bool Passed => Outcome == "Passed";
 
     public bool Failed => Outcome is "Failed" or "Error" or "Timeout" or "Aborted";

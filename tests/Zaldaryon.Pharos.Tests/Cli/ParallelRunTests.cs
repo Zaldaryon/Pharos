@@ -54,6 +54,66 @@ public class RunOptionsTests
         Assert.Equal(XvfbMode.Never, options.Xvfb);
     }
 
+    [Fact]
+    public void RepeatedRunOptions_AreValidated()
+    {
+        Assert.Equal(3, RunOptions.Parse(["tests/My.Tests", "--repeat", "3"])!.Repeat);
+        Assert.True(RunOptions.Parse(["tests/My.Tests", "--until-fail", "--max", "4"])!.UntilFail);
+        Assert.Throws<ArgumentException>(() => RunOptions.Parse(["tests/My.Tests", "--until-fail"]));
+        Assert.Throws<ArgumentException>(() => RunOptions.Parse(["tests/My.Tests", "--max", "2"]));
+        Assert.Throws<ArgumentException>(() => RunOptions.Parse(["tests/My.Tests", "--repeat", "2", "--until-fail", "--max", "3"]));
+    }
+
+    [Fact]
+    public void FailedRows_UsesRawOutcomeAndExactTheoryDisplayIdentity()
+    {
+        string manifest = Path.Combine(Path.GetTempPath(), "pharos-rerun-" + Guid.NewGuid().ToString("N") + ".json");
+        File.WriteAllText(manifest, """
+            {"schemaVersion":1,"tests":[
+              {"fullyQualifiedName":"Ns.Theory.Row","displayName":"Ns.Theory.Row(value: 1)","rawOutcome":"Failed","finalOutcome":"Quarantined"},
+              {"fullyQualifiedName":"Ns.Theory.Row","displayName":"Ns.Theory.Row(value: 2)","rawOutcome":"Passed","finalOutcome":"Passed"},
+              {"fullyQualifiedName":"Ns.Crashed.(worker aborted)","displayName":"Ns.Crashed (worker aborted)","rawOutcome":"Failed","finalOutcome":"Failed"}
+            ]}
+            """);
+        try
+        {
+            Assert.Equal([("Ns.Theory.Row", "Ns.Theory.Row(value: 1)")], RunCommand.FailedRows(manifest));
+            Assert.Equal("FullyQualifiedName=Ns.Theory.Row&DisplayName=Ns.Theory.Row\\(value: 1\\)",
+                Filter.ForTestCase("Ns.Theory.Row", "Ns.Theory.Row(value: 1)"));
+        }
+        finally { File.Delete(manifest); }
+    }
+
+    [Fact]
+    public async Task RerunFailed_WithNoRawFailuresReturnsWithoutStartingAWorker()
+    {
+        string manifest = Path.Combine(Path.GetTempPath(), "pharos-rerun-empty-" + Guid.NewGuid().ToString("N") + ".json");
+        File.WriteAllText(manifest, "{\"schemaVersion\":1,\"tests\":[{\"fullyQualifiedName\":\"Ns.Pass\",\"displayName\":\"Passes\",\"rawOutcome\":\"Passed\"}]}");
+        try
+        {
+            RunOptions options = RunOptions.Parse(["does-not-exist.dll", "--rerun-failed", manifest])!;
+            StringWriter output = new();
+            Assert.Equal(RunCommand.ExitPassed, await RunCommand.RunAsync(options, output, new StringWriter(), CancellationToken.None));
+            Assert.Contains("nothing to rerun", output.ToString());
+        }
+        finally { File.Delete(manifest); }
+    }
+
+    [Fact]
+    public void Summary_CountsQuarantineSeparatelyFromPassFailAndSkip()
+    {
+        TrxResult failed = new("Ns.Flaky", "Flaky", "Failed", TimeSpan.Zero, "body failure", null);
+        WorkerOutcome outcome = new(new TestGroup("Ns", [failed.FullyQualifiedName]), 1, 1, false, null, TimeSpan.Zero, "worker.log", null, [failed], []);
+        RunCommand.Summary summary = new([outcome], [], TimeSpan.Zero, "run.trx", "workers",
+            new HashSet<(string FullyQualifiedName, string DisplayName)> { (failed.FullyQualifiedName, failed.TestName) });
+
+        Assert.Equal(0, summary.Passed);
+        Assert.Equal(0, summary.Failed);
+        Assert.Equal(0, summary.Skipped);
+        Assert.Equal(1, summary.QuarantinedCount);
+        Assert.Equal(1, summary.Total);
+    }
+
     [Theory]
     [InlineData]
     [InlineData("a.dll", "b.dll")]
@@ -282,6 +342,126 @@ public class RunCommandTests : IDisposable
         Assert.Contains(results, r => r.FullyQualifiedName == typeof(ParallelRunProbes.First).FullName + ".Passes" && r.Passed);
         Assert.Contains(results, r => r.FullyQualifiedName == typeof(ParallelRunProbes.Second).FullName + ".Passes" && r.Passed);
         Assert.Contains("Passed!", stdout.ToString());
+
+        using System.Text.Json.JsonDocument manifest = System.Text.Json.JsonDocument.Parse(File.ReadAllText(Path.Combine(_results, "pharos-run.json")));
+        Assert.Equal(1, manifest.RootElement.GetProperty("schemaVersion").GetInt32());
+        Assert.Equal(typeof(RunCommandTests).Assembly.Location, manifest.RootElement.GetProperty("assembly").GetString());
+        Assert.Equal(Path.GetFullPath(Path.Combine(_results, "pharos.trx")), manifest.RootElement.GetProperty("trx").GetString());
+        Assert.Equal(2, manifest.RootElement.GetProperty("workers").GetArrayLength());
+        Assert.All(manifest.RootElement.GetProperty("tests").EnumerateArray(), test =>
+        {
+            Assert.Equal("Passed", test.GetProperty("rawOutcome").GetString());
+            Assert.False(test.TryGetProperty("flaky", out _)); // No scenario attempt metadata means unknown.
+        });
+    }
+
+    [Fact]
+    public async Task SingleAttemptScenarios_WriteMetadataAndQuarantineOnlyBodyFailure()
+    {
+        const string runId = "provided-parent-run-id";
+        string fqn = typeof(ScenarioAttemptCliProbe).FullName!;
+        string otherFqn = typeof(ScenarioAttemptCliProbeOther).FullName!;
+        Directory.CreateDirectory(_results);
+        string quarantinePath = Path.Combine(_results, "quarantine.json");
+        string expiry = DateOnly.FromDateTime(DateTime.UtcNow).AddDays(1).ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+        File.WriteAllText(quarantinePath, System.Text.Json.JsonSerializer.Serialize(new
+        {
+            schemaVersion = 1,
+            entries = new[]
+            {
+                new { fullyQualifiedName = fqn + ".FailsWhenAsked", owner = "tests", expiresOn = expiry },
+                new { fullyQualifiedName = otherFqn + ".FailsWhenAsked", owner = "tests", expiresOn = expiry },
+            },
+        }));
+        RunOptions options = Options($"FullyQualifiedName={fqn}.Passes|FullyQualifiedName={fqn}.FailsWhenAsked|FullyQualifiedName={otherFqn}.FailsWhenAsked") with
+        {
+            Parallel = 8,
+            QuarantineFile = quarantinePath,
+            WorkerEnvironment = new Dictionary<string, string>
+            {
+                ["PHAROS_RUN_ID"] = runId,
+                ["PHAROS_PROBE_SCENARIO_FAIL"] = "1",
+                ["PHAROS_RUN_EXPLICIT"] = "1",
+            },
+        };
+        StringWriter output = new();
+        int exit = await RunCommand.RunAsync(options, output, new StringWriter(), CancellationToken.None);
+
+        Assert.Equal(RunCommand.ExitPassed, exit);
+        Assert.Contains("Quarantined: 2", output.ToString());
+        Assert.Contains("Failed: 0, Passed: 1, Skipped: 0", output.ToString());
+        IReadOnlyList<TrxResult> trx = Trx.Results(XDocument.Load(Path.Combine(_results, "pharos.trx")));
+        Assert.Contains(trx, result => result.FullyQualifiedName == fqn + ".Passes" && result.Passed);
+        Assert.Contains(trx, result => result.FullyQualifiedName == fqn + ".FailsWhenAsked" && result.Failed);
+        Assert.Contains(trx, result => result.FullyQualifiedName == otherFqn + ".FailsWhenAsked" && result.Failed);
+        using System.Text.Json.JsonDocument manifest = System.Text.Json.JsonDocument.Parse(File.ReadAllText(Path.Combine(_results, "pharos-run.json")));
+        Assert.Equal(runId, manifest.RootElement.GetProperty("runId").GetString());
+        System.Text.Json.JsonElement[] tests = manifest.RootElement.GetProperty("tests").EnumerateArray().ToArray();
+        Assert.Equal(3, tests.Length);
+        System.Text.Json.JsonElement passed = Assert.Single(tests, test => test.GetProperty("fullyQualifiedName").GetString() == fqn + ".Passes");
+        Assert.Equal("Passed", passed.GetProperty("rawOutcome").GetString());
+        Assert.False(passed.GetProperty("flaky").GetBoolean());
+        Assert.Equal(1, passed.GetProperty("attempts").GetArrayLength());
+        Assert.Equal("body", passed.GetProperty("attempts")[0].GetProperty("phase").GetString());
+        System.Text.Json.JsonElement failed = Assert.Single(tests, test => test.GetProperty("fullyQualifiedName").GetString() == fqn + ".FailsWhenAsked");
+        Assert.Equal("Failed", failed.GetProperty("rawOutcome").GetString());
+        Assert.Equal("Quarantined", failed.GetProperty("finalOutcome").GetString());
+        Assert.True(failed.GetProperty("quarantined").GetBoolean());
+        Assert.Equal("body", failed.GetProperty("failurePhase").GetString());
+        System.Text.Json.JsonElement otherFailed = Assert.Single(tests, test => test.GetProperty("fullyQualifiedName").GetString() == otherFqn + ".FailsWhenAsked");
+        Assert.Equal("Quarantined", otherFailed.GetProperty("finalOutcome").GetString());
+
+        string rerunResults = Path.Combine(_results, "rerun");
+        RunOptions rerun = Options("") with
+        {
+            ResultsDirectory = rerunResults,
+            Parallel = 8,
+            RerunFailed = Path.Combine(_results, "pharos-run.json"),
+            Filter = "FullyQualifiedName=" + fqn + ".FailsWhenAsked",
+            WorkerEnvironment = new Dictionary<string, string> { ["PHAROS_PROBE_SCENARIO_FAIL"] = "1" },
+        };
+        StringWriter rerunOutput = new();
+        Assert.Equal(RunCommand.ExitFailed, await RunCommand.RunAsync(rerun, rerunOutput, new StringWriter(), CancellationToken.None));
+        Assert.Contains("Rerunning 2 failed test row", rerunOutput.ToString());
+        IReadOnlyList<TrxResult> rerunTrx = Trx.Results(XDocument.Load(Path.Combine(rerunResults, "pharos.trx")));
+        Assert.Single(rerunTrx);
+        Assert.Equal(fqn + ".FailsWhenAsked", rerunTrx[0].FullyQualifiedName);
+        Assert.True(rerunTrx[0].Failed);
+        using System.Text.Json.JsonDocument rerunManifest = System.Text.Json.JsonDocument.Parse(File.ReadAllText(Path.Combine(rerunResults, "pharos-run.json")));
+        Assert.DoesNotContain(rerunManifest.RootElement.GetProperty("tests").EnumerateArray(), test => test.GetProperty("fullyQualifiedName").GetString() == otherFqn + ".FailsWhenAsked");
+    }
+
+    [Fact]
+    public async Task Repeat_RunsIndependentExecutionsAndWritesAnAggregateManifest()
+    {
+        StringWriter stdout = new();
+        int exit = await RunCommand.RunAsync(Options("FullyQualifiedName~ParallelRunProbes&Category!=ProbeFailure") with { Repeat = 2 }, stdout, new StringWriter(), CancellationToken.None);
+
+        Assert.Equal(RunCommand.ExitPassed, exit);
+        Assert.True(File.Exists(Path.Combine(_results, "run-001", "pharos.trx")));
+        Assert.True(File.Exists(Path.Combine(_results, "run-002", "pharos.trx")));
+        using System.Text.Json.JsonDocument aggregate = System.Text.Json.JsonDocument.Parse(File.ReadAllText(Path.Combine(_results, "pharos-repeat.json")));
+        Assert.Equal("repeat", aggregate.RootElement.GetProperty("mode").GetString());
+        Assert.Equal(2, aggregate.RootElement.GetProperty("completedRuns").GetInt32());
+        Assert.Equal(2, aggregate.RootElement.GetProperty("runs").GetArrayLength());
+    }
+
+    [Fact]
+    public async Task UntilFail_StopsAtTheFirstFailedExecution()
+    {
+        RunOptions options = Options("FullyQualifiedName~ParallelRunProbes&Category=ProbeFailure") with
+        {
+            UntilFail = true,
+            Max = 3,
+            WorkerEnvironment = new Dictionary<string, string> { ["PHAROS_PROBE_FAIL"] = "1" },
+        };
+
+        int exit = await RunCommand.RunAsync(options, new StringWriter(), new StringWriter(), CancellationToken.None);
+
+        Assert.Equal(RunCommand.ExitFailed, exit);
+        using System.Text.Json.JsonDocument aggregate = System.Text.Json.JsonDocument.Parse(File.ReadAllText(Path.Combine(_results, "pharos-repeat.json")));
+        Assert.Equal(1, aggregate.RootElement.GetProperty("completedRuns").GetInt32());
+        Assert.Equal("until-fail", aggregate.RootElement.GetProperty("mode").GetString());
     }
 
     [Fact]
@@ -466,5 +646,28 @@ public static class ParallelRunProbes
         {
             if (Environment.GetEnvironmentVariable("PHAROS_PROBE_FAIL") == "1") Assert.Fail("the probe failed");
         }
+    }
+}
+
+/// <summary>Simple scenario used to prove the CLI writes metadata for default one-attempt runs.</summary>
+public sealed class ScenarioAttemptCliProbe
+{
+    [Zaldaryon.Pharos.XUnit.ServerScenario]
+    public void Passes() { }
+
+    [Zaldaryon.Pharos.XUnit.ServerScenario(Explicit = true)]
+    public void FailsWhenAsked()
+    {
+        if (Environment.GetEnvironmentVariable("PHAROS_PROBE_SCENARIO_FAIL") == "1") Xunit.Assert.Fail("body failed for quarantine probe");
+    }
+}
+
+/// <summary>Second failed row used to verify rerun filtering intersects the user's FQN selection.</summary>
+public sealed class ScenarioAttemptCliProbeOther
+{
+    [Zaldaryon.Pharos.XUnit.ServerScenario(Explicit = true)]
+    public void FailsWhenAsked()
+    {
+        if (Environment.GetEnvironmentVariable("PHAROS_PROBE_SCENARIO_FAIL") == "1") Xunit.Assert.Fail("second body failure for rerun filter probe");
     }
 }

@@ -39,6 +39,10 @@ public static partial class RunCommand
           -p, --parallel <n>       How many workers run at once (default: 1)
           --group class|collection How tests are split between workers (default: class)
           --list                   List the groups and their tests; run nothing
+          --repeat <n>             Run the full selection n times (default: 1)
+          --until-fail --max <n>   Repeat full runs until a failure or the maximum is reached
+          --rerun-failed <json>    Run raw failed test rows from a prior pharos-run.json
+          --quarantine <json>      Apply an expiring quarantine to eligible body failures
           --trx <path>             Where the merged TRX goes (default: <results-dir>/pharos.trx)
           --results-dir <dir>      Worker logs, TRX files and failure artifacts (default: pharos-run)
           --test-timeout <min>     Stop a test host whose test runs longer, keeping the results
@@ -112,17 +116,158 @@ public static partial class RunCommand
 
     internal static async Task<int> RunAsync(RunOptions options, TextWriter stdout, TextWriter stderr, CancellationToken ct)
     {
+        if (options.Repeat < 1 || (options.UntilFail && options.Max is null or < 1) || (!options.UntilFail && options.Max != null) || (options.UntilFail && options.Repeat != 1))
+        {
+            stderr.WriteLine("Error: --repeat must be positive; --until-fail requires positive --max and cannot be combined with --repeat.");
+            return ExitError;
+        }
+
+        if (options.LoadedQuarantine == null)
+        {
+            string defaultQuarantine = Path.Combine(Environment.CurrentDirectory, "pharos.quarantine.json");
+            string? quarantinePath = options.QuarantineFile ?? (File.Exists(defaultQuarantine) ? defaultQuarantine : null);
+            if (options.QuarantineFile != null && !File.Exists(options.QuarantineFile))
+            {
+                stderr.WriteLine($"Error: quarantine file {Path.GetFullPath(options.QuarantineFile)} does not exist.");
+                return ExitError;
+            }
+            if (quarantinePath != null)
+            {
+                try
+                {
+                    options = options with { LoadedQuarantine = QuarantinePolicy.Load(quarantinePath, DateOnly.FromDateTime(DateTime.UtcNow)) };
+                    stdout.WriteLine($"Using quarantine file: {Path.GetFullPath(quarantinePath)} (UTC expiry day is valid through that date).");
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or InvalidDataException or FormatException)
+                {
+                    stderr.WriteLine($"Error: {ex.Message}");
+                    return ExitError;
+                }
+            }
+        }
+
+        if (options.RerunFailed is { } sourceManifestPath)
+        {
+            if (options.Repeat != 1 || options.UntilFail)
+            {
+                stderr.WriteLine("Error: --rerun-failed cannot be combined with --repeat or --until-fail.");
+                return ExitError;
+            }
+
+            string filter;
+            string discoveryFilter;
+            try
+            {
+                IReadOnlyList<(string FullyQualifiedName, string DisplayName)> failureRows = FailedRows(sourceManifestPath);
+                if (failureRows.Count == 0)
+                {
+                    stdout.WriteLine($"No failed tests in {Path.GetFullPath(sourceManifestPath)}; nothing to rerun.");
+                    return ExitPassed;
+                }
+                string rerunFilter = string.Join("|", failureRows.Select(test => Filter.ForTestCase(test.FullyQualifiedName, test.DisplayName)));
+                string failedNames = string.Join("|", failureRows.Select(test => Filter.ForTest(test.FullyQualifiedName)).Distinct(StringComparer.Ordinal));
+                discoveryFilter = options.Filter is { Length: > 0 } currentFilter && DiscoveryCanFilter(currentFilter)
+                    ? $"({currentFilter})&({failedNames})"
+                    : failedNames;
+                filter = options.Filter is { Length: > 0 } current ? $"({current})&({rerunFilter})" : rerunFilter;
+                stdout.WriteLine($"Rerunning {failureRows.Count} failed test row(s) from {Path.GetFullPath(sourceManifestPath)}.");
+                Dictionary<string, string> workerEnvironment = new(options.WorkerEnvironment)
+                {
+                    [Zaldaryon.Pharos.XUnit.Execution.ScenarioExplicitSkip.RunExplicitVariable] = "1",
+                };
+                options = options with { WorkerEnvironment = workerEnvironment };
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or InvalidDataException)
+            {
+                stderr.WriteLine($"Error: {ex.Message}");
+                return ExitError;
+            }
+            options = options with { Filter = filter, DiscoveryFilter = discoveryFilter, RerunFailed = null };
+        }
+
+        int maximumRuns = options.UntilFail ? options.Max!.Value : options.Repeat;
+        if (maximumRuns == 1 && !options.UntilFail) return await RunOnceAsync(options, stdout, stderr, ct).ConfigureAwait(false);
+
+        if (options.ListOnly)
+        {
+            stderr.WriteLine("Error: --list cannot be combined with repeated runs.");
+            return ExitError;
+        }
+
+        string root = Path.GetFullPath(options.ResultsDirectory);
+        List<object> runs = [];
+        bool failed = false;
+        for (int number = 1; number <= maximumRuns; number++)
+        {
+            if (ct.IsCancellationRequested) { failed = true; break; }
+            string runDirectory = Path.Combine(root, $"run-{number:D3}");
+            if (Directory.Exists(runDirectory)) Directory.Delete(runDirectory, recursive: true);
+            string runTrx = Path.Combine(runDirectory, Path.GetFileName(options.TrxPath ?? "pharos.trx"));
+            stdout.WriteLine($"Run {number}/{maximumRuns}");
+            int exit = await RunOnceAsync(options with
+            {
+                Repeat = 1,
+                UntilFail = false,
+                Max = null,
+                ResultsDirectory = runDirectory,
+                TrxPath = runTrx,
+            }, stdout, stderr, ct).ConfigureAwait(false);
+            failed |= exit != ExitPassed;
+
+            string runManifestPath = ScenarioRunManifestWriter.PathFor(runTrx);
+            JsonElement? manifest = null;
+            if (File.Exists(runManifestPath))
+            {
+                using JsonDocument document = JsonDocument.Parse(File.ReadAllText(runManifestPath));
+                manifest = document.RootElement.Clone();
+            }
+            runs.Add(new { number, exitCode = exit, manifest = Path.GetFullPath(runManifestPath), data = manifest });
+            if (options.UntilFail && (exit != ExitPassed || manifest is { } data && HasRawFailure(data))) break;
+        }
+
+        Directory.CreateDirectory(root);
+        string aggregatePath = Path.Combine(root, "pharos-repeat.json");
+        string temporary = aggregatePath + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        try
+        {
+            File.WriteAllText(temporary, JsonSerializer.Serialize(new
+            {
+                schemaVersion = 1,
+                mode = options.UntilFail ? "until-fail" : "repeat",
+                requestedRuns = maximumRuns,
+                completedRuns = runs.Count,
+                runs,
+            }, new JsonSerializerOptions { WriteIndented = true }));
+            File.Move(temporary, aggregatePath, overwrite: true);
+        }
+        finally
+        {
+            if (File.Exists(temporary)) File.Delete(temporary);
+        }
+        stdout.WriteLine($"Aggregate run manifest: {aggregatePath}");
+        return failed || ct.IsCancellationRequested ? ExitFailed : ExitPassed;
+    }
+
+    private static async Task<int> RunOnceAsync(RunOptions options, TextWriter stdout, TextWriter stderr, CancellationToken ct)
+    {
         Output output = new(options.Json ? null : stdout, options.Json ? stdout : null);
         string dotnet = Worker.DotnetHost();
         string results = Path.GetFullPath(options.ResultsDirectory);
         string trxPath = Path.GetFullPath(options.TrxPath ?? Path.Combine(results, "pharos.trx"));
+        string previousManifest = ScenarioRunManifestWriter.PathFor(trxPath);
+        if (File.Exists(previousManifest)) File.Delete(previousManifest);
 
         // Listing evaluates names and traits only; a filter on anything else (DisplayName, Name)
         // would list nothing. Then every test is listed, and the workers apply the filter.
-        bool exactDiscovery = DiscoveryCanFilter(options.Filter);
-        string? listFilter = exactDiscovery ? NormalizeForListing(options.Filter) : null;
+        string? discoveryFilter = options.DiscoveryFilter ?? options.Filter;
+        // Rerun discovery narrows to failed FQNs, while execution also filters exact theory rows
+        // (and may intersect a user filter). It is therefore a candidate superset, not an exact
+        // list of the rows that must report results.
+        bool exactDiscovery = options.DiscoveryFilter == null && DiscoveryCanFilter(options.Filter);
+        bool canFilterDiscovery = DiscoveryCanFilter(discoveryFilter);
+        string? listFilter = canFilterDiscovery ? NormalizeForListing(discoveryFilter) : null;
         const string FallbackNote = "The filter uses properties listing cannot evaluate: every test is grouped, and each worker applies the filter.";
-        if (!exactDiscovery) output.Note(FallbackNote);
+        if (!canFilterDiscovery) output.Note(FallbackNote);
 
         string assembly;
         IReadOnlyList<string> tests;
@@ -181,6 +326,9 @@ public static partial class RunCommand
         string workers = Path.Combine(results, "workers");
         if (Directory.Exists(workers)) Directory.Delete(workers, recursive: true);
         Directory.CreateDirectory(workers);
+        string attemptsDirectory = Path.Combine(results, "attempts");
+        if (Directory.Exists(attemptsDirectory)) Directory.Delete(attemptsDirectory, recursive: true);
+        Directory.CreateDirectory(attemptsDirectory);
         int parallel = Math.Min(options.Parallel, groups.Count);
 
         Dictionary<string, string> environment = new(options.WorkerEnvironment);
@@ -191,10 +339,10 @@ public static partial class RunCommand
             environment[Zaldaryon.Pharos.XUnit.Execution.ScenarioExplicitSkip.RunExplicitVariable] = "1";
         }
         // One id for the whole run in every failure's run.json.
-        if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable(Reporting.FailureArtifactWriter.RunIdVariable)))
-        {
-            environment[Reporting.FailureArtifactWriter.RunIdVariable] = Guid.NewGuid().ToString("N")[..12];
-        }
+        string runId = environment.GetValueOrDefault(Reporting.FailureArtifactWriter.RunIdVariable)
+            ?? Environment.GetEnvironmentVariable(Reporting.FailureArtifactWriter.RunIdVariable)
+            ?? Guid.NewGuid().ToString("N")[..12];
+        environment[Reporting.FailureArtifactWriter.RunIdVariable] = runId;
 
         // Software rendering uses every core for each client; several clients share them.
         if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable("LP_NUM_THREADS")) && parallel > 1)
@@ -242,6 +390,7 @@ public static partial class RunCommand
                 // Artifact folders are named after the class's short name: one root per worker
                 // keeps two namespaces' FooTests apart.
                 [Reporting.FailureArtifactWriter.DirectoryVariable] = Path.Combine(artifacts, $"worker-{index}"),
+                [Zaldaryon.Pharos.XUnit.Execution.ScenarioAttemptManifestWriter.DirectoryVariable] = Path.Combine(attemptsDirectory, $"worker-{index}"),
             };
             running.Add(Task.Run(async () =>
             {
@@ -276,11 +425,81 @@ public static partial class RunCommand
             $"pharos run {Path.GetFileName(assembly)}");
         merged.Save(trxPath);
 
-        Summary summary = new(outcomes, notStarted, watch.Elapsed, trxPath, workers);
+        string manifestPath = ScenarioRunManifestWriter.PathFor(trxPath);
+        ScenarioRunManifest runManifest = ScenarioRunManifestWriter.Write(manifestPath, runId, start, DateTimeOffset.Now, assembly, trxPath, merged,
+            outcomes, notStarted, attemptsDirectory, options.LoadedQuarantine);
+        output.Note($"Attempt manifest: {manifestPath}");
+
+        HashSet<(string FullyQualifiedName, string DisplayName)> quarantined = runManifest.Tests
+            .Where(test => test.Quarantined)
+            .Select(test => (test.FullyQualifiedName, test.DisplayName)).ToHashSet();
+        if (quarantined.Count > 0)
+        {
+            foreach (ScenarioRunTest test in runManifest.Tests.Where(test => test.Quarantined))
+                output.Note($"Quarantined {test.FullyQualifiedName} ({test.DisplayName}) — owner {test.QuarantineOwner}, expires {test.QuarantineExpiresOn} UTC.");
+        }
+        Summary summary = new(outcomes, notStarted, watch.Elapsed, trxPath, workers, quarantined);
         if (summary.Total == 0) output.Note("No tests matched.");
         output.Summary(summary);
-        return summary.Failed > 0 || ct.IsCancellationRequested ? ExitFailed : ExitPassed;
+        bool infrastructureFailed = outcomes.Any(outcome => outcome.Crashed || outcome.TimedOut || outcome.Lost.Count > 0) || notStarted.Count > 0;
+        bool testsFailed = Trx.Results(merged).Any(result => result.Failed && !quarantined.Contains((result.FullyQualifiedName, result.TestName)));
+        return infrastructureFailed || testsFailed || ct.IsCancellationRequested ? ExitFailed : ExitPassed;
     }
+
+    internal static IReadOnlyList<(string FullyQualifiedName, string DisplayName)> FailedRows(string path)
+    {
+        if (!File.Exists(path)) throw new InvalidDataException($"The pharos run manifest {Path.GetFullPath(path)} does not exist.");
+        using JsonDocument document = JsonDocument.Parse(File.ReadAllText(path));
+        JsonElement root = document.RootElement;
+        if (root.ValueKind != JsonValueKind.Object || !root.TryGetProperty("schemaVersion", out JsonElement schema) || schema.ValueKind != JsonValueKind.Number ||
+            !schema.TryGetInt32(out int version) || version != 1)
+            throw new InvalidDataException("The file is not a supported pharos run manifest (schemaVersion 1 expected).");
+        List<JsonElement> testArrays = [];
+        if (root.TryGetProperty("tests", out JsonElement tests))
+        {
+            if (tests.ValueKind != JsonValueKind.Array) throw new InvalidDataException("The pharos run manifest needs a tests array.");
+            testArrays.Add(tests);
+        }
+        else if (root.TryGetProperty("runs", out JsonElement runs) && runs.ValueKind == JsonValueKind.Array)
+        {
+            foreach (JsonElement run in runs.EnumerateArray())
+            {
+                if (run.ValueKind != JsonValueKind.Object || !run.TryGetProperty("data", out JsonElement data))
+                    throw new InvalidDataException("The pharos repeat manifest contains an invalid run entry.");
+                // An interrupted run can have no aggregate data yet. It has no raw test rows to rerun.
+                if (data.ValueKind == JsonValueKind.Null) continue;
+                if (data.ValueKind != JsonValueKind.Object || !data.TryGetProperty("schemaVersion", out JsonElement runSchema) ||
+                    runSchema.ValueKind != JsonValueKind.Number || !runSchema.TryGetInt32(out int runVersion) || runVersion != 1 ||
+                    !data.TryGetProperty("tests", out JsonElement runTests) || runTests.ValueKind != JsonValueKind.Array)
+                    throw new InvalidDataException("The pharos repeat manifest contains unsupported run data.");
+                testArrays.Add(runTests);
+            }
+        }
+        else throw new InvalidDataException("The file is not a supported pharos run manifest (schemaVersion 1 expected).");
+
+        List<(string FullyQualifiedName, string DisplayName)> failedRows = [];
+        foreach (JsonElement array in testArrays)
+        {
+            foreach (JsonElement test in array.EnumerateArray())
+            {
+                if (test.ValueKind != JsonValueKind.Object || !test.TryGetProperty("rawOutcome", out JsonElement outcome) || outcome.ValueKind != JsonValueKind.String ||
+                    !test.TryGetProperty("fullyQualifiedName", out JsonElement fqnElement) || fqnElement.ValueKind != JsonValueKind.String ||
+                    !test.TryGetProperty("displayName", out JsonElement displayElement) || displayElement.ValueKind != JsonValueKind.String)
+                    throw new InvalidDataException("The pharos run manifest contains an invalid test row.");
+                if (outcome.GetString() != "Failed") continue;
+                string? fqn = fqnElement.GetString();
+                string? display = displayElement.GetString();
+                if (string.IsNullOrWhiteSpace(fqn) || string.IsNullOrWhiteSpace(display) ||
+                    display.Contains("(worker aborted)", StringComparison.Ordinal) || display.Contains("(not started)", StringComparison.Ordinal)) continue;
+                failedRows.Add((fqn, display));
+            }
+        }
+        return failedRows.Distinct().ToArray();
+    }
+
+    private static bool HasRawFailure(JsonElement manifest) =>
+        manifest.ValueKind == JsonValueKind.Object && manifest.TryGetProperty("tests", out JsonElement tests) && tests.ValueKind == JsonValueKind.Array &&
+        tests.EnumerateArray().Any(test => test.ValueKind == JsonValueKind.Object && test.TryGetProperty("rawOutcome", out JsonElement outcome) && outcome.ValueKind == JsonValueKind.String && outcome.GetString() is "Failed" or "Error" or "Timeout" or "Aborted");
 
     /// <summary>
     /// Whether listing can apply <paramref name="filter"/>: it evaluates fully qualified names and
@@ -443,15 +662,18 @@ public static partial class RunCommand
     internal sealed class RunSetupException(string message) : Exception(message);
 
     /// <summary>What a run did, for the summary.</summary>
-    private sealed record Summary(IReadOnlyList<WorkerOutcome> Outcomes, IReadOnlyList<TrxResult> NotStarted, TimeSpan Duration, string TrxPath, string WorkersDirectory)
+    internal sealed record Summary(IReadOnlyList<WorkerOutcome> Outcomes, IReadOnlyList<TrxResult> NotStarted, TimeSpan Duration, string TrxPath, string WorkersDirectory,
+        IReadOnlySet<(string FullyQualifiedName, string DisplayName)> Quarantined)
     {
         public int Passed => Outcomes.Sum(o => o.Passed);
 
-        public int Failed => Outcomes.Sum(o => o.Failed) + NotStarted.Count;
+        public int Failed => Outcomes.Sum(o => o.Lost.Count + o.Results.Count(r => r.Failed && !Quarantined.Contains((r.FullyQualifiedName, r.TestName)))) + NotStarted.Count;
 
-        public int Skipped => Outcomes.Sum(o => o.Skipped);
+        public int Skipped => Outcomes.Sum(o => o.Results.Count(r => r.Skipped && !Quarantined.Contains((r.FullyQualifiedName, r.TestName))));
 
-        public int Total => Passed + Failed + Skipped;
+        public int QuarantinedCount => Quarantined.Count;
+
+        public int Total => Passed + Failed + Skipped + QuarantinedCount;
     }
 
     // The install workers will use when no --game is given; nothing is booted to find it.
@@ -567,6 +789,7 @@ public static partial class RunCommand
                     passed = summary.Passed,
                     failed = summary.Failed,
                     skipped = summary.Skipped,
+                    quarantined = summary.QuarantinedCount,
                     total = summary.Total,
                     durationMs = (long)summary.Duration.TotalMilliseconds,
                     trx = summary.TrxPath,
@@ -575,7 +798,7 @@ public static partial class RunCommand
 
                 text.WriteLine();
                 List<(string Name, string? Message)> failures = summary.Outcomes
-                    .SelectMany(o => o.Results.Where(r => r.Failed).Concat(o.Lost))
+                    .SelectMany(o => o.Results.Where(r => r.Failed && !summary.Quarantined.Contains((r.FullyQualifiedName, r.TestName))).Concat(o.Lost))
                     .Concat(summary.NotStarted)
                     .Select(r => (r.TestName, r.Message))
                     .ToList();
@@ -598,7 +821,7 @@ public static partial class RunCommand
                 }
 
                 text.WriteLine();
-                text.WriteLine($"{(summary.Failed > 0 ? "Failed!" : "Passed!")}  - Failed: {summary.Failed}, Passed: {summary.Passed}, Skipped: {summary.Skipped}, Total: {summary.Total}, Duration: {Format(summary.Duration)}");
+                text.WriteLine($"{(summary.Failed > 0 ? "Failed!" : "Passed!")}  - Failed: {summary.Failed}, Passed: {summary.Passed}, Skipped: {summary.Skipped}, Quarantined: {summary.QuarantinedCount}, Total: {summary.Total}, Duration: {Format(summary.Duration)}");
                 text.WriteLine($"Results: {summary.TrxPath}");
                 text.WriteLine($"Worker logs: {summary.WorkersDirectory}");
             }
