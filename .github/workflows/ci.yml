@@ -190,8 +190,12 @@ jobs:
             --version "0.0.0-ci.${{ github.run_id }}.${{ github.run_attempt }}"
           # From outside the repository, as a mod's own CI would run it.
           cd "$RUNNER_TEMP"
+          # During join, the server can send region weather before the client has loaded that map region.
+          # Allow only this dropped update; strict still rejects every other boot warning.
           xvfb-run -a "$RUNNER_TEMP/pharos-tool/pharos" smoke --mod "$TEST_MODS/pharostestmod" --frames 300 \
-            --command "/time set day" --strict --preset survival --artifacts "$GITHUB_WORKSPACE/artifacts/pharos/tool-smoke"
+            --command "/time set day" --strict \
+            --allow '^weatherSim for region -?[0-9]+/-?[0-9]+ is null\. No idea what to do here$' \
+            --preset survival --artifacts "$GITHUB_WORKSPACE/artifacts/pharos/tool-smoke"
           set +e
           # Keep the auth file outside xvfb-run's auto-cleanup directory so cleanup preserves the CLI exit code.
           xvfb-run -a -f "$RUNNER_TEMP/pharosbrokenmod.Xauthority" "$RUNNER_TEMP/pharos-tool/pharos" smoke --mod "$TEST_MODS/pharosbrokenmod" --strict \

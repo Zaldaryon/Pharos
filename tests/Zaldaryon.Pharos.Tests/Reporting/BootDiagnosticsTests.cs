@@ -93,6 +93,23 @@ public class BootDiagnosticsTests
     }
 
     [Fact]
+    public void JoinWeatherAllowance_MatchesOnlyTheKnownDroppedRegionUpdate()
+    {
+        const string pattern = @"^weatherSim for region -?[0-9]+/-?[0-9]+ is null\. No idea what to do here$";
+
+        BootDiagnosticsResult expected = Boot(
+            Warning("weatherSim for region -1001/42 is null. No idea what to do here"))
+            .Check([new AllowBootDiagnosticAttribute(pattern)]);
+        BootDiagnosticsResult unexpected = Boot(
+            Warning("weatherSim for region 1001/42 is null. Unexpected"))
+            .Check([new AllowBootDiagnosticAttribute(pattern)]);
+
+        Assert.True(expected.Passed);
+        Assert.False(unexpected.Passed);
+        Assert.Single(unexpected.Unexpected);
+    }
+
+    [Fact]
     public void Count_IsExact_AndImpliesRequired()
     {
         BootDiagnostics boot = Boot(Warning("shape missing a"), Warning("shape missing b"));
