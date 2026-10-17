@@ -366,12 +366,22 @@ public void Test1()
 
 ### Save Artifacts on Failure
 
-When visual tests fail, save the actual output for debugging:
+For a visual regression, use a named golden comparison. Pharos writes detached actual and expected
+images and a heatmap to the scenario failure artifacts when available:
 
-```csharp
-if (!result.IsMatch)
-{
-    Directory.CreateDirectory("artifacts");
-    snapshot.SaveToPng($"artifacts/{TestContext.TestName}-actual.png");
-}
-```
+    PharosAssert.MatchesGolden(
+        Client!.CaptureFrame(),
+        "lantern-lit",
+        new GoldenImageOptions
+        {
+            Regions = [new(600, 300, 400, 300)],
+            Masks = [new(0, 0, 120, 36)], // for a clock at the top-left
+            LocalTolerance = 0.08,
+            GlobalTolerance = 0.002,
+            Metric = GoldenImageMetric.Perceptual,
+        });
+
+Store baselines in Goldens/, or set PHAROS_GOLDENS to another root. Platform-specific files use
+name.linux.png, name.windows.png, or name.macos.png; name.png is the generic fallback. Set
+PHAROS_UPDATE_GOLDENS=1 to create a missing baseline or replace one that fails. If a generic
+fallback fails, update mode writes a platform-specific image and keeps the generic baseline intact.

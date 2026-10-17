@@ -9,6 +9,7 @@ using Vintagestory.API.Config;
 using Zaldaryon.Pharos.Bootstrap;
 using Zaldaryon.Pharos.Core;
 using Zaldaryon.Pharos.Server;
+using Zaldaryon.Pharos.Visual;
 
 namespace Zaldaryon.Pharos.Reporting;
 
@@ -215,6 +216,8 @@ internal static class FailureArtifactWriter
         }
 
         FailureArtifacts artifacts = failure.Artifacts;
+
+        GoldenImageFailureArtifacts.WriteFrom(failure.Exception, directory, files, problems);
 
         if (artifacts.HasFlag(FailureArtifacts.Screenshot) && failure.ClientReachable && failure.Client is { IsDisposed: false } client)
         {

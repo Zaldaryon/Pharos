@@ -546,6 +546,28 @@ public class ShaderTests : ClientScenarioBase
 
 ## FramebufferSnapshot
 
+### Region-aware golden images
+
+Use PharosAssert.MatchesGolden for a named baseline. Goldens live under Goldens/ by default, or under the directory in PHAROS_GOLDENS. Names are relative paths without a platform suffix. Pharos checks <name>.<platform>.png first, then <name>.png; platforms are linux, windows, and macos. If a generic fallback fails, PHAROS_UPDATE_GOLDENS=1 writes the actual frame to the platform-specific path and leaves the generic file intact. Missing goldens are created at the platform-specific path. The update writes a temporary PNG beside the target and renames it into place. Decode and filesystem errors remain failures.
+
+    PharosAssert.MatchesGolden(
+        Client!.CaptureFrame(),
+        "lantern-lit",
+        new GoldenImageOptions
+        {
+            Regions = [new(600, 300, 400, 300)],
+            Masks = [new(0, 0, 120, 36)], // for a clock at the top-left
+            LocalTolerance = 0.08,
+            GlobalTolerance = 0.002,
+            Metric = GoldenImageMetric.Perceptual,
+        });
+
+An empty Regions list compares the full frame. Rectangles use pixel coordinates with a top-left origin and positive width and height. Overlapping regions count each pixel once; masks are removed from their union and from the denominator. A pixel fails when its normalized error is greater than LocalTolerance. The image passes when the fraction of failed pixels is at most GlobalTolerance, so equality at either limit passes.
+
+Rgb uses the maximum normalized RGB channel difference. Perceptual uses CIEDE2000 color difference in CIELAB, normalized by 100. Both compare straight-alpha sRGB after compositing color over black, and also compare alpha as a normalized byte difference. The per-pixel error is the larger of color and alpha error. Masks and rectangles are validated before comparing.
+
+On a golden comparison failure, Pharos saves detached golden-<name>-<n>-actual.png, expected and heatmap PNGs when an expected image was available, and a text summary beside the scenario's regular failure artifacts. A missing golden produces an actual image only. The expected artifact is never fabricated from the actual frame.
+
 Captures and compares framebuffer pixel data for visual regression testing.
 
 ### Purpose
