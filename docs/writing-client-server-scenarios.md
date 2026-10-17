@@ -15,7 +15,6 @@ dotnet add package Zaldaryon.Pharos.XUnit
 Inherit from `ClientServerScenarioBase` and use `[ClientServerScenario]`:
 
 ```csharp
-// run
 using Zaldaryon.Pharos.XUnit;
 using Xunit;
 

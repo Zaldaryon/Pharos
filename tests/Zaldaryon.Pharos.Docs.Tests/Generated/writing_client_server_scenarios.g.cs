@@ -57,11 +57,9 @@ namespace Zaldaryon.Pharos.Docs.Generated.writing_client_server_scenarios.Snippe
     using Zaldaryon.Pharos.XUnit;
 using Xunit;
 #line 17 "docs/writing-client-server-scenarios.md"
-// run
-
 public class BlockSyncTests : ClientServerScenarioBase
 {
-    [ClientServerScenario]
+    [DocExample]
     public async Task PlacingBlock_SyncsToClient()
     {
         var pos = new BlockPos(10, 64, 10);
@@ -124,7 +122,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.writing_client_server_scenarios.Snippe
         
         public async Task ExecuteSnippetAsync()
         {
-#line 64 "docs/writing-client-server-scenarios.md"
+#line 63 "docs/writing-client-server-scenarios.md"
 // Single lockstep frame
 Session.Step();
 
@@ -187,7 +185,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.writing_client_server_scenarios.Snippe
         
         public async Task ExecuteSnippetAsync()
         {
-#line 83 "docs/writing-client-server-scenarios.md"
+#line 82 "docs/writing-client-server-scenarios.md"
 // Block at pos is the same on client and server
 ClientServerAssert.ClientServerBlockSynced(Session, pos);
 
@@ -250,7 +248,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.writing_client_server_scenarios.Snippe
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-#line 109 "docs/writing-client-server-scenarios.md"
+#line 108 "docs/writing-client-server-scenarios.md"
 [DocExample]
 public async Task Wetting_ThePlayer_ReachesTheClient()
 {
@@ -281,7 +279,7 @@ public async Task Wetting_ThePlayer_ReachesTheClient()
 namespace Zaldaryon.Pharos.Docs.Generated.writing_client_server_scenarios.Snippet_5
 {
     
-#line 142 "docs/writing-client-server-scenarios.md"
+#line 141 "docs/writing-client-server-scenarios.md"
 [ServerWorld(seed: 4242, playStyle: "surviveandbuild")]   // a creative player takes no damage
 public class DeathScreenTests : ClientServerScenarioBase
 {
@@ -304,7 +302,7 @@ public class DeathScreenTests : ClientServerScenarioBase
 namespace Zaldaryon.Pharos.Docs.Generated.writing_client_server_scenarios.Snippet_6
 {
     
-#line 168 "docs/writing-client-server-scenarios.md"
+#line 167 "docs/writing-client-server-scenarios.md"
 public class PacketTracingTests : ClientServerScenarioBase
 {
     [DocExample]
@@ -367,7 +365,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.writing_client_server_scenarios.Snippe
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-#line 192 "docs/writing-client-server-scenarios.md"
+#line 191 "docs/writing-client-server-scenarios.md"
 [DocExample]
 public async Task ClientReconnects_AfterPacketLoss()
 {
@@ -433,7 +431,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.writing_client_server_scenarios.Snippe
         
         public async Task ExecuteSnippetAsync()
         {
-#line 215 "docs/writing-client-server-scenarios.md"
+#line 214 "docs/writing-client-server-scenarios.md"
 Client.NetworkDegradation.Run(NetworkScript.Begin(DegradedNetworkProfile.None)
     .Then(1000, new DegradedNetworkProfile(Outage: true))
     .Then(3000, DegradedNetworkProfile.None));
@@ -487,7 +485,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.writing_client_server_scenarios.Snippe
         
         public async Task ExecuteSnippetAsync()
         {
-#line 224 "docs/writing-client-server-scenarios.md"
+#line 223 "docs/writing-client-server-scenarios.md"
 using (Client.NetworkDegradation.Filter(p => p.Channel == "mymod" && p.MessageId == 2))
 {
     await Session.HoldAsync(PlayerAction.Forward, 60);
@@ -546,7 +544,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.writing_client_server_scenarios.Snippe
         
         public async Task ExecuteSnippetAsync()
         {
-#line 241 "docs/writing-client-server-scenarios.md"
+#line 240 "docs/writing-client-server-scenarios.md"
             
 ModMessage delivered = await Client!.ModNetwork.DeliverAsync("mymod", new SyncPacket { Version = 1 });
 SyncAck ack = await Client.ModNetwork.WaitForSentAsync<SyncAck>("mymod", since: delivered.Sequence);
@@ -560,7 +558,7 @@ Assert.Equal(1, ack.Version);
 namespace Zaldaryon.Pharos.Docs.Generated.writing_client_server_scenarios.Snippet_11
 {
     
-#line 309 "docs/writing-client-server-scenarios.md"
+#line 308 "docs/writing-client-server-scenarios.md"
 public class ExpensiveSetupTests : ClientServerScenarioBase
 {
     // Every test boots its own pair.
@@ -614,7 +612,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.writing_client_server_scenarios.Snippe
         
         public async Task ExecuteSnippetAsync()
         {
-#line 319 "docs/writing-client-server-scenarios.md"
+#line 318 "docs/writing-client-server-scenarios.md"
 ServerHost!.Calendar.Freeze();               // first, or time runs on between the calls
 ServerHost.Calendar.SetTime(hourOfDay: 22);
 await Session!.WaitForCalendarSyncAsync();
@@ -628,7 +626,7 @@ Assert.Equal(22f, Client!.RunOnClientThread(() => Client.Client.Calendar.HourOfD
 namespace Zaldaryon.Pharos.Docs.Generated.writing_client_server_scenarios.Snippet_13
 {
     
-#line 330 "docs/writing-client-server-scenarios.md"
+#line 329 "docs/writing-client-server-scenarios.md"
 [ServerWorld(Isolation = Isolation.Rollback, StrictIsolation = true)]
 public class MyTests : ClientServerScenarioBase
 {
