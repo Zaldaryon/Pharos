@@ -9,6 +9,7 @@ packages/
 TestResults/
 [Tt]est[Rr]esults/
 *.trx
+pharos-run/
 
 # Visual Studio / Rider / VS Code
 .vs/

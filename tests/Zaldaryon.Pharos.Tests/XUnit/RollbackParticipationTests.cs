@@ -42,6 +42,40 @@ public class IsolationReportTests
     }
 
     [Fact]
+    public void CrossClassHostSharing_AllowsReuseWhenKeyMatches()
+    {
+        Type classA = typeof(LogSample);
+        Type classB = typeof(OtherLogSample);
+        IsolationLog.Forget(classA);
+        IsolationLog.Forget(classB);
+
+        FakeHost host = new();
+        ScenarioHostPool.Return(classA, "key1", host);
+
+        // Class B with matching key gets the pooled host from Class A
+        FakeHost? taken = ScenarioHostPool.Take<FakeHost>(classB, "key1");
+        Assert.Same(host, taken);
+        Assert.False(host.Disposed);
+
+        // Class A recorded rollback before returning host
+        IsolationReport rolledBack = new(IsolationKind.RolledBack, null, 10, 2, TimeSpan.FromMilliseconds(42));
+        IsolationLog.Left(classA, rolledBack, fallback: null, kept: true);
+
+        // Class B prepares with reused: true and inherits the rollback report
+        IsolationReport preparedB = IsolationLog.Prepared(classB, reused: true, recycled: false, TimeSpan.Zero);
+        Assert.Equal(IsolationKind.RolledBack, preparedB.Kind);
+        Assert.Equal(10, preparedB.ChunksRestored);
+        Assert.Equal(2, preparedB.ListenersRemoved);
+
+        // Mismatched key disposes host and returns null
+        FakeHost host2 = new();
+        ScenarioHostPool.Return(classB, "key1", host2);
+        FakeHost? mismatch = ScenarioHostPool.Take<FakeHost>(classA, "key2");
+        Assert.Null(mismatch);
+        Assert.True(host2.Disposed);
+    }
+
+    [Fact]
     public void ATestsListeners_AreTheOnesCompiledIntoItsAssembly()
     {
         IReadOnlySet<System.Reflection.Assembly> assemblies = IsolationLog.TestAssemblies(typeof(LogSample));
@@ -56,6 +90,12 @@ public class IsolationReportTests
     }
 
     private sealed class LogSample;
+    private sealed class OtherLogSample;
+    private sealed class FakeHost : IDisposable
+    {
+        public bool Disposed { get; private set; }
+        public void Dispose() => Disposed = true;
+    }
 }
 
 /// <summary>

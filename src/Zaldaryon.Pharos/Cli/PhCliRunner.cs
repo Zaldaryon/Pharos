@@ -78,6 +78,13 @@ public static class PhCliRunner
                 case "diff":
                     return ParallelRuns.DiffCommand.Run(args[1..], stdout, stderr);
 
+                case "merge" or "merge-runs":
+                    return ParallelRuns.MergeCommand.Run(args[1..], stdout, stderr);
+
+                case "help" when args.Length > 1 && args[1] is "merge" or "merge-runs":
+                    stdout.WriteLine(ParallelRuns.MergeCommand.HelpText);
+                    return ExitCodeSuccess;
+
                 case "help" when args.Length > 1 && args[1] == "diff":
                     stdout.WriteLine(ParallelRuns.DiffCommand.HelpText);
                     return ExitCodeSuccess;
