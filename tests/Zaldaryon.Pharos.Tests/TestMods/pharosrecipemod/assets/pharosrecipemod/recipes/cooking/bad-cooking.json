@@ -1,0 +1,21 @@
+{
+  code: "bad-cooking",
+  ingredients: [
+    {
+      code: "unknown",
+      minQuantity: 1,
+      maxQuantity: 1,
+      typeName: "unknown",
+      validStacks: [
+        { type: "item", code: "pharosrecipemod:missing-cooking-*" }
+      ]
+    }
+  ],
+  shape: { base: "block/food/meal/liquid" },
+  perishableProps: {
+    type: "None",
+    freshHours: { avg: 0 },
+    transitionHours: { avg: 0 },
+    transitionedStack: { type: "item", code: "game:rot" }
+  }
+}

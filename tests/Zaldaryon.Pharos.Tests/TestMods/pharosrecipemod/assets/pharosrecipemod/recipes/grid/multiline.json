@@ -1,0 +1,27 @@
+[
+  {
+    ingredientPattern: "MNO",
+    ingredients: {
+      "M": {
+        type: "item",
+        code: "pharosrecipemod:*-missing-multiline",
+        allowedVariants: ["nothing"]
+      },
+      "N": {
+        type: "item",
+        code: "game:clay-*",
+        allowedVariants: ["not-a-real-variant"]
+      },
+      "O": {
+        type: "item",
+        code: "game:clay-*",
+        allowedVariants: ["blue"],
+        skipVariants: ["blue"]
+      }
+    },
+    width: 3,
+    height: 1,
+    shapeless: true,
+    output: { type: "item", code: "game:stick", quantity: 1 }
+  }
+]

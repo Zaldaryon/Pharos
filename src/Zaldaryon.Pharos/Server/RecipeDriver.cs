@@ -1,6 +1,7 @@
 using System.Collections;
 using System.Reflection;
 using System.Text.RegularExpressions;
+using Newtonsoft.Json.Linq;
 using Vintagestory.API.Common;
 using Vintagestory.API.Common.Entities;
 using Vintagestory.API.MathTools;
@@ -566,53 +567,98 @@ public sealed class RecipeDriver
             }
         }
 
-        // The grid recipe files: each ingredient on its own line must name an item or block, and each wildcard must match one,
-        // completed with the variants the line allows. Outputs are left out: an output that names nothing stops its recipe from
-        // registering, which the search check reports.
-        foreach (AssetLocation location in api.Assets.GetLocations("recipes/grid", domain))
+        // Parse every recipe category with the asset manager, just as the game's recipe loaders do. This handles relaxed JSON,
+        // multi-line definitions and arrays of recipes. Outputs stay with the registry check above: an unresolved output
+        // prevents that recipe from registering.
+        foreach (string category in RecipeCategories)
         {
-            string text = api.Assets.TryGet(location)?.ToText() ?? "";
-            foreach (string line in text.Split('\n'))
+            foreach (AssetLocation location in api.Assets.GetLocations($"recipes/{category}", domain))
             {
-                if (line.Contains("output", StringComparison.Ordinal)) continue;
-                Match ingredient = IngredientPattern.Match(line);
-                if (!ingredient.Success) continue;
-                string code = ingredient.Groups["code"].Value;
-                if (code.Contains('{')) continue;
-                Match allowed = AllowedVariantsPattern.Match(line);
-                List<string> variants = allowed.Success ? QuotedPattern.Matches(allowed.Groups["list"].Value).Select(m => m.Groups[1].Value).ToList() : [];
-                string? reason = CodeProblem(world, code, variants);
-                if (reason is not null) result.Add(new UnresolvedRecipe(location.ToString(), reason));
+                JToken? content = api.Assets.TryGet(location)?.ToObject<JToken>();
+                if (content is null) continue;
+                foreach (JToken recipe in content is JArray recipes ? recipes : [content])
+                {
+                    foreach (JObject ingredient in IngredientObjects(recipe, category))
+                    {
+                        string? code = StringProperty(ingredient, "code");
+                        if (string.IsNullOrWhiteSpace(code)) continue;
+
+                        string[] allowed = StringArray(ingredient["allowedVariants"]);
+                        string[] skipped = StringArray(ingredient["skipVariants"]);
+                        string? reason = CodeProblem(world, code, allowed, skipped);
+                        if (reason is not null) result.Add(new UnresolvedRecipe(location.ToString(), reason));
+                    }
+                }
             }
         }
 
         return result;
     }
 
-    // An ingredient line of a grid recipe: its type and code, such as `"C": { type: "block", code: "torch-crude-*-up", ... }`.
-    private static readonly Regex IngredientPattern = new(@"type:\s*""(?:item|block)""\s*,\s*code:\s*""(?<code>[^""]+)""", RegexOptions.Compiled);
+    private static readonly string[] RecipeCategories = ["grid", "knapping", "clayforming", "smithing", "alloy", "cooking", "barrel"];
 
-    // The variants a wildcard ingredient may take, such as `allowedVariants: ["extinct", "lit"]`, and the quoted names in that list.
-    private static readonly Regex AllowedVariantsPattern = new(@"allowedVariants:\s*\[(?<list>[^\]]*)\]", RegexOptions.Compiled);
-    private static readonly Regex QuotedPattern = new(@"""([^""]+)""", RegexOptions.Compiled);
+    private static IEnumerable<JObject> IngredientObjects(JToken recipe, string category)
+    {
+        if (recipe is not JObject definition) yield break;
+
+        if (category == "cooking")
+        {
+            if (definition["ingredients"] is not JArray cookingIngredients) yield break;
+            foreach (JToken cookingIngredient in cookingIngredients)
+            {
+                if (cookingIngredient["validStacks"] is not JArray validStacks) continue;
+                foreach (JObject stack in validStacks.OfType<JObject>()) yield return stack;
+            }
+            yield break;
+        }
+
+        if (!TryProperty(definition, category == "grid" ? "ingredients" : "ingredient", out JToken? singular)
+            && !TryProperty(definition, "ingredients", out singular)) yield break;
+
+        if (singular is JObject ingredient)
+        {
+            if (category == "grid")
+            {
+                foreach (JObject value in ingredient.Properties().Select(property => property.Value).OfType<JObject>()) yield return value;
+            }
+            else
+            {
+                yield return ingredient;
+            }
+        }
+        else if (singular is JArray ingredients)
+        {
+            foreach (JObject value in ingredients.OfType<JObject>()) yield return value;
+        }
+    }
+
+    private static bool TryProperty(JObject value, string name, out JToken? property) =>
+        value.TryGetValue(name, StringComparison.OrdinalIgnoreCase, out property);
+
+    private static string? StringProperty(JObject value, string name) =>
+        TryProperty(value, name, out JToken? property) && property?.Type == JTokenType.String ? property.Value<string>() : null;
+
+    private static string[] StringArray(JToken? value) => value is JArray array ? array.Values<string>().OfType<string>().ToArray() : [];
 
     // A code without a domain belongs to the game. A wildcard matches the codes the game matches it to, with the variants the line allows.
-    private static string? CodeProblem(IWorldAccessor world, string code, List<string> variants)
+    private static string? CodeProblem(IWorldAccessor world, string code, string[] allowedVariants, string[] skippedVariants)
     {
-        if (!code.Contains('*'))
+        if (!code.Contains('*') && !code.Contains('{'))
         {
             return Exists(world, code) ? null : $"{code} names no item or block";
         }
 
-        AssetLocation location = code.Contains(':') ? AssetLocation.Create(code) : new AssetLocation("game", code);
-        string[] allowed = variants.ToArray();
-        bool matched = world.Items.Any(item => item.Code is not null && MatchesWildcard(location, item.Code, allowed))
-            || world.Blocks.Any(block => block.Code is not null && MatchesWildcard(location, block.Code, allowed));
+        string wildcardCode = Regex.Replace(code, @"\{[^}]+\}", "*");
+        AssetLocation location = wildcardCode.Contains(':') ? AssetLocation.Create(wildcardCode) : new AssetLocation("game", wildcardCode);
+        IEnumerable<CollectibleObject> candidates = world.Items.Cast<CollectibleObject>().Concat(world.Blocks);
+        bool matched = candidates.Any(candidate => candidate.Code is not null
+            && MatchesWildcard(location, candidate.Code, allowedVariants)
+            && (skippedVariants.Length == 0 || !WildcardUtil.MatchesVariants(location, candidate.Code, skippedVariants)));
         return matched ? null : $"the wildcard {code} matches no item or block";
     }
 
-    private static bool MatchesWildcard(AssetLocation wildcard, AssetLocation code, string[] allowed) =>
-        allowed.Length == 0 ? WildcardUtil.Match(wildcard, code) : WildcardUtil.Match(wildcard, code, allowed);
+    private static bool MatchesWildcard(AssetLocation wildcard, AssetLocation code, string[] variants) =>
+        variants.Length == 0 ? WildcardUtil.Match(wildcard, code) : WildcardUtil.Match(wildcard, code, variants);
 
     private static bool Exists(IWorldAccessor world, string code)
     {
