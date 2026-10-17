@@ -6,7 +6,21 @@ Pharos is the unified headless testing framework for Vintage Story client and se
 
 ```
 v0.1.0 Foundation (M1-M5) ──► v0.2.0 Optimum & Automation (M6-M10) ──► v0.3.0 Atlas Independence (M11-M14)
+    ──► v0.4.0 to v0.6.0 (M15-M18) ──► v0.7.0 onward (M19-M22)
 ```
+
+## Current Milestones
+
+This file records the milestones up to M14 in detail. M15 and later are tracked on GitHub. The open milestones are:
+
+| Milestone | Release | Tracking issue |
+| --- | --- | --- |
+| M19: Simulating Real Situations | v0.7.0 | [#229](https://github.com/Zaldaryon/Pharos/issues/229) |
+| M20: Surface Coverage and Before/After Metrics | v0.8.0 | [#258](https://github.com/Zaldaryon/Pharos/issues/258) |
+| M21: Advanced Systems, Scale and Platform Breadth | v0.9.0 | [#259](https://github.com/Zaldaryon/Pharos/issues/259) |
+| M22: Complete Coverage and 1.0 Stability | v1.0.0 | [#260](https://github.com/Zaldaryon/Pharos/issues/260) |
+
+The open issues under each milestone are its work list. M15, M16 and M17 shipped in v0.4.0. M18 is closed.
 
 ---
 
