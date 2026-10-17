@@ -15,6 +15,9 @@ public enum XvfbMode
     Never,
 }
 
+/// <summary>How tests are partitioned into shards across CI runners.</summary>
+public sealed record ShardOptions(int Index, int Total);
+
 /// <summary>What <c>pharos run</c> runs. See <c>docs/parallel-runs.md</c>.</summary>
 public sealed record RunOptions
 {
@@ -38,6 +41,15 @@ public sealed record RunOptions
 
     /// <summary>Writes JSON lines to standard output instead of text.</summary>
     public bool Json { get; init; }
+
+    /// <summary>Path to write the run manifest JSON to; overrides the default in ResultsDirectory.</summary>
+    public string? ManifestPath { get; init; }
+
+    /// <summary>The shard to run: 1-indexed shard number and total shards.</summary>
+    public ShardOptions? Shard { get; init; }
+
+    /// <summary>Path to a TRX or JSON timing baseline file for balancing test groups and shards.</summary>
+    public string? TimingsPath { get; init; }
 
     /// <summary>Where worker logs, TRX files and failure artifacts go.</summary>
     public string ResultsDirectory { get; init; } = "pharos-run";
@@ -142,8 +154,33 @@ public sealed record RunOptions
                 case "--quarantine":
                     options = options with { QuarantineFile = Value() };
                     break;
+                case "--shard":
+                    string shard = Value();
+                    int slash = shard.IndexOf('/');
+                    if (slash <= 0 || slash >= shard.Length - 1
+                        || !int.TryParse(shard[..slash], NumberStyles.Integer, CultureInfo.InvariantCulture, out int shardIndex)
+                        || !int.TryParse(shard[(slash + 1)..], NumberStyles.Integer, CultureInfo.InvariantCulture, out int shardTotal)
+                        || shardIndex < 1 || shardTotal < 1 || shardIndex > shardTotal)
+                    {
+                        throw new ArgumentException($"--shard takes <index>/<total> with 1 <= index <= total, not '{shard}'.");
+                    }
+                    options = options with { Shard = new ShardOptions(shardIndex, shardTotal) };
+                    break;
+                case "--timings":
+                    options = options with { TimingsPath = Value() };
+                    break;
+                case "--manifest":
+                    options = options with { ManifestPath = Value() };
+                    break;
                 case "--json":
-                    options = options with { Json = true };
+                    if (i + 1 < args.Count && !args[i + 1].StartsWith('-') && (target != null || args[i + 1].EndsWith(".json", StringComparison.OrdinalIgnoreCase)))
+                    {
+                        options = options with { ManifestPath = Value() };
+                    }
+                    else
+                    {
+                        options = options with { Json = true };
+                    }
                     break;
                 case "--results-dir":
                     options = options with { ResultsDirectory = Value() };

@@ -91,7 +91,7 @@ The soak tests (`Category=Soak`) are the exception to the full lane: it leaves t
 
 Pull requests that only change documentation skip the build. A new push to a pull request cancels the run in progress.
 
-Keep `full-ci` for pull requests that need the full platform checks before merging. Ordinary pull requests use the quick lane; pushes to `main` still run the full lane. The full suite runs in three shards on each platform. Their filters live in `scripts/ci-shards.json`; the last shard includes everything outside the first two, so a new namespace remains covered. Package and mod smoke checks run once on Linux.
+Keep `full-ci` for pull requests that need the full platform checks before merging. Ordinary pull requests use the quick lane; pushes to `main` still run the full lane. The full suite runs in four shards on each platform, partitioned deterministically using class timing baselines in `scripts/ci-timings.json`. Package and mod smoke checks run once on Linux.
 
 Tests marked with a scenario attribute are `Category=Live` on their own. A test class that boots a client or a server without one says so with `[Trait(PharosTraits.Category, PharosTraits.Live)]`. Run the quick lane locally with:
 
@@ -110,8 +110,7 @@ dotnet test Pharos.sln -c Release --no-build --filter 'Category!=Live&Category!=
 
 # Full suite, or one of the same shards used by CI:
 dotnet test Pharos.sln -c Release --no-build
-$shards = Get-Content scripts/ci-shards.json -Raw | ConvertFrom-Json
-dotnet test Pharos.sln -c Release --no-build --filter $shards.include[0].filter
+pharos run tests/Zaldaryon.Pharos.Tests --parallel 3 --shard 1/4
 ```
 
 Local Windows tests provide feedback before pushing. The full CI also checks Linux native dependencies, Mesa rendering and the dedicated server.

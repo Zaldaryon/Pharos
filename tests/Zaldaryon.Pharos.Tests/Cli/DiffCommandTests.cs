@@ -261,6 +261,55 @@ public class DiffCommandTests : IDisposable
     }
 
     [Fact]
+    public void Run_ComparesRunManifestsDirectly()
+    {
+        string beforeManifest = Path.Combine(_folder, "manifest-before.json");
+        string afterManifest = Path.Combine(_folder, "manifest-after.json");
+        File.WriteAllText(beforeManifest, """
+            {
+              "schemaVersion": 1,
+              "runId": "run1",
+              "startedUtc": "2026-10-17T12:00:00Z",
+              "finishedUtc": "2026-10-17T12:05:00Z",
+              "assembly": "Tests.dll",
+              "trx": "out.trx",
+              "workers": [],
+              "lostTests": [],
+              "metadataWarnings": [],
+              "tests": [
+                { "fullyQualifiedName": "My.Tests.Pass", "displayName": "Pass", "rawOutcome": "Passed", "finalOutcome": "Passed" },
+                { "fullyQualifiedName": "My.Tests.Regress", "displayName": "Regress", "rawOutcome": "Passed", "finalOutcome": "Passed" }
+              ]
+            }
+            """);
+
+        File.WriteAllText(afterManifest, """
+            {
+              "schemaVersion": 1,
+              "runId": "run2",
+              "startedUtc": "2026-10-17T12:10:00Z",
+              "finishedUtc": "2026-10-17T12:15:00Z",
+              "assembly": "Tests.dll",
+              "trx": "out.trx",
+              "workers": [],
+              "lostTests": [],
+              "metadataWarnings": [],
+              "tests": [
+                { "fullyQualifiedName": "My.Tests.Pass", "displayName": "Pass", "rawOutcome": "Passed", "finalOutcome": "Passed" },
+                { "fullyQualifiedName": "My.Tests.Regress", "displayName": "Regress", "rawOutcome": "Failed", "finalOutcome": "Failed" }
+              ]
+            }
+            """);
+
+        StringWriter output = new();
+        StringWriter error = new();
+        int exit = DiffCommand.Run([beforeManifest, afterManifest], output, error);
+
+        Assert.Equal(DiffCommand.ExitRegressions, exit);
+        Assert.Contains("Regress (passed -> failed)", output.ToString());
+    }
+
+    [Fact]
     public void Options_ReadOptionalManifestPaths()
     {
         DiffOptions options = DiffOptions.Parse(["before.trx", "after.trx", "--before-manifest", "before.json", "--after-manifest", "after.json"])!;

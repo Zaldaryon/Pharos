@@ -174,11 +174,12 @@ public static class DiffCommand
             return ExitNoRegressions;
         }
 
-        // Two state hash recordings (.json) are compared by tick; two TRX files by test outcome.
+        // Two state hash recordings (.json) are compared by tick; manifests and TRX files by test outcome.
         bool beforeJson = IsJson(options.Before), afterJson = IsJson(options.After);
-        if (beforeJson || afterJson)
+        bool beforeManifest = IsManifest(options.Before), afterManifest = IsManifest(options.After);
+        if ((beforeJson && !beforeManifest) || (afterJson && !afterManifest))
         {
-            return beforeJson && afterJson
+            return beforeJson && afterJson && !beforeManifest && !afterManifest
                 ? StateDiff.Run(options.Before, options.After, options.Json, stdout, stderr)
                 : Mismatch(stderr);
         }
@@ -306,10 +307,59 @@ public static class DiffCommand
 
     private sealed record TrxRun(IReadOnlyList<TrxResult> Results, string? Abort);
 
+    private static bool IsManifest(string path)
+    {
+        if (!File.Exists(path) || !IsJson(path)) return false;
+        try
+        {
+            using JsonDocument doc = JsonDocument.Parse(File.ReadAllText(path));
+            return doc.RootElement.ValueKind == JsonValueKind.Object
+                && doc.RootElement.TryGetProperty("tests", out JsonElement tests)
+                && tests.ValueKind == JsonValueKind.Array;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static TrxRun LoadManifest(string path)
+    {
+        ScenarioRunManifest manifest = ScenarioRunManifestWriter.Load(path);
+        List<TrxResult> results = [];
+        foreach (ScenarioRunTest test in manifest.Tests)
+        {
+            results.Add(new TrxResult(
+                test.FullyQualifiedName,
+                test.DisplayName,
+                test.FinalOutcome ?? test.RawOutcome,
+                TimeSpan.Zero,
+                test.FailurePhase != null ? $"Failed in phase {test.FailurePhase}" : null,
+                null)
+            {
+                Flaky = test.Flaky,
+            });
+        }
+
+        foreach (string lost in manifest.LostTests)
+        {
+            if (!results.Any(r => r.FullyQualifiedName == lost || r.TestName == lost))
+            {
+                results.Add(new TrxResult(lost, lost, "Failed", TimeSpan.Zero, "Lost test: worker aborted or crashed", null));
+            }
+        }
+
+        string? abort = manifest.Workers.Any(w => w.Aborted != null || w.TimedOut)
+            ? "The test run stopped early."
+            : null;
+        return new TrxRun(results, abort);
+    }
+
     private static TrxRun Load(string path, string? manifestPath)
     {
-        if (Directory.Exists(path)) throw new IOException($"{path} is a folder, not a TRX file.");
+        if (Directory.Exists(path)) throw new IOException($"{path} is a folder, not a file.");
         if (!File.Exists(path)) throw new FileNotFoundException($"{path} does not exist.", path);
+        if (IsManifest(path)) return LoadManifest(path);
         XDocument trx = XDocument.Load(path);
         if (trx.Root?.Name != Trx.Ns + "TestRun") throw new FormatException($"{path} is not a TRX file: it has no TestRun element.");
         IReadOnlyList<TrxResult> results = Trx.Results(trx);

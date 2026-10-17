@@ -109,6 +109,69 @@ internal static class ScenarioRunManifestWriter
         return manifest;
     }
 
+    public static ScenarioRunManifest Load(string path)
+    {
+        string json = File.ReadAllText(path);
+        return JsonSerializer.Deserialize<ScenarioRunManifest>(json, Options())
+            ?? throw new FormatException($"Failed to deserialize run manifest from {path}.");
+    }
+
+    public static ScenarioRunManifest Merge(IEnumerable<ScenarioRunManifest> manifests, string? trxPath = null)
+    {
+        List<ScenarioRunManifest> list = manifests.ToList();
+        if (list.Count == 0) throw new ArgumentException("No manifests to merge.", nameof(manifests));
+        if (list.Count == 1) return list[0];
+
+        string runId = list.FirstOrDefault(m => !string.IsNullOrEmpty(m.RunId))?.RunId ?? Guid.NewGuid().ToString("N")[..12];
+        DateTimeOffset started = list.Min(m => m.StartedUtc);
+        DateTimeOffset finished = list.Max(m => m.FinishedUtc);
+        string assembly = list.FirstOrDefault(m => !string.IsNullOrEmpty(m.Assembly))?.Assembly ?? "";
+        string trx = trxPath ?? list.FirstOrDefault(m => !string.IsNullOrEmpty(m.Trx))?.Trx ?? "";
+
+        List<ScenarioRunWorker> workers = [];
+        int workerIndex = 1;
+        foreach (ScenarioRunWorker worker in list.SelectMany(m => m.Workers))
+        {
+            workers.Add(worker with { Index = workerIndex++ });
+        }
+
+        List<string> lostTests = list.SelectMany(m => m.LostTests).Distinct(StringComparer.Ordinal).ToList();
+        List<string> warnings = list.SelectMany(m => m.MetadataWarnings).Distinct(StringComparer.Ordinal).ToList();
+
+        Dictionary<string, ScenarioRunTest> mergedTests = new(StringComparer.Ordinal);
+        foreach (ScenarioRunTest test in list.SelectMany(m => m.Tests))
+        {
+            string key = test.FullyQualifiedName + "\0" + test.DisplayName;
+            if (!mergedTests.TryGetValue(key, out ScenarioRunTest? existing))
+            {
+                mergedTests[key] = test;
+            }
+            else
+            {
+                bool testFailed = test.RawOutcome is "Failed" or "Error" or "Timeout" or "Aborted";
+                bool existingFailed = existing.RawOutcome is "Failed" or "Error" or "Timeout" or "Aborted";
+                if (testFailed && !existingFailed) mergedTests[key] = test;
+            }
+        }
+
+        return new ScenarioRunManifest(1, runId, started, finished, assembly, trx, workers, lostTests, warnings, [.. mergedTests.Values]);
+    }
+
+    public static void Save(string path, ScenarioRunManifest manifest)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        string temporary = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        try
+        {
+            File.WriteAllText(temporary, JsonSerializer.Serialize(manifest, Options()));
+            File.Move(temporary, path, overwrite: true);
+        }
+        finally
+        {
+            if (File.Exists(temporary)) File.Delete(temporary);
+        }
+    }
+
     internal static bool CanQuarantine(bool rawFailure, string? failurePhase, bool infrastructureFailure) =>
         rawFailure && failurePhase == "body" && !infrastructureFailure;
 

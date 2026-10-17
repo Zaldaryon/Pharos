@@ -43,14 +43,17 @@ public static partial class RunCommand
           --until-fail --max <n>   Repeat full runs until a failure or the maximum is reached
           --rerun-failed <json>    Run raw failed test rows from a prior pharos-run.json
           --quarantine <json>      Apply an expiring quarantine to eligible body failures
+          --shard <n>/<total>      Run only the groups assigned to shard n of total
+          --timings <path>         A TRX or JSON timing file for balancing shards
           --trx <path>             Where the merged TRX goes (default: <results-dir>/pharos.trx)
+          --manifest <json>        Where the run manifest JSON goes (also --json <path>)
           --results-dir <dir>      Worker logs, TRX files and failure artifacts (default: pharos-run)
           --test-timeout <min>     Stop a test host whose test runs longer, keeping the results
                                    so far (default: 30, scaled by PHAROS_TIMEOUT_SCALE)
           --worker-timeout <min>   Stop a worker after this many minutes (default: 60,
                                    scaled by PHAROS_TIMEOUT_SCALE)
           --game <path>            The Vintage Story install workers use (default: VINTAGE_STORY)
-          --json                   Write JSON lines to standard output instead of text
+          --json [path]            Write JSON lines to standard output, or save manifest to path
           -c, --configuration <c>  Build configuration of a project (default: Release)
           --no-build               Use a project's last build
           --xvfb auto|always|never Give each worker its own virtual display (default: auto,
@@ -297,7 +300,14 @@ public static partial class RunCommand
         }
 
         IReadOnlyDictionary<string, string>? collections = options.Grouping == RunGrouping.Collection ? TestGroups.Collections(assembly) : null;
-        IReadOnlyList<TestGroup> groups = TestGroups.Create(tests, options.Grouping, collections, live, PreviousDurations(trxPath));
+        IReadOnlyDictionary<string, TimeSpan>? durations = PreviousDurations(trxPath, options.TimingsPath);
+        IReadOnlyList<TestGroup> groups = TestGroups.Create(tests, options.Grouping, collections, live, durations);
+        if (options.Shard is { } shard)
+        {
+            groups = TestGroups.PartitionForShard(groups, shard.Index, shard.Total, durations);
+            output.Note($"Shard {shard.Index}/{shard.Total}: {groups.Count} group(s), {groups.Sum(g => g.Tests.Count)} test(s).");
+        }
+
         output.Listed(assembly, groups);
 
         if (options.ListOnly)
@@ -425,7 +435,9 @@ public static partial class RunCommand
             $"pharos run {Path.GetFileName(assembly)}");
         merged.Save(trxPath);
 
-        string manifestPath = ScenarioRunManifestWriter.PathFor(trxPath);
+        string manifestPath = options.ManifestPath != null
+            ? Path.GetFullPath(options.ManifestPath)
+            : ScenarioRunManifestWriter.PathFor(trxPath);
         ScenarioRunManifest runManifest = ScenarioRunManifestWriter.Write(manifestPath, runId, start, DateTimeOffset.Now, assembly, trxPath, merged,
             outcomes, notStarted, attemptsDirectory, options.LoadedQuarantine);
         output.Note($"Attempt manifest: {manifestPath}");
@@ -532,17 +544,14 @@ public static partial class RunCommand
     [System.Text.RegularExpressions.GeneratedRegex(@"^\s*(?:FullyQualifiedName|Name)\s*(?:=|~)\s*[^!|&()]+\s*$", System.Text.RegularExpressions.RegexOptions.IgnoreCase)]
     private static partial System.Text.RegularExpressions.Regex ExplicitNameFilterPattern();
 
-    // How long each test took in the last run's merged TRX, if there is one.
-    private static IReadOnlyDictionary<string, TimeSpan>? PreviousDurations(string trxPath)
+    // How long each test took in the last run's merged TRX or timing baseline, if there is one.
+    private static IReadOnlyDictionary<string, TimeSpan>? PreviousDurations(string trxPath, string? timingsPath = null)
     {
-        try
-        {
-            return File.Exists(trxPath) ? TestGroups.Durations(Trx.Results(XDocument.Load(trxPath))) : null;
-        }
-        catch (Exception ex) when (ex is System.Xml.XmlException or FormatException or IOException)
-        {
-            return null;
-        }
+        if (timingsPath != null && TestGroups.LoadDurations(timingsPath) is { } fromExplicit) return fromExplicit;
+        if (File.Exists(trxPath) && TestGroups.LoadDurations(trxPath) is { } fromTrx) return fromTrx;
+        string defaultTimings = "scripts/ci-timings.json";
+        if (File.Exists(defaultTimings) && TestGroups.LoadDurations(defaultTimings) is { } fromDefault) return fromDefault;
+        return null;
     }
 
     /// <summary>The test assembly: the target itself, or the build output of the project it names.</summary>
