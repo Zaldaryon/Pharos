@@ -104,6 +104,7 @@ public static class DiffCommand
         pharos diff - compare two test runs
 
         Usage: pharos diff <before.trx> <after.trx> [options]
+               pharos diff <before.json> <after.json> [--json]   (state hash recordings, by tick)
 
           --slower-than <n%>      Report passing tests that took more than this much longer (default: 50%)
           --min-delta <seconds>   ... and at least this many seconds longer (default: 1)
@@ -127,6 +128,14 @@ public static class DiffCommand
         """;
 
     /// <summary>Runs <c>pharos diff</c> with the arguments that follow <c>diff</c>.</summary>
+    private static bool IsJson(string path) => string.Equals(Path.GetExtension(path), ".json", StringComparison.OrdinalIgnoreCase);
+
+    private static int Mismatch(TextWriter stderr)
+    {
+        stderr.WriteLine("Error: compare two TRX files, or two state hash recordings (.json), not one of each.");
+        return ExitError;
+    }
+
     public static int Run(IReadOnlyList<string> args, TextWriter stdout, TextWriter stderr)
     {
         DiffOptions? options;
@@ -146,6 +155,15 @@ public static class DiffCommand
         {
             stdout.WriteLine(HelpText);
             return ExitNoRegressions;
+        }
+
+        // Two state hash recordings (.json) are compared by tick; two TRX files by test outcome.
+        bool beforeJson = IsJson(options.Before), afterJson = IsJson(options.After);
+        if (beforeJson || afterJson)
+        {
+            return beforeJson && afterJson
+                ? StateDiff.Run(options.Before, options.After, options.Json, stdout, stderr)
+                : Mismatch(stderr);
         }
 
         TrxRun before, after;

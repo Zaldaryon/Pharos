@@ -29,6 +29,12 @@ public class LoopbackLinkTests : ClientServerScenarioBase
         IReadOnlyList<RecordedPacket> packets = Client.PacketRecorder.GetRecordedPackets();
         Assert.Contains(packets, p => p.Direction == PacketDirection.Outbound && p.PacketId >= 0);
         Assert.Contains(packets, p => p.Direction == PacketDirection.Inbound && p.PacketId >= 0);
+
+        // The position updates travel on the datagram socket, and every packet carries the frame it was captured in.
+        Assert.Contains(packets, p => p.Direction == PacketDirection.Outbound && p.Transport == PacketTransport.Udp && p.PacketId == 2);
+        long[] frames = packets.Where(p => p.Frame >= 0).Select(p => p.Frame).ToArray();
+        Assert.NotEmpty(frames);
+        Assert.True(frames.Zip(frames.Skip(1)).All(pair => pair.Second >= pair.First), "The frames of the recording go backwards");
     }
 
     [ClientServerScenario]

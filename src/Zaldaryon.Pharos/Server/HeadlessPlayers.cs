@@ -77,7 +77,7 @@ internal sealed class HeadlessPlayers
                 server.UdpSockets[1] = _udpIngress;
             }
 
-            return HeadlessPlayerConnection.Open(server, playerName, playerUid);
+            return HeadlessPlayerConnection.Open(server, playerName, playerUid, () => (long)_host.TickCount);
         });
 
         ServerTestPlayer player = reuse ?? new ServerTestPlayer(playerUid);

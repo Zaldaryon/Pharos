@@ -8,12 +8,16 @@ namespace Zaldaryon.Pharos.Network;
 /// <param name="TimestampMs">Milliseconds since recording started when this packet was captured.</param>
 /// <param name="PayloadBase64">Base64-encoded raw packet payload bytes.</param>
 /// <param name="PacketTypeName">Optional packet type name for debugging.</param>
+/// <param name="Frame">The client frame the packet was captured in, or -1 when the recording has no frames (older recordings).</param>
+/// <param name="Transport">Whether the packet travelled on the stream or the datagram socket.</param>
 public sealed record RecordedPacket(
     int PacketId,
     PacketDirection Direction,
     long TimestampMs,
     string PayloadBase64,
-    string? PacketTypeName = null)
+    string? PacketTypeName = null,
+    long Frame = -1,
+    PacketTransport Transport = PacketTransport.Tcp)
 {
     /// <summary>
     /// Decodes the payload from Base64 to raw bytes.

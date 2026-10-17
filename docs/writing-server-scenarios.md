@@ -669,6 +669,18 @@ A failed soak run keeps its readings in `soak.csv` and a `soak` summary in `run.
 
 The soak tests run only in the nightly run and in a manual run with `soak` set. The quick lane and the full lane leave them out.
 
+## Replay and State Hashes
+
+A packet recording keeps the frame and the transport of each packet, so a replay delivers them in order.
+
+- `RecordedSession.Load(path)` reads a recording, including the older ones that have no frames.
+- `Host.Replay.ClientTrafficAsync(recording, asPlayer: "Alice")` sends the recorded client-to-server packets through a headless player's connection, one frame at a time, with the server ticking between frames. Positions are rewritten to the player's current position version, and a move of more than 128 blocks is skipped, because the server refuses it.
+- `Client.Replay.ServerTrafficAsync(recording)` feeds the recorded server-to-client packets into the engine-mode client's network processor. It holds the link's live packets while it runs, and it refuses a fixture-mode client.
+
+`Host.StateHash.Record(region, options)` hashes the chosen state after each tick until the recording is disposed. The parts are the blocks of a region (`Blocks`, which needs a region no larger than `MaxBlocks`), the loaded entities that are not players (`Entities`), and the players by player id (`Players`). Each part is folded with a stable hash, so two runs of the same state give the same hashes, and the recording saves to JSON with `Save`. `pharos diff a.json b.json` names the first tick where two recordings differ, with exit code 0 when they are identical, 1 when they diverge, and 2 when they cannot be compared.
+
+Hashes repeat only on a virtual clock. Without one, the wall clock sets each tick's length, and the recording records a `tickMs` of 0. Background threads, such as random block ticks and the creature spawner, run on real time, so a state that depends on them can diverge between runs. A recording's samples are taken after each tick's processing, so they cover what that tick did.
+
 ## Faults
 
 `Host.Faults` injects server-side failures. Each fault lasts until it is disposed, and the scenario disposes the rest when it ends,

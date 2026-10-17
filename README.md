@@ -244,7 +244,8 @@ Both Windows and Linux produce identical rendering behavior and report OpenGL 4.
 | `EmbeddedServerHost` | Native embedded server with tick control and sandbox isolation |
 | `ServerSandbox` | Isolated temp directory, mod staging, SQLite-safe cleanup |
 | `WorldSnapshot` | In-memory world state capture and rollback |
-| `PacketRecorder` | Record and replay deterministic server packet streams |
+| `PacketRecorder`, `RecordedSession` | Record client and server packets with their frames, and replay them into a client or a server |
+| `Host.StateHash` | Hash the server's blocks, entities and players after each tick, to find where two runs diverge |
 | `PacketTracer` | Assert that specific packet IDs cross the loopback boundary |
 | `NetworkDegradationSimulator` | Inject latency, packet drop, and jitter |
 
