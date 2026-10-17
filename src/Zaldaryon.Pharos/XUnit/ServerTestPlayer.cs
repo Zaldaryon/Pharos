@@ -69,6 +69,9 @@ public sealed class ServerTestPlayer : IServerTestPlayer, IDisposable
     /// <inheritdoc />
     public IServerPlayer? Player => _player;
 
+    /// <summary>The connection the player's packets go through, or null for a player without one.</summary>
+    internal HeadlessPlayerConnection? Connection => _connection;
+
     /// <inheritdoc />
     public EntityPlayer? Entity => _player?.Entity;
 

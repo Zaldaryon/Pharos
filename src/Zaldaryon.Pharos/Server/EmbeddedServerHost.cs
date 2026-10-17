@@ -52,6 +52,7 @@ public sealed partial class EmbeddedServerHost : IDisposable, IAsyncDisposable
     private readonly MethodInfo? _waitOnBuildServerAssetsPacket;
     private int _tickCount;
     private ServerSimulation? _simulation;
+    private ServerReplay? _replay;
 
     /// <summary>The soak run this test made most recently, for a failure's soak.csv; cleared when the test ends.</summary>
     internal SoakReport? LastSoakReport { get; set; }
@@ -85,6 +86,9 @@ public sealed partial class EmbeddedServerHost : IDisposable, IAsyncDisposable
 
     /// <summary>Plays the server forward in game days, for soak tests.</summary>
     public ServerSimulation Simulate => _simulation ??= new ServerSimulation(this);
+
+    /// <summary>Replays recorded client traffic into a player's connection.</summary>
+    public ServerReplay Replay => _replay ??= new ServerReplay(this);
 
     /// <summary>
     /// The wall-clock time each tick's server processing took, in stopwatch ticks, while a soak run
