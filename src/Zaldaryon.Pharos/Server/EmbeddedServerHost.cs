@@ -337,7 +337,7 @@ public sealed partial class EmbeddedServerHost : IDisposable, IAsyncDisposable
         server.Config.VerifyPlayerAuth = options.VerifyPlayerAuth;
         if (options.ListenPort is not { } requested) return null;
 
-        int port = requested == 0 ? FreePort(options.ListenAddress) : requested;
+        int port = requested == 0 ? FreePorts.TakeTcpUdp(options.ListenAddress) : requested;
 
         server.MainSockets[1] = new TcpNetServer();
         server.MainSockets[1].SetIpAndPort(options.ListenAddress, port);
@@ -349,21 +349,6 @@ public sealed partial class EmbeddedServerHost : IDisposable, IAsyncDisposable
 
         ServerMain.Logger.Notification("Pharos: listening for network clients on {0}:{1}", options.ListenAddress, port);
         return port;
-    }
-
-    // The game binds TCP and UDP to the same port, so one free for TCP is taken for both.
-    private static int FreePort(string address)
-    {
-        System.Net.Sockets.TcpListener probe = new(System.Net.IPAddress.Parse(address), 0);
-        probe.Start();
-        try
-        {
-            return ((System.Net.IPEndPoint)probe.LocalEndpoint).Port;
-        }
-        finally
-        {
-            probe.Stop();
-        }
     }
 
     private static EmbeddedServerHost BootOnGameThread(System.Func<EngineThread, EmbeddedServerHost> boot)

@@ -6,6 +6,8 @@ namespace Zaldaryon.Pharos.Platform;
 /// <summary>Ports nothing on this machine listens on.</summary>
 internal static class FreePorts
 {
+    private const int TcpUdpAttempts = 50;
+
     /// <summary>
     /// <paramref name="count"/> different ports, each free on every address: a mod usually binds
     /// all of them. The ports are held until they are all found, then released for the caller to
@@ -36,6 +38,57 @@ internal static class FreePorts
         {
             foreach (TcpListener probe in held) probe.Stop();
         }
+    }
+
+    /// <summary>Finds a port that can be bound by both TCP and UDP on the given address.</summary>
+    public static int TakeTcpUdp(string address) => TakeTcpUdp(address, ProbeUdp, TcpUdpAttempts);
+
+    internal static int TakeTcpUdp(string address, Action<IPAddress, int> udpProbe, int maxAttempts)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(address);
+        ArgumentNullException.ThrowIfNull(udpProbe);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxAttempts);
+        IPAddress ipAddress = IPAddress.Parse(address);
+        SocketException? lastUdpFailure = null;
+        List<TcpListener> held = [];
+
+        try
+        {
+            for (int attempt = 1; attempt <= maxAttempts; attempt++)
+            {
+                TcpListener tcpProbe = new(ipAddress, 0);
+                tcpProbe.Start();
+                // Keep rejected candidates reserved too: otherwise the OS can repeatedly
+                // hand the same ephemeral TCP port back after its UDP bind was denied.
+                held.Add(tcpProbe);
+                int port = Port(tcpProbe);
+                try
+                {
+                    // Keep TCP reserved while checking UDP. The game binds both protocols to
+                    // this same port once Boot has finished configuring its network sockets.
+                    udpProbe(ipAddress, port);
+                    return port;
+                }
+                catch (SocketException ex) when (ex.SocketErrorCode is SocketError.AddressAlreadyInUse or SocketError.AccessDenied)
+                {
+                    lastUdpFailure = ex;
+                }
+            }
+
+            throw new InvalidOperationException(
+                $"Pharos could not find a port available for both TCP and UDP on {address} after {maxAttempts} attempts. Last UDP bind error: {lastUdpFailure?.SocketErrorCode}.",
+                lastUdpFailure);
+        }
+        finally
+        {
+            foreach (TcpListener probe in held) probe.Stop();
+        }
+    }
+
+    private static void ProbeUdp(IPAddress address, int port)
+    {
+        using Socket probe = new(address.AddressFamily, SocketType.Dgram, ProtocolType.Udp);
+        probe.Bind(new IPEndPoint(address, port));
     }
 
     private static int Port(TcpListener listener) => ((IPEndPoint)listener.LocalEndpoint).Port;
