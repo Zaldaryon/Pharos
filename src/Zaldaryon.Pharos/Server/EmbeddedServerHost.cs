@@ -100,6 +100,9 @@ public sealed partial class EmbeddedServerHost : IDisposable, IAsyncDisposable
     /// <summary>Raised on the game thread after each tick's processing, for the state hash recordings.</summary>
     internal event Action? TickProcessed;
 
+    /// <summary>The state hash recording this test stopped most recently, for a failure's run.json; cleared when the test ends.</summary>
+    internal StateHashRecording? LastStateHashes { get; set; }
+
     /// <summary>The virtual clock's tick, or 0 when the wall clock runs the server, which makes its hashes non-repeatable.</summary>
     internal int TickMsForHashes => VirtualClock?.TickMs ?? 0;
 

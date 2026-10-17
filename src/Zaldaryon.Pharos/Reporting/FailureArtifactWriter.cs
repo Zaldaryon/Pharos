@@ -5,6 +5,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Vintagestory.API.Config;
 using Zaldaryon.Pharos.Bootstrap;
 using Zaldaryon.Pharos.Core;
@@ -512,6 +513,7 @@ internal static class FailureArtifactWriter
                     ["gating"] = b.Gating,
                 }).ToArray(),
             } : null,
+            ["stateHashes"] = failure.Server?.LastStateHashes is { } hashes ? JsonNode.Parse(hashes.ToJson()) : null,
             ["runId"] = RunId,
             ["timeUtc"] = DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture),
             ["os"] = RuntimeInformation.OSDescription,

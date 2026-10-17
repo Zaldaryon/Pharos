@@ -81,6 +81,8 @@ public sealed record StateHashFile(
     public static StateHashFile Parse(string json)
     {
         JsonNode? root = JsonNode.Parse(json);
+        // A run.json holds the same object under stateHashes, so either form reads.
+        if (root?["kind"] is null && root?["stateHashes"] is { } nested) root = nested;
         if (root?["kind"]?.GetValue<string>() != Kind || root["schema"]?.GetValue<int>() != Schema)
         {
             throw new InvalidDataException("The file is not a state hash recording of schema " + Schema + ".");
@@ -240,12 +242,13 @@ public sealed class StateHashRecording : IDisposable
         return root.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
     }
 
-    /// <summary>Stops recording. The samples stay available.</summary>
+    /// <summary>Stops recording. The samples stay available, and the host keeps this recording for a failure's run.json.</summary>
     public void Dispose()
     {
         if (_disposed) return;
         _disposed = true;
         _host.TickProcessed -= OnTickProcessed;
+        _host.LastStateHashes = this;
     }
 
     // Runs on the game thread, right after the tick's processing.

@@ -170,6 +170,7 @@ public sealed partial class EmbeddedServerHost
         EndVirtualClock();
         lock (_clockLock) _lastClock = null;
         LastSoakReport = null;
+        LastStateHashes = null;
     }
 
     /// <summary>The clock in use, or the last one used since the test began, for run.json.</summary>
