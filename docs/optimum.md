@@ -16,12 +16,12 @@ Optimum is a patched Vintage Story build. It ships its own `VintagestoryAPI.dll`
 public sealed class TessellationTests : ClientScenarioBase
 {
     [ClientScenario]
-    public async Task Counts_Chunks() { ... }
+    public async Task Counts_Chunks() => await Task.CompletedTask;
 }
 
 [ClientScenario]
 [SkipOnOptimum(Reason = "Optimum replaces the vanilla tessellator")]
-public async Task Vanilla_Tessellator() { ... }
+public async Task Vanilla_Tessellator() => await Task.CompletedTask;
 ```
 
 - Both attributes go on a method or a class, and apply to the Pharos scenario attributes. The skip reason names the install.

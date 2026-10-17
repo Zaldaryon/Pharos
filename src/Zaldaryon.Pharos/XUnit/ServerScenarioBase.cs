@@ -85,6 +85,9 @@ public abstract class ServerScenarioBase : IAsyncLifetime, IScenarioLifecycle
     protected T? GetBlockEntity<T>(BlockPos pos) where T : BlockEntity => Server.GetBlockEntity<T>(pos);
 
     /// <summary>Spawns an entity at the specified position.</summary>
+    protected Entity SpawnEntity(string entityCode, BlockPos pos) => Server.SpawnEntity(entityCode, pos);
+
+    /// <summary>Spawns an entity at the specified position.</summary>
     protected Entity SpawnEntity(string entityCode, Vec3d pos) => Server.SpawnEntity(entityCode, pos);
 
     /// <summary>Polls an assertion once per server tick until it passes or the tick budget expires.</summary>

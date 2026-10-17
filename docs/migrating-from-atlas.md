@@ -214,18 +214,18 @@ The `Zaldaryon.Pharos.AtlasCompat` package provides type aliases in the original
 namespace Atlas.Api
 {
     // Wraps EmbeddedServerHost
-    public interface IWorldSession { ... }
-    public class WorldSession : IWorldSession { ... }
+    public interface IWorldSession { }
+    public class WorldSession : IWorldSession { }
     
     // Alias for ServerWorldOptions
-    public record WorldOptions { ... }
+    public record WorldOptions { }
     
     // Wraps IServerTestPlayer  
-    public interface ITestPlayer { ... }
-    public class TestPlayerAdapter : ITestPlayer { ... }
+    public interface ITestPlayer { }
+    public class TestPlayerAdapter : ITestPlayer { }
     
     // Wraps Pharos CommandResult
-    public class CommandResult { ... }
+    public class CommandResult { }
 }
 ```
 
@@ -236,22 +236,22 @@ namespace Atlas.XUnit
 {
     // Equivalent to ServerScenarioAttribute
     [AttributeUsage(AttributeTargets.Method)]
-    public class AtlasScenarioAttribute : FactAttribute { ... }
+    public class AtlasScenarioAttribute : FactAttribute { }
     
     // Equivalent to ServerTheoryAttribute
     [AttributeUsage(AttributeTargets.Method)]
-    public class AtlasTheoryAttribute : TheoryAttribute { ... }
+    public class AtlasTheoryAttribute : TheoryAttribute { }
     
     // Equivalent to ServerScenarioBase
     public abstract class AtlasScenarioBase : ServerScenarioBase { }
     
     // Equivalent to ServerWorldAttribute
     [AttributeUsage(AttributeTargets.Class | AttributeTargets.Method)]
-    public class AtlasWorldAttribute : Attribute { ... }
+    public class AtlasWorldAttribute : Attribute { }
     
     // Equivalent to ServerModsAttribute
     [AttributeUsage(AttributeTargets.Class | AttributeTargets.Assembly)]
-    public class AtlasModsAttribute : Attribute { ... }
+    public class AtlasModsAttribute : Attribute { }
 }
 ```
 
@@ -264,16 +264,18 @@ using Atlas.Api;
 using Zaldaryon.Pharos.Server;
 using Zaldaryon.Pharos.XUnit;
 
-// Atlas → Pharos
-ITestPlayer atlasPlayer = ...;
+// Atlas to Pharos
+ITestPlayer atlasPlayer = null!;
+IWorldSession worldSession = null!;
+WorldOptions worldOptions = null!;
 IServerTestPlayer pharosPlayer = atlasPlayer.AsPharosPlayer();
 EmbeddedServerHost host = worldSession.Host;
 ServerWorldOptions options = worldOptions.ToServerWorldOptions();
 
-// Pharos → Atlas
-IServerTestPlayer pharosPlayer = ...;
-ITestPlayer atlasPlayer = pharosPlayer.AsAtlasPlayer();
-WorldOptions options = WorldOptions.FromServerWorldOptions(serverOptions);
+// Pharos to Atlas
+ServerWorldOptions serverOptions = null!;
+ITestPlayer atlasPlayerFromPharos = pharosPlayer.AsAtlasPlayer();
+WorldOptions convertedOptions = WorldOptions.FromServerWorldOptions(serverOptions);
 ```
 
 ## Troubleshooting

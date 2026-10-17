@@ -43,6 +43,13 @@ public sealed class WorldSession : IWorldSession
     public Task<bool> TickUntilAsync(Func<bool> predicate, int maxTicks = 600, CancellationToken ct = default)
         => _host.TickUntilAsync(predicate, maxTicks, ct);
 
+    /// <inheritdoc />
+    public async Task<ITestPlayer> CreateTestPlayer(string playerName = "TestPlayer")
+    {
+        var player = await _host.JoinPlayerAsync(playerName).ConfigureAwait(false);
+        return new TestPlayerAdapter(player);
+    }
+
     /// <summary>
     /// Creates a new world session with the specified options.
     /// </summary>

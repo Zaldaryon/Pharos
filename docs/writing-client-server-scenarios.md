@@ -15,6 +15,7 @@ dotnet add package Zaldaryon.Pharos.XUnit
 Inherit from `ClientServerScenarioBase` and use `[ClientServerScenario]`:
 
 ```csharp
+// run
 using Zaldaryon.Pharos.XUnit;
 using Xunit;
 
@@ -25,8 +26,8 @@ public class BlockSyncTests : ClientServerScenarioBase
     {
         var pos = new BlockPos(10, 64, 10);
 
-        // Place a block on the server
-        Server.Api.World.BlockAccessor.SetBlock(1, pos);
+        // Place a block on the server on its game thread
+        Server.RunOnGameThread(() => Server.Api.World.BlockAccessor.SetBlock(1, pos));
 
         // Step until client chunk reflects the change
         await Session.StepUntilAsync(() => ClientServerAssert.BlockSynced(Session, pos));
@@ -165,19 +166,22 @@ A headless player has no screen, so `player.RespawnAsync()` on the server sends 
 `PacketTracer` captures which packets cross the loopback boundary:
 
 ```csharp
-[ClientServerScenario]
-public async Task ChatMessage_SendsCorrectPacket()
+public class PacketTracingTests : ClientServerScenarioBase
 {
-    var tracer = new PacketTracer();
-    tracer.StartTracing();
+    [ClientServerScenario]
+    public async Task ChatMessage_SendsCorrectPacket()
+    {
+        var tracer = new PacketTracer();
+        tracer.StartTracing();
 
-    await ExecuteCommandAsPlayer(ServerPlayer, "/say hello");
-    Session.StepFrames(10);
+        await ExecuteCommandAsPlayerAsync(ServerPlayer, "/say hello");
+        Session.StepFrames(10);
 
-    tracer.StopTracing();
+        tracer.StopTracing();
 
-    // Assert packet 48 (chat) was sent client-to-server
-    tracer.AssertClientSentPacket(48);
+        // Assert packet 48 (chat) was sent client-to-server
+        tracer.AssertClientSentPacket(48);
+    }
 }
 ```
 
@@ -324,7 +328,7 @@ A rollback waits for the same before the next test. Of the weather, a headless c
 `Isolation` and `StrictIsolation` work as for server scenarios (see [Isolation report](writing-server-scenarios.md#isolation-report)). A test that disconnects the client on purpose cannot be rolled back, so under `StrictIsolation` it fails.
 
 ```csharp
-[ServerWorld(Isolation = WorldIsolation.Rollback, StrictIsolation = true)]
+[ServerWorld(Isolation = Isolation.Rollback, StrictIsolation = true)]
 public class MyTests : ClientServerScenarioBase
 {
     protected override void OnRollbackRestored() => MyModSystem.Instance.ReloadFromWorld();

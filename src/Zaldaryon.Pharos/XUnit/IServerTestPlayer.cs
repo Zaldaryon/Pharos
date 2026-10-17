@@ -26,6 +26,11 @@ public interface IServerTestPlayer
     /// </summary>
     EntityPlayer? Entity { get; }
 
+    /// <summary>
+    /// Gets the player's position in absolute world coordinates.
+    /// </summary>
+    Vec3d Position => Entity?.Pos.XYZ ?? new Vec3d();
+
     /// <summary>Gets the client-packet driver for this player when it is joined headlessly.</summary>
     HeadlessPlayerBot Bot { get; }
 

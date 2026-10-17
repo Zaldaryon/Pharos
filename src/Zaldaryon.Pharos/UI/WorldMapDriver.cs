@@ -302,6 +302,15 @@ public sealed class WorldMapDriver
     /// <paramref name="title"/>, switches pinned on when asked and clicks Save. The dialog sends
     /// <c>/waypoint addati</c>; this waits until the server's answer reaches the client.
     /// </summary>
+    /// <summary>
+    /// Adds a waypoint at the given block position.
+    /// </summary>
+    public Task<WaypointInfo> AddWaypointAsync(BlockPos position, string title, string icon = "circle", string? color = null, bool pinned = false, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(position);
+        return AddWaypointAsync(position.ToVec3d(), title, icon, color, pinned, ct);
+    }
+
     /// <param name="position">Where the waypoint goes, in absolute block coordinates.</param>
     /// <param name="title">Its title. The dialog saves nothing without one.</param>
     /// <param name="icon">One of <see cref="WaypointIcons"/>.</param>

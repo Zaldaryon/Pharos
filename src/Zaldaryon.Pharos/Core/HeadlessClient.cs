@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 using Vintagestory.API.Client;
@@ -81,8 +82,12 @@ public sealed class HeadlessClient : IDisposable
     public HeadlessClientOptions Options { get; }
     public DeterministicFrameController FrameController { get; }
     public IClientTestPlayer TestPlayer { get; }
+    public ClientWorldMapAccessor WorldMap => _worldMapAccessor ??= new(this);
+    public ClientMain ClientMain => Client;
     public ChunkTesselatorManager? ChunkTesselatorManager { get; private set; }
     public bool IsDisposed => _disposed;
+
+    private ClientWorldMapAccessor? _worldMapAccessor;
 
     /// <summary>
     /// The client's random generators and the process-wide static ones: seeds them so a test's
@@ -1560,4 +1565,29 @@ public sealed class HeadlessClient : IDisposable
             }
         }
     }
+}
+
+/// <summary>
+/// Provides query access to client world map state.
+/// </summary>
+public sealed class ClientWorldMapAccessor
+{
+    private readonly HeadlessClient _client;
+
+    internal ClientWorldMapAccessor(HeadlessClient client) => _client = client;
+
+    /// <summary>
+    /// Gets the number of loaded chunks on the client.
+    /// </summary>
+    public int LoadedChunks => _client.RunOnClientThread(() =>
+    {
+        if (_client.Client?.WorldMap is { } map && Chunks(map) is { } chunks)
+        {
+            return chunks.Count;
+        }
+        return 0;
+    });
+
+    [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "chunks")]
+    private static extern ref Dictionary<long, ClientChunk>? Chunks(ClientWorldMap map);
 }

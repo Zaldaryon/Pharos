@@ -59,6 +59,7 @@ public class VillageTests : ServerScenarioBase
     [ServerScenario]
     public async Task TheWellHasWater()
     {
+        BlockPos well = new(100, 110, 100);
         await Host!.EnsureChunksLoadedAsync(well, well.UpCopy(3));
         // ...
     }
