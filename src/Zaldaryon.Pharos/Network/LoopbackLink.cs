@@ -52,8 +52,25 @@ internal sealed class LoopbackLink
     }
 
     private readonly Func<long>? _frame;
+    private bool _holdServerTraffic;
+    private int _liveDiscarded;
 
     private long Frame => _frame?.Invoke() ?? -1;
+
+    /// <summary>
+    /// While set, the server's live packets are discarded and counted, so a replay can deliver its own in their place.
+    /// </summary>
+    public bool HoldServerTraffic
+    {
+        get { lock (_lock) return _holdServerTraffic; }
+        set { lock (_lock) _holdServerTraffic = value; }
+    }
+
+    /// <summary>The live packets discarded while <see cref="HoldServerTraffic"/> was set.</summary>
+    public int LiveDiscarded
+    {
+        get { lock (_lock) return _liveDiscarded; }
+    }
 
     /// <summary>Whether the wire has been cut.</summary>
     public bool IsSevered { get; private set; }
@@ -101,6 +118,15 @@ internal sealed class LoopbackLink
     /// <summary>A packet the server sent the client over TCP, as it is read off the socket.</summary>
     public void ServerSent(NetIncomingMessage message)
     {
+        lock (_lock)
+        {
+            if (_holdServerTraffic)
+            {
+                _liveDiscarded++;
+                return;
+            }
+        }
+
         byte[] data = new byte[message.messageLength];
         Array.Copy(message.message, data, message.messageLength);
         Record(data, PacketDirection.Inbound, server: true);
@@ -155,6 +181,12 @@ internal sealed class LoopbackLink
 
         lock (_lock)
         {
+            if (_holdServerTraffic)
+            {
+                _liveDiscarded += packets?.Count() ?? 0;
+                return due;
+            }
+
             if (!IsSevered && packets != null)
             {
                 foreach (Packet_UdpPacket packet in packets)

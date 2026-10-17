@@ -926,8 +926,21 @@ public sealed class HeadlessClient : IDisposable
         udp.SetNetwork(udpNetwork);
         Client.UdpNetClient = udp;
 
+        EngineLink = link;
+        EngineUdp = udp;
         return (link, tcp, udp);
     }
+
+    /// <summary>The link the engine's sockets pass through, or null in fixture mode, where no network processing runs.</summary>
+    internal LoopbackLink? EngineLink { get; private set; }
+
+    /// <summary>The datagram socket the engine reads, for a replay to hand datagrams to.</summary>
+    internal LinkedUdpNetClient? EngineUdp { get; private set; }
+
+    private ClientReplay? _replay;
+
+    /// <summary>Replays recorded server traffic into the engine-mode client.</summary>
+    public ClientReplay Replay => _replay ??= new ClientReplay(this);
 
     private static readonly FieldInfo? s_serverAssetsSentLocallyField =
         typeof(Vintagestory.Server.ServerMain).GetField("serverAssetsSentLocally", BindingFlags.Instance | BindingFlags.NonPublic);
