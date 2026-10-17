@@ -40,7 +40,7 @@ public class ClientServerScenarioTests
     public void ClientServerScenarioAttribute_DefaultIsolation_IsRollback()
     {
         var attr = new ClientServerScenarioAttribute();
-        Assert.Equal(WorldIsolation.Rollback, attr.Isolation);
+        Assert.Equal(Isolation.Rollback, attr.Isolation);
     }
 
     [Fact]
@@ -61,8 +61,8 @@ public class ClientServerScenarioTests
     [Fact]
     public void ClientServerScenarioAttribute_Isolation_CanBeSet()
     {
-        var attr = new ClientServerScenarioAttribute { Isolation = WorldIsolation.Restart };
-        Assert.Equal(WorldIsolation.Restart, attr.Isolation);
+        var attr = new ClientServerScenarioAttribute { Isolation = Isolation.Restart };
+        Assert.Equal(Isolation.Restart, attr.Isolation);
     }
 
     [Fact]
@@ -120,7 +120,7 @@ public class ClientServerScenarioTests
     {
         var prop = typeof(ClientServerScenarioBase).GetProperty("Server", ProtectedInstance);
         Assert.NotNull(prop);
-        Assert.Equal(typeof(Vintagestory.Server.ServerMain), prop.PropertyType);
+        Assert.Equal(typeof(EmbeddedServerHost), prop.PropertyType);
         Assert.True(prop.CanRead);
         Assert.False(prop.CanWrite);
     }
@@ -296,6 +296,14 @@ public class ClientServerScenarioTests
     public void ClientServerScenarioBase_HasWaitForWorldReadyAsyncMethod()
     {
         var method = typeof(ClientServerScenarioBase).GetMethod("WaitForWorldReadyAsync", ProtectedInstance);
+        Assert.NotNull(method);
+        Assert.Equal(typeof(Task), method.ReturnType);
+    }
+
+    [Fact]
+    public void ClientServerScenarioBase_HasTryWaitForWorldReadyAsyncMethod()
+    {
+        var method = typeof(ClientServerScenarioBase).GetMethod("TryWaitForWorldReadyAsync", ProtectedInstance);
         Assert.NotNull(method);
         Assert.Equal(typeof(Task<bool>), method.ReturnType);
     }

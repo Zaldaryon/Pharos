@@ -527,11 +527,11 @@ public sealed partial class ClientServerLoopbackSession : IDisposable
     /// <param name="dt">Delta time per frame. Default is 1/60 second.</param>
     /// <param name="serverTicksPerFrame">Number of server ticks per client frame. Default is 1.</param>
     /// <param name="ct">Cancellation token.</param>
-    /// <returns>True if the condition was satisfied; false if maxFrames was reached without the condition being met.</returns>
-    /// <exception cref="ArgumentNullException"><paramref name="condition"/> is null.</exception>
-    /// <exception cref="ArgumentOutOfRangeException"><paramref name="maxFrames"/> is less than or equal to zero.</exception>
-    /// <exception cref="OperationCanceledException">The operation was canceled.</exception>
-    public Task<bool> StepUntilAsync(Func<bool> condition, int maxFrames = 600, float dt = 1f / 60f, int serverTicksPerFrame = 1, CancellationToken ct = default)
+    /// <summary>
+    /// Advances server ticks and client frames in lockstep until the condition returns true or the maximum frame count is reached.
+    /// Returns false if maxFrames was reached without the condition being met.
+    /// </summary>
+    public Task<bool> TryStepUntilAsync(Func<bool> condition, int maxFrames = 600, float dt = 1f / 60f, int serverTicksPerFrame = 1, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(condition);
 
@@ -547,6 +547,23 @@ public sealed partial class ClientServerLoopbackSession : IDisposable
 
         return StepUntilAsyncCore(condition, maxFrames, dt, serverTicksPerFrame, ct);
     }
+
+    /// <summary>
+    /// Advances server ticks and client frames in lockstep until the condition returns true or throws <see cref="PharosTimeoutException"/>.
+    /// </summary>
+    public async Task WaitStepUntilAsync(Func<bool> condition, int maxFrames = 600, float dt = 1f / 60f, int serverTicksPerFrame = 1, string? conditionDescription = null, CancellationToken ct = default)
+    {
+        bool ok = await TryStepUntilAsync(condition, maxFrames, dt, serverTicksPerFrame, ct).ConfigureAwait(false);
+        if (!ok)
+        {
+            throw new PharosTimeoutException($"Session condition {(conditionDescription != null ? $"'{conditionDescription}' " : "")}was not satisfied within {maxFrames} frames.");
+        }
+    }
+
+    /// <summary>Legacy step waiter.</summary>
+    [Obsolete("Use TryStepUntilAsync instead. This method will be removed in 0.8.")]
+    public Task<bool> StepUntilAsync(Func<bool> condition, int maxFrames = 600, float dt = 1f / 60f, int serverTicksPerFrame = 1, CancellationToken ct = default)
+        => TryStepUntilAsync(condition, maxFrames, dt, serverTicksPerFrame, ct);
 
     private async Task<bool> StepUntilAsyncCore(Func<bool> condition, int maxFrames, float dt, int serverTicksPerFrame, CancellationToken ct)
     {
@@ -679,15 +696,16 @@ public sealed partial class ClientServerLoopbackSession : IDisposable
 
     /// <summary>
     /// Advances server and client in lockstep until the specified chunk radius around the player is loaded and meshed.
+    /// Throws <see cref="PharosTimeoutException"/> with diagnostics if chunks are not ready within the frame budget.
     /// </summary>
-    public async Task<bool> WaitForWorldReadyAsync(int radius = 1, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
+    public async Task WaitForWorldReadyAsync(int radius = 1, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
     {
         List<ChunkPos> unmeshed = new();
         for (int frame = 0; frame < maxFrames; frame++)
         {
             if (Client.FrameController.IsWorldReady(radius, out unmeshed))
             {
-                return true;
+                return;
             }
 
             await StepAsync(dt, ct: ct).ConfigureAwait(false);
@@ -695,7 +713,7 @@ public sealed partial class ClientServerLoopbackSession : IDisposable
 
         if (Client.FrameController.IsWorldReady(radius, out unmeshed))
         {
-            return true;
+            return;
         }
 
         Vec3d pos = Player.Position;
@@ -707,7 +725,7 @@ public sealed partial class ClientServerLoopbackSession : IDisposable
             ? string.Join(", ", unmeshed)
             : $"{string.Join(", ", unmeshed.Take(10))}... ({unmeshed.Count} total)";
 
-        throw new TimeoutException(
+        throw new PharosTimeoutException(
             $"World was not ready in loopback session within {maxFrames} frames (dt={dt:F4}s). " +
             $"Player chunk: ({cx}, {cy}, {cz}), radius: {radius}. " +
             $"Unmeshed chunks remaining ({unmeshed.Count}): [{unmeshedSummary}]. " +
@@ -715,15 +733,15 @@ public sealed partial class ClientServerLoopbackSession : IDisposable
             $"dirtyPriority={Client.FrameController.DirtyChunksPriorityCount}, dirtyNormal={Client.FrameController.DirtyChunksCount}.");
     }
 
-    public Task<bool> WaitForWorldReady(int radius = 1, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
-        => WaitForWorldReadyAsync(radius, maxFrames, dt, ct);
-
-    public async Task<bool> WaitForWorldReadyAsync(ChunkPos center, int radius = 1, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
+    /// <summary>
+    /// Advances server and client in lockstep until the specified chunk radius around the player is loaded and meshed.
+    /// Returns false if not ready within maxFrames without throwing.
+    /// </summary>
+    public async Task<bool> TryWaitForWorldReadyAsync(int radius = 1, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
     {
-        List<ChunkPos> unmeshed = new();
         for (int frame = 0; frame < maxFrames; frame++)
         {
-            if (Client.FrameController.IsWorldReady(radius, out unmeshed, center))
+            if (Client.FrameController.IsWorldReady(radius, out _))
             {
                 return true;
             }
@@ -731,16 +749,39 @@ public sealed partial class ClientServerLoopbackSession : IDisposable
             await StepAsync(dt, ct: ct).ConfigureAwait(false);
         }
 
+        return Client.FrameController.IsWorldReady(radius, out _);
+    }
+
+    [Obsolete("Use WaitForWorldReadyAsync instead. This method will be removed in 0.8.")]
+    public async Task<bool> WaitForWorldReady(int radius = 1, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
+    {
+        await WaitForWorldReadyAsync(radius, maxFrames, dt, ct).ConfigureAwait(false);
+        return true;
+    }
+
+    public async Task WaitForWorldReadyAsync(ChunkPos center, int radius = 1, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
+    {
+        List<ChunkPos> unmeshed = new();
+        for (int frame = 0; frame < maxFrames; frame++)
+        {
+            if (Client.FrameController.IsWorldReady(radius, out unmeshed, center))
+            {
+                return;
+            }
+
+            await StepAsync(dt, ct: ct).ConfigureAwait(false);
+        }
+
         if (Client.FrameController.IsWorldReady(radius, out unmeshed, center))
         {
-            return true;
+            return;
         }
 
         string unmeshedSummary = unmeshed.Count <= 10
             ? string.Join(", ", unmeshed)
             : $"{string.Join(", ", unmeshed.Take(10))}... ({unmeshed.Count} total)";
 
-        throw new TimeoutException(
+        throw new PharosTimeoutException(
             $"World was not ready in loopback session within {maxFrames} frames (dt={dt:F4}s). " +
             $"Center chunk: {center}, radius: {radius}. " +
             $"Unmeshed chunks remaining ({unmeshed.Count}): [{unmeshedSummary}]. " +
@@ -748,19 +789,75 @@ public sealed partial class ClientServerLoopbackSession : IDisposable
             $"dirtyPriority={Client.FrameController.DirtyChunksPriorityCount}, dirtyNormal={Client.FrameController.DirtyChunksCount}.");
     }
 
-    public Task<bool> WaitForWorldReady(ChunkPos center, int radius = 1, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
-        => WaitForWorldReadyAsync(center, radius, maxFrames, dt, ct);
+    public async Task<bool> TryWaitForWorldReadyAsync(ChunkPos center, int radius = 1, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
+    {
+        for (int frame = 0; frame < maxFrames; frame++)
+        {
+            if (Client.FrameController.IsWorldReady(radius, out _, center))
+            {
+                return true;
+            }
 
-    public Task<bool> WaitForWorldReadyAsync(BlockPos center, int radius = 1, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
+            await StepAsync(dt, ct: ct).ConfigureAwait(false);
+        }
+
+        return Client.FrameController.IsWorldReady(radius, out _, center);
+    }
+
+    [Obsolete("Use WaitForWorldReadyAsync instead. This method will be removed in 0.8.")]
+    public async Task<bool> WaitForWorldReady(ChunkPos center, int radius = 1, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
+    {
+        await WaitForWorldReadyAsync(center, radius, maxFrames, dt, ct).ConfigureAwait(false);
+        return true;
+    }
+
+    public Task WaitForWorldReadyAsync(BlockPos center, int radius = 1, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(center);
         return WaitForWorldReadyAsync(ChunkPos.FromBlockPos(center), radius, maxFrames, dt, ct);
     }
 
-    public Task<bool> WaitForWorldReady(BlockPos center, int radius = 1, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
-        => WaitForWorldReadyAsync(center, radius, maxFrames, dt, ct);
+    public Task<bool> TryWaitForWorldReadyAsync(BlockPos center, int radius = 1, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(center);
+        return TryWaitForWorldReadyAsync(ChunkPos.FromBlockPos(center), radius, maxFrames, dt, ct);
+    }
 
-    public async Task<bool> WaitForChunkMeshedAsync(ChunkPos chunkPos, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
+    [Obsolete("Use WaitForWorldReadyAsync instead. This method will be removed in 0.8.")]
+    public async Task<bool> WaitForWorldReady(BlockPos center, int radius = 1, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
+    {
+        await WaitForWorldReadyAsync(center, radius, maxFrames, dt, ct).ConfigureAwait(false);
+        return true;
+    }
+
+    public async Task WaitForChunkMeshedAsync(ChunkPos chunkPos, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
+    {
+        for (int frame = 0; frame < maxFrames; frame++)
+        {
+            if (Client.FrameController.IsChunkMeshed(chunkPos))
+            {
+                return;
+            }
+
+            await StepAsync(dt, ct: ct).ConfigureAwait(false);
+        }
+
+        if (Client.FrameController.IsChunkMeshed(chunkPos))
+        {
+            return;
+        }
+
+        var chunk = Client.Client.WorldMap?.GetChunk(chunkPos.X, chunkPos.Y, chunkPos.Z);
+        string status = chunk == null ? "Not loaded / null" : chunk.Empty ? "Empty" : "Loaded, pending tessellation";
+
+        throw new PharosTimeoutException(
+            $"Chunk at {chunkPos} was not meshed in loopback session within {maxFrames} frames (dt={dt:F4}s). " +
+            $"Chunk status: {status}. " +
+            $"Queues: awaitingTesselation={Vintagestory.Client.RuntimeStats.chunksAwaitingTesselation}, awaitingPooling={Vintagestory.Client.RuntimeStats.chunksAwaitingPooling}, " +
+            $"dirtyPriority={Client.FrameController.DirtyChunksPriorityCount}, dirtyNormal={Client.FrameController.DirtyChunksCount}.");
+    }
+
+    public async Task<bool> TryWaitForChunkMeshedAsync(ChunkPos chunkPos, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
     {
         for (int frame = 0; frame < maxFrames; frame++)
         {
@@ -772,37 +869,61 @@ public sealed partial class ClientServerLoopbackSession : IDisposable
             await StepAsync(dt, ct: ct).ConfigureAwait(false);
         }
 
-        if (Client.FrameController.IsChunkMeshed(chunkPos))
-        {
-            return true;
-        }
-
-        var chunk = Client.Client.WorldMap?.GetChunk(chunkPos.X, chunkPos.Y, chunkPos.Z);
-        string status = chunk == null ? "Not loaded / null" : chunk.Empty ? "Empty" : "Loaded, pending tessellation";
-
-        throw new TimeoutException(
-            $"Chunk at {chunkPos} was not meshed in loopback session within {maxFrames} frames (dt={dt:F4}s). " +
-            $"Chunk status: {status}. " +
-            $"Queues: awaitingTesselation={Vintagestory.Client.RuntimeStats.chunksAwaitingTesselation}, awaitingPooling={Vintagestory.Client.RuntimeStats.chunksAwaitingPooling}, " +
-            $"dirtyPriority={Client.FrameController.DirtyChunksPriorityCount}, dirtyNormal={Client.FrameController.DirtyChunksCount}.");
+        return Client.FrameController.IsChunkMeshed(chunkPos);
     }
 
-    public Task<bool> WaitForChunkMeshed(ChunkPos chunkPos, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
-        => WaitForChunkMeshedAsync(chunkPos, maxFrames, dt, ct);
+    [Obsolete("Use WaitForChunkMeshedAsync instead. This method will be removed in 0.8.")]
+    public async Task<bool> WaitForChunkMeshed(ChunkPos chunkPos, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
+    {
+        await WaitForChunkMeshedAsync(chunkPos, maxFrames, dt, ct).ConfigureAwait(false);
+        return true;
+    }
 
-    public Task<bool> WaitForChunkMeshedAsync(int chunkX, int chunkY, int chunkZ, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
+    public Task WaitForChunkMeshedAsync(int chunkX, int chunkY, int chunkZ, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
         => WaitForChunkMeshedAsync(new ChunkPos(chunkX, chunkY, chunkZ), maxFrames, dt, ct);
 
+    public Task<bool> TryWaitForChunkMeshedAsync(int chunkX, int chunkY, int chunkZ, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
+        => TryWaitForChunkMeshedAsync(new ChunkPos(chunkX, chunkY, chunkZ), maxFrames, dt, ct);
+
+    [Obsolete("Use WaitForChunkMeshedAsync instead. This method will be removed in 0.8.")]
     public Task<bool> WaitForChunkMeshed(int chunkX, int chunkY, int chunkZ, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
-        => WaitForChunkMeshedAsync(new ChunkPos(chunkX, chunkY, chunkZ), maxFrames, dt, ct);
+        => WaitForChunkMeshed(new ChunkPos(chunkX, chunkY, chunkZ), maxFrames, dt, ct);
 
-    public Task<bool> WaitForChunkMeshedAsync(BlockPos blockPos, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
+    public Task WaitForChunkMeshedAsync(BlockPos blockPos, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
         => WaitForChunkMeshedAsync(ChunkPos.FromBlockPos(blockPos), maxFrames, dt, ct);
 
+    public Task<bool> TryWaitForChunkMeshedAsync(BlockPos blockPos, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
+        => TryWaitForChunkMeshedAsync(ChunkPos.FromBlockPos(blockPos), maxFrames, dt, ct);
+
+    [Obsolete("Use WaitForChunkMeshedAsync instead. This method will be removed in 0.8.")]
     public Task<bool> WaitForChunkMeshed(BlockPos blockPos, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
-        => WaitForChunkMeshedAsync(ChunkPos.FromBlockPos(blockPos), maxFrames, dt, ct);
+        => WaitForChunkMeshed(ChunkPos.FromBlockPos(blockPos), maxFrames, dt, ct);
 
-    public async Task<bool> WaitForAllMeshesReadyAsync(int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
+    public async Task WaitForAllMeshesReadyAsync(int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
+    {
+        for (int frame = 0; frame < maxFrames; frame++)
+        {
+            if (Client.FrameController.AreAllMeshesReady())
+            {
+                return;
+            }
+
+            await StepAsync(dt, ct: ct).ConfigureAwait(false);
+        }
+
+        if (Client.FrameController.AreAllMeshesReady())
+        {
+            return;
+        }
+
+        throw new PharosTimeoutException(
+            $"Background mesh tessellation queue was not drained in loopback session within {maxFrames} frames (dt={dt:F4}s). " +
+            $"Queues remaining: awaitingTesselation={Vintagestory.Client.RuntimeStats.chunksAwaitingTesselation}, awaitingPooling={Vintagestory.Client.RuntimeStats.chunksAwaitingPooling}, " +
+            $"dirtyPriority={Client.FrameController.DirtyChunksPriorityCount}, dirtyNormal={Client.FrameController.DirtyChunksCount}, dirtyLast={Client.FrameController.DirtyChunksLastCount}, " +
+            $"tessPriority={Client.FrameController.TesselatedChunksPriorityCount}, tessNormal={Client.FrameController.TesselatedChunksCount}.");
+    }
+
+    public async Task<bool> TryWaitForAllMeshesReadyAsync(int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
     {
         for (int frame = 0; frame < maxFrames; frame++)
         {
@@ -814,20 +935,15 @@ public sealed partial class ClientServerLoopbackSession : IDisposable
             await StepAsync(dt, ct: ct).ConfigureAwait(false);
         }
 
-        if (Client.FrameController.AreAllMeshesReady())
-        {
-            return true;
-        }
-
-        throw new TimeoutException(
-            $"Background mesh tessellation queue was not drained in loopback session within {maxFrames} frames (dt={dt:F4}s). " +
-            $"Queues remaining: awaitingTesselation={Vintagestory.Client.RuntimeStats.chunksAwaitingTesselation}, awaitingPooling={Vintagestory.Client.RuntimeStats.chunksAwaitingPooling}, " +
-            $"dirtyPriority={Client.FrameController.DirtyChunksPriorityCount}, dirtyNormal={Client.FrameController.DirtyChunksCount}, dirtyLast={Client.FrameController.DirtyChunksLastCount}, " +
-            $"tessPriority={Client.FrameController.TesselatedChunksPriorityCount}, tessNormal={Client.FrameController.TesselatedChunksCount}.");
+        return Client.FrameController.AreAllMeshesReady();
     }
 
-    public Task<bool> WaitForAllMeshesReady(int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
-        => WaitForAllMeshesReadyAsync(maxFrames, dt, ct);
+    [Obsolete("Use WaitForAllMeshesReadyAsync instead. This method will be removed in 0.8.")]
+    public async Task<bool> WaitForAllMeshesReady(int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
+    {
+        await WaitForAllMeshesReadyAsync(maxFrames, dt, ct).ConfigureAwait(false);
+        return true;
+    }
 
     /// <summary>
     /// Disconnects the client from the server and flushes pending packets through loopback queues.

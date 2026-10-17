@@ -295,7 +295,7 @@ public class LiveVirtualClockTests : ServerScenarioBase
 
             (double before, double rate) = Host.RunOnGameThread(() =>
             {
-                GameCalendar calendar = (GameCalendar)Server!.Calendar;
+                GameCalendar calendar = (GameCalendar)Server!.Server.Calendar;
                 calendar.Tick();
                 return (CalendarDriver.Internals.Timespan(calendar).TotalSeconds, (double)calendar.SpeedOfTime * calendar.CalendarSpeedMul);
             });
@@ -304,7 +304,7 @@ public class LiveVirtualClockTests : ServerScenarioBase
 
             double after = Host.RunOnGameThread(() =>
             {
-                GameCalendar calendar = (GameCalendar)Server!.Calendar;
+                GameCalendar calendar = (GameCalendar)Server!.Server.Calendar;
                 calendar.Tick();
                 return CalendarDriver.Internals.Timespan(calendar).TotalSeconds;
             });
@@ -343,7 +343,7 @@ public class LiveVirtualClockTests : ServerScenarioBase
     public void WallClock_IsUnchangedWithoutAClock()
     {
         Assert.Null(Host!.VirtualClock);
-        (long read, long watch) = Host.RunOnGameThread(() => (Server!.ElapsedMilliseconds, Server.totalUnpausedTime.ElapsedMilliseconds));
+        (long read, long watch) = Host.RunOnGameThread(() => (Server!.ElapsedMilliseconds, Server.Server.totalUnpausedTime.ElapsedMilliseconds));
 
         // Earlier tests on this pooled server may have left it ahead of its stopwatch, never behind.
         Assert.True(read >= watch - 5, $"The server reads {read} ms, its stopwatch {watch} ms");
@@ -378,7 +378,7 @@ public class LiveVirtualClockTests : ServerScenarioBase
         clock.Advance(TimeSpan.FromSeconds(1));
         await Host.WaitForBackgroundWorkAsync();
 
-        Assert.Equal(0, Host.RunOnGameThread(() => { lock (Server!.WorldMap.LightingTasksLock) return Server.WorldMap.LightingTasks.Count; }));
+        Assert.Equal(0, Host.RunOnGameThread(() => { lock (Server!.Server.WorldMap.LightingTasksLock) return Server.Server.WorldMap.LightingTasks.Count; }));
         Assert.True(BlockLight(beside) > 0, "The torch lit nothing once the relight thread was idle");
     }
 

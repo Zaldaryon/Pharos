@@ -177,7 +177,7 @@ public class ClientServerEventLogTests : ClientServerScenarioBase
 
 /// <summary>A client log across a reconnect, in a class of its own: a reconnect ends the pair's reuse.</summary>
 [Collection("Sequential")]
-[ServerWorld(Isolation = WorldIsolation.Restart)]
+[ServerWorld(Isolation = Isolation.Restart)]
 public class ClientEventLogReconnectTests : ClientServerScenarioBase
 {
     protected override HeadlessClientOptions ClientOptions => new() { BootMode = ClientBootMode.Engine, Width = 640, Height = 360 };
@@ -193,7 +193,7 @@ public class ClientEventLogReconnectTests : ClientServerScenarioBase
         Assert.True(Client.SessionNumber > session, "The client did not start a new game session");
 
         // An entity that reaches the client with the chunks it is in comes as loaded, not spawned.
-        Assert.True(await Session.WaitForWorldReadyAsync(), "The world did not load again after the reconnect");
+        await Session.WaitForWorldReadyAsync();
         await Session.StepFramesAsync(60);
         long mark = log.Mark();
         Entity hen = ClientServerEventLogTests.SpawnHenNearPlayer(Client, ServerHost!);

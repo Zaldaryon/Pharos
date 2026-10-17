@@ -13,7 +13,7 @@ namespace Zaldaryon.Pharos.Tests.Server;
 /// <summary>A live server's tick listeners, and firepits and querns run on simulated time.</summary>
 [Collection("Sequential")]
 [Trait(PharosTraits.Category, PharosTraits.Live)]
-[ServerWorld(seed: 4242, playStyle: "creativebuilding", worldType: "superflat", Isolation = WorldIsolation.Restart)]
+[ServerWorld(seed: 4242, playStyle: "creativebuilding", worldType: "superflat", Isolation = Isolation.Restart)]
 public class LiveServerTickListenerTests : ServerScenarioBase
 {
     private const string FirepitType = "Vintagestory.GameContent.BlockEntityFirepit";

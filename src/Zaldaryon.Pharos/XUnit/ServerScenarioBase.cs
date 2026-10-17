@@ -1,5 +1,7 @@
 using Vintagestory.API.Common;
+using Vintagestory.API.Common.Entities;
 using Vintagestory.API.Config;
+using Vintagestory.API.MathTools;
 using Vintagestory.API.Server;
 using Vintagestory.Server;
 using Xunit;
@@ -45,30 +47,50 @@ public abstract class ServerScenarioBase : IAsyncLifetime, IScenarioLifecycle
     private readonly List<ServerTestPlayer> _testPlayers = [];
 
     /// <summary>
+    /// <summary>
     /// Gets the embedded server host managing the test server instance.
-    /// Null until <see cref="InitializeAsync"/> completes.
     /// </summary>
-    protected EmbeddedServerHost? Host => _host ?? _capturing;
+    /// <exception cref="InvalidOperationException">The server is accessed before scenario initialization.</exception>
+    protected EmbeddedServerHost Server => _host ?? _capturing
+        ?? throw new InvalidOperationException("Server is not initialized. It is available after scenario boot.");
+
+    /// <summary>
+    /// Gets the embedded server host managing the test server instance.
+    /// </summary>
+    [Obsolete("Use Server instead. This property will be removed in 0.8.")]
+    protected EmbeddedServerHost Host => Server;
 
     // The server while OnRollbackCaptured runs, before the test has it.
     private EmbeddedServerHost? _capturing;
 
     /// <summary>
-    /// Gets the underlying Vintage Story server instance.
-    /// Null if the host is not initialized.
-    /// </summary>
-    protected ServerMain? Server => Host?.Server;
-
-    /// <summary>
     /// Gets the server-side API for game interactions.
-    /// Null if the server is not running.
     /// </summary>
-    protected ICoreServerAPI? Api => Server?.Api as ICoreServerAPI;
+    /// <exception cref="InvalidOperationException">The server API is accessed before scenario initialization.</exception>
+    protected ICoreServerAPI Api => (ICoreServerAPI)Server.Server.Api;
+
+    /// <summary>Sets a block at the specified position by block code.</summary>
+    protected void SetBlock(BlockPos pos, string blockCode) => Server.SetBlock(pos, blockCode);
+
+    /// <summary>Sets a block at the specified position by numeric ID.</summary>
+    protected void SetBlock(BlockPos pos, int blockId) => Server.SetBlock(pos, blockId);
+
+    /// <summary>Gets the block at the specified position.</summary>
+    protected Block GetBlock(BlockPos pos) => Server.GetBlock(pos);
+
+    /// <summary>Gets the block entity at the specified position, or null if none exists.</summary>
+    protected BlockEntity? GetBlockEntity(BlockPos pos) => Server.GetBlockEntity(pos);
+
+    /// <summary>Gets the block entity of type <typeparamref name="T"/> at the specified position.</summary>
+    protected T? GetBlockEntity<T>(BlockPos pos) where T : BlockEntity => Server.GetBlockEntity<T>(pos);
+
+    /// <summary>Spawns an entity at the specified position.</summary>
+    protected Entity SpawnEntity(string entityCode, Vec3d pos) => Server.SpawnEntity(entityCode, pos);
 
     /// <summary>Polls an assertion once per server tick until it passes or the tick budget expires.</summary>
     protected Task SucceedWhenAsync(Action assertion, int maxTicks = 300, CancellationToken ct = default)
     {
-        EmbeddedServerHost host = Host ?? throw new InvalidOperationException("Server host is not available.");
+        EmbeddedServerHost host = Server;
         return ScenarioTickWait.SucceedWhenAsync(assertion, maxTicks, (count, token) =>
         {
             token.ThrowIfCancellationRequested();
@@ -80,7 +102,7 @@ public abstract class ServerScenarioBase : IAsyncLifetime, IScenarioLifecycle
     /// <summary>Creates a sequence that advances this server by ticks.</summary>
     protected ScenarioSequence Sequence()
     {
-        EmbeddedServerHost host = Host ?? throw new InvalidOperationException("Server host is not available.");
+        EmbeddedServerHost host = Server;
         return new ScenarioSequence((count, token) =>
         {
             token.ThrowIfCancellationRequested();
@@ -92,10 +114,19 @@ public abstract class ServerScenarioBase : IAsyncLifetime, IScenarioLifecycle
     /// <summary>
     /// Gets the world isolation mode used for tests in this class. Defaults to the
     /// <see cref="ServerWorldAttribute.Isolation"/> of the class, or
-    /// <see cref="WorldIsolation.Rollback"/>.
+    /// <see cref="Isolation.Rollback"/>.
     /// </summary>
-    protected virtual WorldIsolation WorldIsolation =>
-        ScenarioAttributes.ServerWorld(GetType())?.Isolation ?? WorldIsolation.Rollback;
+    protected virtual Isolation Isolation =>
+        ScenarioAttributes.ServerWorld(GetType())?.Isolation ?? Isolation.Rollback;
+
+    /// <summary>Legacy world isolation mode.</summary>
+    [Obsolete("Use Isolation instead. This property will be removed in 0.8.")]
+    protected virtual WorldIsolation WorldIsolation => (WorldIsolation)(int)Isolation;
+
+    private Isolation EffectiveIsolation =>
+        (WorldIsolation)(int)Isolation != WorldIsolation.Rollback && WorldIsolation != WorldIsolation.Rollback
+            ? (Isolation)(int)WorldIsolation
+            : Isolation;
 
     /// <summary>
     /// Gets the world to boot. Defaults to the class-level <see cref="ServerWorldAttribute"/>.
@@ -103,7 +134,7 @@ public abstract class ServerScenarioBase : IAsyncLifetime, IScenarioLifecycle
     protected virtual ServerWorldOptions WorldOptions => ScenarioAttributes.WorldOptions(GetType());
 
     /// <summary>
-    /// Whether a test whose world cannot be rolled back fails, under <see cref="WorldIsolation.Rollback"/>.
+    /// Whether a test whose world cannot be rolled back fails, under <see cref="Isolation.Rollback"/>.
     /// Defaults to <see cref="ServerWorldAttribute.StrictIsolation"/>.
     /// </summary>
     protected virtual bool StrictIsolation => ScenarioAttributes.ServerWorld(GetType())?.StrictIsolation ?? false;
@@ -113,7 +144,7 @@ public abstract class ServerScenarioBase : IAsyncLifetime, IScenarioLifecycle
     /// recycled, with what it cost and why it was booted again when a rollback was expected.
     /// Null until <see cref="InitializeAsync"/> completes.
     /// </summary>
-    protected IsolationReport? Isolation { get; private set; }
+    protected IsolationReport? IsolationReport { get; private set; }
 
     /// <summary>
     /// Called once the server's world has been captured for rollbacks, after
@@ -192,9 +223,9 @@ public abstract class ServerScenarioBase : IAsyncLifetime, IScenarioLifecycle
             ServerWorldOptions options = WorldPresetCache.Resolve(WorldOptions);
             IReadOnlyList<string> mods = ScenarioAttributes.ServerMods(GetType());
             DataFileSet files = ScenarioAttributes.DataFiles(GetType(), EnumAppSide.Server);
-            ServerPoolKey key = new(options, string.Join("|", mods), WorldIsolation, files.Key);
+            ServerPoolKey key = new(options, string.Join("|", mods), EffectiveIsolation, files.Key);
 
-            _pooled = WorldIsolation is WorldIsolation.Recycle or WorldIsolation.Rollback
+            _pooled = EffectiveIsolation is Isolation.Recycle or Isolation.Rollback
                 ? ScenarioHostPool.Take<PooledServer>(GetType(), key)
                 : null;
 
@@ -227,7 +258,7 @@ public abstract class ServerScenarioBase : IAsyncLifetime, IScenarioLifecycle
                     _pooled.Host.Logs.Clear();
                 }
 
-                if (WorldIsolation == WorldIsolation.Rollback)
+                if (EffectiveIsolation == Isolation.Rollback)
                 {
                     _pooled.TakeBaseline();
                     RollbackParticipants.Push(_pooled.Host, RollbackEvents.Captured, ScenarioTestInfo.Current?.DisplayName, chunks: null);
@@ -240,7 +271,7 @@ public abstract class ServerScenarioBase : IAsyncLifetime, IScenarioLifecycle
                 }
             }
 
-            Isolation = IsolationLog.Prepared(GetType(), reused, WorldIsolation == WorldIsolation.Recycle, System.Diagnostics.Stopwatch.GetElapsedTime(bootStart));
+            IsolationReport = IsolationLog.Prepared(GetType(), reused, EffectiveIsolation == Isolation.Recycle, System.Diagnostics.Stopwatch.GetElapsedTime(bootStart));
 
             // A client booted since, by another scenario or the test before, moved the game's data
             // folder to its own.
@@ -327,8 +358,8 @@ public abstract class ServerScenarioBase : IAsyncLifetime, IScenarioLifecycle
         ServerDataPath = server?.DataPath ?? sandbox?.RootPath,
         Sandbox = sandbox,
         World = WorldOptions,
-        Isolation = WorldIsolation.ToString(),
-        IsolationReport = Isolation,
+        Isolation = EffectiveIsolation.ToString(),
+        IsolationReport = IsolationReport,
         RandomSeed = server?.Random.CurrentSeed,
         RandomSeedSource = server?.Random.CurrentSource,
         ServerTicks = ScenarioRun.Since(_run.TicksAtStart, server?.TickCount),
@@ -396,25 +427,25 @@ public abstract class ServerScenarioBase : IAsyncLifetime, IScenarioLifecycle
             // The generators go back before anything else: the server is pooled or disposed next,
             // and the static ones belong to the whole process.
             string? random = RollbackParticipants.Try("Restoring the random generators", () => World.RandomSeeding.EndScenario(_host is { IsRunning: true } host ? host.Random : null, client: null));
-            if (random != null && WorldIsolation == WorldIsolation.Restart) ServerMain.Logger?.Warning("Pharos: {0}", random);
+            if (random != null && EffectiveIsolation == Isolation.Restart) ServerMain.Logger?.Warning("Pharos: {0}", random);
 
             if (_pooled != null)
             {
                 string? fallback = WhyNotReusable(_pooled) ?? random ?? (ScenarioHostPool.CanReuseAfterEnvironmentCleanup(environmentFailure) ? null : "a test environment cleanup failed");
                 IsolationReport? rolledBack = null;
-                if (fallback == null && WorldIsolation == WorldIsolation.Rollback)
+                if (fallback == null && EffectiveIsolation == Isolation.Rollback)
                 {
                     (rolledBack, fallback) = _pooled.TryRollback(IsTestListener, new WorldRestoreFilter(ModData: RestoreModData), ScenarioTestInfo.Current?.DisplayName);
                     fallback ??= RollbackParticipants.Try(nameof(OnRollbackRestored), OnRollbackRestored);
                     if (fallback != null) rolledBack = null;
                 }
 
-                bool expected = WorldIsolation is WorldIsolation.Recycle or WorldIsolation.Rollback;
+                bool expected = EffectiveIsolation is Isolation.Recycle or Isolation.Rollback;
                 if (fallback == null && expected)
                 {
                     // The next test judges only what it logs itself. A rollback clears the logs
                     // before it tells the mods, so what their handlers log counts against it.
-                    if (WorldIsolation == WorldIsolation.Recycle) _pooled.Host.Logs.Clear();
+                    if (EffectiveIsolation == Isolation.Recycle) _pooled.Host.Logs.Clear();
                     ScenarioHostPool.Return(GetType(), _pooled.Key, _pooled);
                 }
                 else
@@ -425,7 +456,7 @@ public abstract class ServerScenarioBase : IAsyncLifetime, IScenarioLifecycle
                 }
 
                 IsolationLog.Left(GetType(), rolledBack, expected ? fallback : null, kept: fallback == null && expected);
-                if (fallback != null && WorldIsolation == WorldIsolation.Rollback && StrictIsolation && !_run.TimedOut && !_pooled.Sandbox.IsRetained)
+                if (fallback != null && EffectiveIsolation == Isolation.Rollback && StrictIsolation && !_run.TimedOut && !_pooled.Sandbox.IsRetained)
                 {
                     isolationFailure = new IsolationException($"The world could not be rolled back after this test: {fallback}.");
                 }
@@ -529,7 +560,7 @@ public abstract class ServerScenarioBase : IAsyncLifetime, IScenarioLifecycle
     protected int DataFilePort(string name) =>
         (_pooled ?? throw new InvalidOperationException("Data file ports are known once the server has booted.")).Files.Port(name);
 
-    private sealed record ServerPoolKey(ServerWorldOptions Options, string Mods, WorldIsolation Isolation, string DataFiles);
+    private sealed record ServerPoolKey(ServerWorldOptions Options, string Mods, Isolation Isolation, string DataFiles);
 
     private sealed class PooledServer(ServerSandbox sandbox, EmbeddedServerHost host, ServerPoolKey key, DataFileSet files) : IDisposable
     {
@@ -653,15 +684,16 @@ public abstract class ServerScenarioBase : IAsyncLifetime, IScenarioLifecycle
     /// awaits the async callback before returning the final result.
     /// </para>
     /// </remarks>
-    public Task<CommandResult> ExecuteCommand(string command)
+    public Task<CommandResult> ExecuteCommandAsync(string command)
     {
-        if (Server is null || Api is null)
-        {
-            throw new InvalidOperationException("Server is not running. Ensure the host is initialized before executing commands.");
-        }
-
         return ExecuteCommandCore(command, caller: null);
     }
+
+    /// <summary>
+    /// Executes a console command on the server.
+    /// </summary>
+    [Obsolete("Use ExecuteCommandAsync instead. This method will be removed in 0.8.")]
+    public Task<CommandResult> ExecuteCommand(string command) => ExecuteCommandAsync(command);
 
     /// <summary>
     /// Executes a command as if issued by the specified test player.
@@ -671,14 +703,9 @@ public abstract class ServerScenarioBase : IAsyncLifetime, IScenarioLifecycle
     /// <returns>A task that completes with the command result.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="player"/> is null.</exception>
     /// <exception cref="InvalidOperationException">The server is not running or player is not connected.</exception>
-    public Task<CommandResult> ExecuteCommandAsPlayer(IServerTestPlayer player, string command)
+    public Task<CommandResult> ExecuteCommandAsPlayerAsync(IServerTestPlayer player, string command)
     {
         ArgumentNullException.ThrowIfNull(player);
-
-        if (Server is null || Api is null)
-        {
-            throw new InvalidOperationException("Server is not running. Ensure the host is initialized before executing commands.");
-        }
 
         if (player.Player is null)
         {
@@ -695,14 +722,20 @@ public abstract class ServerScenarioBase : IAsyncLifetime, IScenarioLifecycle
     }
 
     /// <summary>
+    /// Executes a command as if issued by the specified test player.
+    /// </summary>
+    [Obsolete("Use ExecuteCommandAsPlayerAsync instead. This method will be removed in 0.8.")]
+    public Task<CommandResult> ExecuteCommandAsPlayer(IServerTestPlayer player, string command) => ExecuteCommandAsPlayerAsync(player, command);
+
+    /// <summary>
     /// Executes a command and asserts that it succeeds.
     /// </summary>
     /// <param name="command">The full command string including arguments.</param>
     /// <returns>A task that completes when the command has executed successfully.</returns>
     /// <exception cref="Xunit.Sdk.XunitException">The command did not succeed.</exception>
-    public async Task ExecuteSuccess(string command)
+    public async Task ExecuteSuccessAsync(string command)
     {
-        CommandResult result = await ExecuteCommand(command).ConfigureAwait(false);
+        CommandResult result = await ExecuteCommandAsync(command).ConfigureAwait(false);
 
         if (!result.Ok)
         {
@@ -713,6 +746,12 @@ public abstract class ServerScenarioBase : IAsyncLifetime, IScenarioLifecycle
     }
 
     /// <summary>
+    /// Executes a command and asserts that it succeeds.
+    /// </summary>
+    [Obsolete("Use ExecuteSuccessAsync instead. This method will be removed in 0.8.")]
+    public Task ExecuteSuccess(string command) => ExecuteSuccessAsync(command);
+
+    /// <summary>
     /// Executes a command as a player and asserts that it succeeds.
     /// </summary>
     /// <param name="player">The test player to execute the command as.</param>
@@ -720,9 +759,9 @@ public abstract class ServerScenarioBase : IAsyncLifetime, IScenarioLifecycle
     /// <returns>A task that completes when the command has executed successfully.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="player"/> is null.</exception>
     /// <exception cref="Xunit.Sdk.XunitException">The command did not succeed.</exception>
-    public async Task ExecuteSuccessAsPlayer(IServerTestPlayer player, string command)
+    public async Task ExecuteSuccessAsPlayerAsync(IServerTestPlayer player, string command)
     {
-        CommandResult result = await ExecuteCommandAsPlayer(player, command).ConfigureAwait(false);
+        CommandResult result = await ExecuteCommandAsPlayerAsync(player, command).ConfigureAwait(false);
 
         if (!result.Ok)
         {
@@ -731,6 +770,12 @@ public abstract class ServerScenarioBase : IAsyncLifetime, IScenarioLifecycle
                 result);
         }
     }
+
+    /// <summary>
+    /// Executes a command as a player and asserts that it succeeds.
+    /// </summary>
+    [Obsolete("Use ExecuteSuccessAsPlayerAsync instead. This method will be removed in 0.8.")]
+    public Task ExecuteSuccessAsPlayer(IServerTestPlayer player, string command) => ExecuteSuccessAsPlayerAsync(player, command);
 
     /// <summary>The caller the game gives a command typed into the server console: an admin with every privilege.</summary>
     internal static Caller ConsoleCaller() => new()
@@ -743,6 +788,8 @@ public abstract class ServerScenarioBase : IAsyncLifetime, IScenarioLifecycle
 
     private Task<CommandResult> ExecuteCommandCore(string command, Caller? caller)
     {
+        EmbeddedServerHost host = Server;
+
         TaskCompletionSource<CommandResult> tcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         // Strip leading slash if present
@@ -763,7 +810,7 @@ public abstract class ServerScenarioBase : IAsyncLifetime, IScenarioLifecycle
         // Execute command with callback for async completion, on the server's game thread like a
         // command typed into the server console
         // ExecuteUnparsed takes the text as typed: it drops the leading slash itself.
-        void Execute() => Api!.ChatCommands.ExecuteUnparsed("/" + normalizedCommand, args, result =>
+        void Execute() => Api.ChatCommands.ExecuteUnparsed("/" + normalizedCommand, args, result =>
         {
             CommandResult cmdResult = new(
                 result.Status,
@@ -773,8 +820,7 @@ public abstract class ServerScenarioBase : IAsyncLifetime, IScenarioLifecycle
             tcs.TrySetResult(cmdResult);
         });
 
-        if (_host is null) Execute();
-        else _host.RunOnGameThread(Execute);
+        host.RunOnGameThread(Execute);
 
         return tcs.Task;
     }

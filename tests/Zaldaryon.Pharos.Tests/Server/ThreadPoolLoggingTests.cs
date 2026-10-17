@@ -8,7 +8,7 @@ namespace Zaldaryon.Pharos.Tests.Server;
 
 /// <summary>Checks that an embedded server captures failures from asynchronous game callbacks.</summary>
 [Collection("Sequential")]
-[ServerWorld(seed: 4242, Isolation = WorldIsolation.Restart)]
+[ServerWorld(seed: 4242, Isolation = Isolation.Restart)]
 public sealed class ThreadPoolLoggingTests : ServerScenarioBase
 {
     [ServerScenario]

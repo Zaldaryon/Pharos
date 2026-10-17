@@ -194,7 +194,7 @@ public static class ServerWorldHelpers
         bool success = await host.TickUntilAsync(IsChunkLoaded, maxTicks, ct).ConfigureAwait(false);
         if (!success)
         {
-            throw new TimeoutException($"Chunk ({cx}, {cy}, {cz}) was not loaded within {maxTicks} ticks.");
+            throw new PharosTimeoutException($"Chunk ({cx}, {cy}, {cz}) was not loaded within {maxTicks} ticks.");
         }
     }
 
@@ -259,7 +259,7 @@ public static class ServerWorldHelpers
         bool success = await host.TickUntilAsync(FindEntity, maxTicks, ct).ConfigureAwait(false);
         if (!success || foundEntity is null)
         {
-            throw new TimeoutException($"Entity '{entityCode}' was not found within radius {radius} of {aroundPos} after {maxTicks} ticks.");
+            throw new PharosTimeoutException($"Entity '{entityCode}' was not found within radius {radius} of {aroundPos} after {maxTicks} ticks.");
         }
 
         return foundEntity;
@@ -305,7 +305,7 @@ public static class ServerWorldHelpers
         bool success = await host.TickUntilAsync(condition, maxTicks, ct).ConfigureAwait(false);
         if (!success)
         {
-            throw new TimeoutException($"Condition was not met within {maxTicks} ticks.");
+            throw new PharosTimeoutException($"Condition was not met within {maxTicks} ticks.");
         }
     }
 
@@ -412,38 +412,66 @@ public static class ServerWorldHelpers
         return entityType?.Id ?? 0;
     }
 
+
+
     // Helper to get API from scenario via reflection (since it's protected)
-    private static void OnGameThread(ServerScenarioBase scenario, Action action)
+    private static void OnGameThread(object scenario, Action action)
     {
         EmbeddedServerHost? host = GetHost(scenario);
         if (host is null) action();
         else host.RunOnGameThread(action);
     }
 
-    private static T OnGameThread<T>(ServerScenarioBase scenario, Func<T> action)
+    private static T OnGameThread<T>(object scenario, Func<T> action)
     {
         EmbeddedServerHost? host = GetHost(scenario);
         return host is null ? action() : host.RunOnGameThread(action);
     }
 
-    private static ICoreServerAPI? GetApi(ServerScenarioBase scenario)
+    private static ICoreServerAPI? GetApi(object scenario)
     {
-        // Use reflection to access the protected Api property
-        var prop = typeof(ServerScenarioBase).GetProperty(
+        var prop = scenario.GetType().GetProperty(
             "Api",
-            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public);
 
-        return prop?.GetValue(scenario) as ICoreServerAPI;
+        try
+        {
+            return prop?.GetValue(scenario) as ICoreServerAPI;
+        }
+        catch (System.Reflection.TargetInvocationException)
+        {
+            return null;
+        }
+        catch (InvalidOperationException)
+        {
+            return null;
+        }
     }
 
     // Helper to get Host from scenario via reflection (since it's protected)
-    private static EmbeddedServerHost? GetHost(ServerScenarioBase scenario)
+    private static EmbeddedServerHost? GetHost(object scenario)
     {
-        // Use reflection to access the protected Host property
-        var prop = typeof(ServerScenarioBase).GetProperty(
+        var prop = scenario.GetType().GetProperty(
+            "Server",
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public)
+            ?? scenario.GetType().GetProperty(
             "Host",
-            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public)
+            ?? scenario.GetType().GetProperty(
+            "ServerHost",
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public);
 
-        return prop?.GetValue(scenario) as EmbeddedServerHost;
+        try
+        {
+            return prop?.GetValue(scenario) as EmbeddedServerHost;
+        }
+        catch (System.Reflection.TargetInvocationException)
+        {
+            return null;
+        }
+        catch (InvalidOperationException)
+        {
+            return null;
+        }
     }
 }

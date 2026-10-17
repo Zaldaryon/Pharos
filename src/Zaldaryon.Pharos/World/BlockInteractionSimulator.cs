@@ -8,6 +8,7 @@ namespace Zaldaryon.Pharos.World;
 /// Simulates block placement, breaking, and tool usage deterministically.
 /// Supports both mock mode for pure-logic testing and live client mode.
 /// </summary>
+[Obsolete("BlockInteractionSimulator simulates hard-coded mock liquids and blocks instead of driving the game. Use LiveBlockInteraction or Session.BlockInteraction instead. This type will be removed in 0.8.")]
 public sealed class BlockInteractionSimulator
 {
     private readonly object _lock = new();

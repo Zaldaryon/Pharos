@@ -115,7 +115,7 @@ public class ServerScenarioBaseTests
             BindingFlags.Instance | BindingFlags.NonPublic);
 
         Assert.NotNull(prop);
-        Assert.Equal(typeof(ServerMain), prop.PropertyType);
+        Assert.Equal(typeof(EmbeddedServerHost), prop.PropertyType);
     }
 
     [Fact]
@@ -130,10 +130,10 @@ public class ServerScenarioBaseTests
     }
 
     [Fact]
-    public void ServerScenarioBase_DefaultWorldIsolation_IsRollback()
+    public void ServerScenarioBase_DefaultIsolation_IsRollback()
     {
         var scenario = new ConcreteServerScenario();
-        Assert.Equal(WorldIsolation.Rollback, scenario.ExposedWorldIsolation);
+        Assert.Equal(Isolation.Rollback, scenario.ExposedIsolation);
     }
 
     [Fact]
@@ -241,7 +241,7 @@ public class ServerScenarioBaseTests
 
         Assert.NotNull(type.GetMethod("GrantPrivilege"));
         Assert.NotNull(type.GetMethod("RevokePrivilege"));
-        Assert.NotNull(type.GetMethod("TeleportTo"));
+        Assert.NotNull(type.GetMethod("TeleportToAsync"));
         Assert.NotNull(type.GetMethod("GiveItem"));
         Assert.NotNull(type.GetMethod("HasItem"));
     }
@@ -251,6 +251,9 @@ public class ServerScenarioBaseTests
     /// </summary>
     private sealed class ConcreteServerScenario : ServerScenarioBase
     {
+        public Isolation ExposedIsolation => Isolation;
+#pragma warning disable CS0618
         public WorldIsolation ExposedWorldIsolation => WorldIsolation;
+#pragma warning restore CS0618
     }
 }

@@ -184,7 +184,7 @@ public sealed class ServerTestPlayer : IServerTestPlayer, IDisposable
     }
 
     /// <inheritdoc />
-    public Task TeleportTo(double x, double y, double z)
+    public Task TeleportToAsync(double x, double y, double z)
     {
         if (_player?.Entity is null)
         {
@@ -194,6 +194,10 @@ public sealed class ServerTestPlayer : IServerTestPlayer, IDisposable
         OnGameThread(() => _player.Entity.TeleportToDouble(x, y, z));
         return Task.CompletedTask;
     }
+
+    /// <inheritdoc />
+    [Obsolete("Use TeleportToAsync instead. This method will be removed in 0.8.")]
+    public Task TeleportTo(double x, double y, double z) => TeleportToAsync(x, y, z);
 
     /// <inheritdoc />
     public Task<bool> MountAsync(Entity mountable)

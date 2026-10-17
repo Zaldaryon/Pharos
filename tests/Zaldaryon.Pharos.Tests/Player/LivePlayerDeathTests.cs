@@ -11,7 +11,7 @@ namespace Zaldaryon.Pharos.Tests.Player;
 
 /// <summary>Damaging, killing and respawning a headless player on a live survival server.</summary>
 [Collection("Sequential")]
-[ServerWorld(seed: 4242, playStyle: "surviveandbuild", Isolation = WorldIsolation.Restart)]
+[ServerWorld(seed: 4242, playStyle: "surviveandbuild", Isolation = Isolation.Restart)]
 public class LivePlayerDeathTests : ThreadPoolWarningScenarioBase
 {
     [ServerScenario]

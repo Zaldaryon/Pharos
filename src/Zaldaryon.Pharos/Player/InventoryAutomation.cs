@@ -38,6 +38,7 @@ public sealed class InventoryAutomation
     /// <summary>
     /// Creates an InventoryAutomation instance in pure mock mode for testing.
     /// </summary>
+    [Obsolete("InventoryAutomation parameterless mock constructor uses hard-coded mocks instead of testing real player inventory. Use InventoryAutomation(IPlayerInventoryAccessor) or Client.Ui.Crafting instead. This constructor will be removed in 0.8.")]
     public InventoryAutomation()
     {
         _accessor = null!;
@@ -47,6 +48,7 @@ public sealed class InventoryAutomation
     /// <summary>
     /// Enables mock mode for pure-logic testing without a live client.
     /// </summary>
+    [Obsolete("Mock mode in InventoryAutomation uses hard-coded mocks instead of testing real player inventory. This member will be removed in 0.8.")]
     public void EnableMockMode()
     {
         lock (_lock)
@@ -58,6 +60,7 @@ public sealed class InventoryAutomation
     /// <summary>
     /// Disables mock mode to use real inventory accessor.
     /// </summary>
+    [Obsolete("Mock mode in InventoryAutomation uses hard-coded mocks instead of testing real player inventory. This member will be removed in 0.8.")]
     public void DisableMockMode()
     {
         lock (_lock)
@@ -69,6 +72,7 @@ public sealed class InventoryAutomation
     /// <summary>
     /// Gets whether mock mode is enabled.
     /// </summary>
+    [Obsolete("Mock mode in InventoryAutomation uses hard-coded mocks instead of testing real player inventory. This member will be removed in 0.8.")]
     public bool IsMockMode
     {
         get
@@ -251,6 +255,7 @@ public sealed class InventoryAutomation
     /// <summary>
     /// Clears the crafting grid, removing all items from crafting slots.
     /// </summary>
+    [Obsolete("Crafting grid members on InventoryAutomation do not drive real game crafting. Use Client.Ui.Crafting or server crafting APIs instead. This method will be removed in 0.8.")]
     public void ClearCraftingGrid()
     {
         lock (_lock)
@@ -286,6 +291,7 @@ public sealed class InventoryAutomation
     /// <returns>
     /// True if the slot was set. On a live inventory an item cannot be placed this way, so placing one returns false; clearing works.
     /// </returns>
+    [Obsolete("Crafting grid members on InventoryAutomation do not drive real game crafting. Use Client.Ui.Crafting or server crafting APIs instead. This method will be removed in 0.8.")]
     public bool SetCraftingSlot(int x, int y, string? itemCode)
     {
         if (x < 0 || y < 0 || x > 2 || y > 2)
@@ -346,6 +352,7 @@ public sealed class InventoryAutomation
     /// <param name="x">Grid X coordinate (0-2 for 3x3 grid).</param>
     /// <param name="y">Grid Y coordinate (0-2 for 3x3 grid).</param>
     /// <returns>The item code at the position, or null if empty/invalid.</returns>
+    [Obsolete("Crafting grid members on InventoryAutomation do not drive real game crafting. Use Client.Ui.Crafting or server crafting APIs instead. This method will be removed in 0.8.")]
     public string? GetCraftingSlot(int x, int y)
     {
         if (x < 0 || y < 0 || x > 2 || y > 2)
@@ -382,6 +389,7 @@ public sealed class InventoryAutomation
     /// Gets the total number of slots containing items in the mock inventory.
     /// Only meaningful in mock mode.
     /// </summary>
+    [Obsolete("Mock mode in InventoryAutomation uses hard-coded mocks instead of testing real player inventory. This member will be removed in 0.8.")]
     public int MockSlotCount
     {
         get
@@ -397,6 +405,7 @@ public sealed class InventoryAutomation
     /// Gets the number of items currently in the mock crafting grid.
     /// Only meaningful in mock mode.
     /// </summary>
+    [Obsolete("MockCraftingGridCount uses hard-coded mocks instead of testing real crafting. Use Client.Ui.Crafting or server crafting APIs instead. This property will be removed in 0.8.")]
     public int MockCraftingGridCount
     {
         get
@@ -411,6 +420,7 @@ public sealed class InventoryAutomation
     /// <summary>
     /// Resets all mock state including slots and crafting grid.
     /// </summary>
+    [Obsolete("Mock mode in InventoryAutomation uses hard-coded mocks instead of testing real player inventory. This member will be removed in 0.8.")]
     public void ResetMockState()
     {
         lock (_lock)

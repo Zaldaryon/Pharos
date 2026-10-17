@@ -1,4 +1,6 @@
 using System.Reflection;
+using Vintagestory.API.Common;
+using Vintagestory.API.Common.Entities;
 using Vintagestory.API.MathTools;
 using Vintagestory.API.Server;
 using Vintagestory.Common;
@@ -63,14 +65,14 @@ public sealed partial class EmbeddedServerHost
     }
 
     // Prepares on the game thread, lets whoever ticks the server load the chunks, then places.
-    internal async Task<SchematicPlacement> PlaceSchematicCoreAsync(SchematicPlacer placer, BlockPos origin, int maxTicks, bool readBack, Func<Func<bool>, int, Task<bool>> advanceUntil)
+    internal async Task<SchematicPlacement> PlaceSchematicCoreAsync(SchematicPlacer placer, BlockPos origin, int maxTicks, bool readBack, System.Func<System.Func<bool>, int, Task<bool>> advanceUntil)
     {
         RunOnGameThread(() => placer.Prepare(ServerApi, origin));
         await LoadChunksCoreAsync(placer.Chunks, maxTicks, advanceUntil).ConfigureAwait(false);
         return RunOnGameThread(() => placer.Place(ServerApi, readBack));
     }
 
-    internal async Task LoadChunksCoreAsync(IReadOnlyList<ChunkPos> chunks, int maxTicks, Func<Func<bool>, int, Task<bool>> advanceUntil)
+    internal async Task LoadChunksCoreAsync(IReadOnlyList<ChunkPos> chunks, int maxTicks, System.Func<System.Func<bool>, int, Task<bool>> advanceUntil)
     {
         if (maxTicks <= 0) throw new ArgumentOutOfRangeException(nameof(maxTicks), maxTicks, "Maximum tick count must be positive.");
         RunOnGameThread(() => ChunkRegion.Request(ServerApi, chunks));
@@ -230,5 +232,79 @@ public sealed partial class EmbeddedServerHost
         {
             if (File.Exists(stale)) File.Delete(stale);
         }
+    }
+
+    /// <summary>
+    /// Sets a block at the specified position by block code.
+    /// </summary>
+    public void SetBlock(BlockPos pos, string blockCode)
+    {
+        ArgumentNullException.ThrowIfNull(pos);
+        ArgumentNullException.ThrowIfNull(blockCode);
+
+        ICoreServerAPI api = ServerApi;
+        Block block = api.World.GetBlock(new AssetLocation(blockCode))
+            ?? throw new InvalidOperationException($"Block code '{blockCode}' could not be resolved.");
+
+        RunOnGameThread(() => api.World.BlockAccessor.SetBlock(block.Id, pos));
+    }
+
+    /// <summary>
+    /// Sets a block at the specified position by numeric ID.
+    /// </summary>
+    public void SetBlock(BlockPos pos, int blockId)
+    {
+        ArgumentNullException.ThrowIfNull(pos);
+        RunOnGameThread(() => ServerApi.World.BlockAccessor.SetBlock(blockId, pos));
+    }
+
+    /// <summary>
+    /// Gets the block at the specified position.
+    /// </summary>
+    public Block GetBlock(BlockPos pos)
+    {
+        ArgumentNullException.ThrowIfNull(pos);
+        return ServerApi.World.BlockAccessor.GetBlock(pos);
+    }
+
+    /// <summary>
+    /// Gets the block entity at the specified position, or null if none exists.
+    /// </summary>
+    public BlockEntity? GetBlockEntity(BlockPos pos)
+    {
+        ArgumentNullException.ThrowIfNull(pos);
+        return ServerApi.World.BlockAccessor.GetBlockEntity(pos);
+    }
+
+    /// <summary>
+    /// Gets the block entity of type <typeparamref name="T"/> at the specified position, or null if none exists or it is of a different type.
+    /// </summary>
+    public T? GetBlockEntity<T>(BlockPos pos) where T : BlockEntity
+    {
+        return GetBlockEntity(pos) as T;
+    }
+
+    /// <summary>
+    /// Spawns an entity at the specified position.
+    /// </summary>
+    public Entity SpawnEntity(string entityCode, Vec3d pos)
+    {
+        ArgumentNullException.ThrowIfNull(entityCode);
+        ArgumentNullException.ThrowIfNull(pos);
+
+        ICoreServerAPI api = ServerApi;
+        return RunOnGameThread(() =>
+        {
+            EntityProperties? entityType = api.World.GetEntityType(new AssetLocation(entityCode));
+            if (entityType is null)
+            {
+                throw new InvalidOperationException($"Entity code '{entityCode}' could not be resolved.");
+            }
+
+            Entity entity = api.World.ClassRegistry.CreateEntity(entityType);
+            entity.Pos.SetPos(pos);
+            api.World.SpawnEntity(entity);
+            return entity;
+        });
     }
 }

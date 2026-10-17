@@ -3,6 +3,7 @@ using System.Threading.Tasks;
 using Vintagestory.API.MathTools;
 using Vintagestory.Client;
 using Xunit;
+using Zaldaryon.Pharos;
 using Zaldaryon.Pharos.Bootstrap;
 using Zaldaryon.Pharos.Core;
 using Zaldaryon.Pharos.Platform;
@@ -142,7 +143,7 @@ public class FrameControllerTests
         // In standalone offline test mode without server, an unmeshed chunk position should timeout
         ChunkPos nonExistentChunk = new(100, 200, 300);
 
-        await Assert.ThrowsAsync<TimeoutException>(async () =>
+        await Assert.ThrowsAsync<PharosTimeoutException>(async () =>
         {
             await client.WaitForChunkMeshed(nonExistentChunk, maxFrames: 3, dt: 1f / 60f);
         });

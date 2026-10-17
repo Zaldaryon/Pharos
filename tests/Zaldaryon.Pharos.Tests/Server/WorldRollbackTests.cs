@@ -13,7 +13,7 @@ namespace Zaldaryon.Pharos.Tests.Server;
 /// on a live server.
 /// </summary>
 [Collection("Sequential")]
-[ServerWorld(seed: 4242, playStyle: "creativebuilding", worldType: "superflat", Isolation = WorldIsolation.Restart)]
+[ServerWorld(seed: 4242, playStyle: "creativebuilding", worldType: "superflat", Isolation = Isolation.Restart)]
 public class WorldSnapshotTests : ThreadPoolWarningScenarioBase
 {
     [ServerScenario]
@@ -42,8 +42,8 @@ public class WorldSnapshotTests : ThreadPoolWarningScenarioBase
         Assert.True(restored > 0, "No chunk was restored");
         Assert.Equal(before, BlockIdAt(pos));
         Assert.Null(Host.RunOnGameThread(() => Api!.World.GetEntityById(hen.EntityId)));
-        Assert.False(Host.RunOnGameThread(() => Server!.PlayerDataManager.WorldDataByUID.ContainsKey(bobUid)), "A player who joined after the snapshot was kept");
-        Assert.True(Host.RunOnGameThread(() => Server!.PlayerDataManager.WorldDataByUID.ContainsKey(aliceUid)), "A player from the snapshot was forgotten");
+        Assert.False(Host.RunOnGameThread(() => Server!.Server.PlayerDataManager.WorldDataByUID.ContainsKey(bobUid)), "A player who joined after the snapshot was kept");
+        Assert.True(Host.RunOnGameThread(() => Server!.Server.PlayerDataManager.WorldDataByUID.ContainsKey(aliceUid)), "A player from the snapshot was forgotten");
     }
 
     [ServerScenario]
@@ -86,7 +86,7 @@ public class WorldSnapshotTests : ThreadPoolWarningScenarioBase
 /// they start from a clean one, on the same server. Whichever runs second sees the rollback.
 /// </summary>
 [Collection("Sequential")]
-[ServerWorld(seed: 4243, playStyle: "creativebuilding", worldType: "superflat", Isolation = WorldIsolation.Rollback)]
+[ServerWorld(seed: 4243, playStyle: "creativebuilding", worldType: "superflat", Isolation = Isolation.Rollback)]
 public class WorldRollbackIsolationTests : ServerScenarioBase
 {
     private static EmbeddedServerHost? s_previousHost;

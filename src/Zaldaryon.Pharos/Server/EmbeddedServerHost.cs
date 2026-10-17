@@ -7,8 +7,10 @@ using System.Threading;
 using System.Threading.Tasks;
 using Vintagestory;
 using Vintagestory.API.Common;
+using Vintagestory.API.Common.Entities;
 using Vintagestory.API.Config;
 using Vintagestory.API.Datastructures;
+using Vintagestory.API.Server;
 using Vintagestory.Common;
 using Vintagestory.Server;
 using Vintagestory.Server.Network;
@@ -65,6 +67,33 @@ public sealed partial class EmbeddedServerHost : IDisposable, IAsyncDisposable
 
     /// <summary>The underlying Vintage Story server instance.</summary>
     public ServerMain Server { get; }
+
+    /// <summary>The server-side API for game interactions.</summary>
+    public ICoreServerAPI Api => (ICoreServerAPI)Server.Api;
+
+    /// <summary>The mod event manager of the server.</summary>
+    public ServerEventManager ModEventManager => Server.ModEventManager;
+
+    /// <summary>The server event manager.</summary>
+    public ServerEventManager EventManager => Server.EventManager;
+
+    /// <summary>All currently connected players on the server.</summary>
+    public IPlayer[] AllOnlinePlayers => Server.AllOnlinePlayers;
+
+    /// <summary>Connected clients by client ID.</summary>
+    public CachingConcurrentDictionary<int, ConnectedClient> Clients => Server.Clients;
+
+    /// <summary>Elapsed simulation milliseconds on the server.</summary>
+    public long ElapsedMilliseconds => Server.ElapsedMilliseconds;
+
+    /// <summary>The server's default player spawn position.</summary>
+    public EntityPos DefaultSpawnPosition => Server.DefaultSpawnPosition;
+
+    /// <summary>Gets a connected client by player name, or null if not found.</summary>
+    public ConnectedClient? GetClientByPlayername(string name) => Server.GetClientByPlayername(name);
+
+    /// <summary>The server configuration.</summary>
+    public ServerConfig Config => Server.Config;
 
     /// <summary>
     /// The TCP and UDP port the server listens on for network clients, or null when it accepts
@@ -715,9 +744,11 @@ public sealed partial class EmbeddedServerHost : IDisposable, IAsyncDisposable
     /// <returns>True if the predicate was satisfied; false if maxTicks was reached.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="predicate"/> is null.</exception>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="maxTicks"/> is less than or equal to zero.</exception>
-    /// <exception cref="OperationCanceledException">The operation was canceled.</exception>
-    /// <exception cref="ServerCrashedException">The server crashed during tick processing.</exception>
-    public Task<bool> TickUntilAsync(Func<bool> predicate, int maxTicks = 600, CancellationToken ct = default)
+    /// <summary>
+    /// Advances the server until the specified predicate returns true or the maximum tick count is reached.
+    /// Returns false if maxTicks was reached without the condition being met.
+    /// </summary>
+    public Task<bool> TryTickUntilAsync(Func<bool> predicate, int maxTicks = 600, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(predicate);
 
@@ -729,16 +760,9 @@ public sealed partial class EmbeddedServerHost : IDisposable, IAsyncDisposable
 
     /// <summary>
     /// Advances the server until the specified async predicate returns true or the maximum tick count is reached.
+    /// Returns false if maxTicks was reached without the condition being met.
     /// </summary>
-    /// <param name="asyncPredicate">An async function that returns true when the wait condition is satisfied.</param>
-    /// <param name="maxTicks">The maximum number of ticks to wait. Default is 600 (10 seconds at 60 TPS).</param>
-    /// <param name="ct">A cancellation token to cancel the wait.</param>
-    /// <returns>True if the predicate was satisfied; false if maxTicks was reached.</returns>
-    /// <exception cref="ArgumentNullException"><paramref name="asyncPredicate"/> is null.</exception>
-    /// <exception cref="ArgumentOutOfRangeException"><paramref name="maxTicks"/> is less than or equal to zero.</exception>
-    /// <exception cref="OperationCanceledException">The operation was canceled.</exception>
-    /// <exception cref="ServerCrashedException">The server crashed during tick processing.</exception>
-    public Task<bool> TickUntilAsync(Func<Task<bool>> asyncPredicate, int maxTicks = 600, CancellationToken ct = default)
+    public Task<bool> TryTickUntilAsync(Func<Task<bool>> asyncPredicate, int maxTicks = 600, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(asyncPredicate);
 
@@ -747,6 +771,40 @@ public sealed partial class EmbeddedServerHost : IDisposable, IAsyncDisposable
 
         return TickUntilAsyncCore(asyncPredicate, maxTicks, ct);
     }
+
+    /// <summary>
+    /// Advances the server until the specified predicate returns true or throws <see cref="PharosTimeoutException"/>.
+    /// </summary>
+    public async Task WaitTickUntilAsync(Func<bool> predicate, int maxTicks = 600, string? conditionDescription = null, CancellationToken ct = default)
+    {
+        bool ok = await TryTickUntilAsync(predicate, maxTicks, ct).ConfigureAwait(false);
+        if (!ok)
+        {
+            throw new PharosTimeoutException($"Server condition {(conditionDescription != null ? $"'{conditionDescription}' " : "")}was not satisfied within {maxTicks} ticks.");
+        }
+    }
+
+    /// <summary>
+    /// Advances the server until the specified async predicate returns true or throws <see cref="PharosTimeoutException"/>.
+    /// </summary>
+    public async Task WaitTickUntilAsync(Func<Task<bool>> asyncPredicate, int maxTicks = 600, string? conditionDescription = null, CancellationToken ct = default)
+    {
+        bool ok = await TryTickUntilAsync(asyncPredicate, maxTicks, ct).ConfigureAwait(false);
+        if (!ok)
+        {
+            throw new PharosTimeoutException($"Server condition {(conditionDescription != null ? $"'{conditionDescription}' " : "")}was not satisfied within {maxTicks} ticks.");
+        }
+    }
+
+    /// <summary>Legacy tick waiter.</summary>
+    [Obsolete("Use TryTickUntilAsync instead. This method will be removed in 0.8.")]
+    public Task<bool> TickUntilAsync(Func<bool> predicate, int maxTicks = 600, CancellationToken ct = default)
+        => TryTickUntilAsync(predicate, maxTicks, ct);
+
+    /// <summary>Legacy async tick waiter.</summary>
+    [Obsolete("Use TryTickUntilAsync instead. This method will be removed in 0.8.")]
+    public Task<bool> TickUntilAsync(Func<Task<bool>> asyncPredicate, int maxTicks = 600, CancellationToken ct = default)
+        => TryTickUntilAsync(asyncPredicate, maxTicks, ct);
 
     private async Task<bool> TickUntilAsyncCore(Func<bool> predicate, int maxTicks, CancellationToken ct)
     {

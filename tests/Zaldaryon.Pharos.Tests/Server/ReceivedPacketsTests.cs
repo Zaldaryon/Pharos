@@ -21,7 +21,7 @@ public class PharosTestMessage
 }
 
 [Collection("Sequential")]
-[ServerWorld(seed: 5151, Isolation = WorldIsolation.Restart)]
+[ServerWorld(seed: 5151, Isolation = Isolation.Restart)]
 public class ReceivedPacketsTests : ThreadPoolWarningScenarioBase
 {
     private ICoreServerAPI Sapi => Api!;

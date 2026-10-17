@@ -15,15 +15,30 @@ public sealed class ClientIsolationManager
     /// <summary>
     /// Initializes a new ClientIsolationManager with the specified isolation mode.
     /// </summary>
-    public ClientIsolationManager(IsolationMode mode)
+    public ClientIsolationManager(Isolation mode)
     {
         Mode = mode;
     }
 
     /// <summary>
+    /// Initializes a new ClientIsolationManager with the legacy isolation mode.
+    /// </summary>
+    [Obsolete("Use ClientIsolationManager(Isolation) instead. This constructor will be removed in 0.8.")]
+    public ClientIsolationManager(IsolationMode mode)
+        : this(mode.ToIsolation())
+    {
+    }
+
+    /// <summary>
     /// The isolation mode this manager operates under.
     /// </summary>
-    public IsolationMode Mode { get; }
+    public Isolation Mode { get; }
+
+    /// <summary>
+    /// Legacy isolation mode.
+    /// </summary>
+    [Obsolete("Use Mode instead. This property will be removed in 0.8.")]
+    public IsolationMode IsolationMode => Mode.ToIsolationMode();
 
     /// <summary>
     /// The currently active client, if any.
@@ -45,18 +60,18 @@ public sealed class ClientIsolationManager
 
         switch (Mode)
         {
-            case IsolationMode.SharedClient:
+            case Isolation.Recycle:
                 // No-op: tests share state freely
                 break;
 
-            case IsolationMode.RollbackState:
+            case Isolation.Rollback:
                 if (client is not null && _savedContext is not null)
                 {
                     RestoreState(client, _savedContext);
                 }
                 break;
 
-            case IsolationMode.FreshClient:
+            case Isolation.Restart:
                 // In unit tests, we record the need but do not actually reboot.
                 // Integration tests check RequiresFreshClient and handle it.
                 _requiresFreshClient = true;

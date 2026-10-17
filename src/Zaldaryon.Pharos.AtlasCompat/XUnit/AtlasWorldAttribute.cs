@@ -67,7 +67,7 @@ public sealed class AtlasWorldAttribute : Attribute
         return new ServerWorldAttribute(Seed, PlayStyle, WorldType)
         {
             WorldConfigurationJson = WorldConfigurationJson,
-            Isolation = Isolation
+            Isolation = (Isolation)Isolation
         };
     }
 }

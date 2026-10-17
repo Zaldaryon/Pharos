@@ -84,7 +84,7 @@ public partial class LiveClientServerRollbackParticipationTests : ClientServerSc
 
     private async Task LeavesNothingBehindAsync()
     {
-        IsolationReport report = Isolation!;
+        IsolationReport report = IsolationReport!;
         Assert.True(report.Kind is IsolationKind.FirstBoot or IsolationKind.RolledBack, report.ToString());
 
         (int serverCaptured, int serverRestored) = Counts((await ServerCommandAsync("/pharosrollbacks")));
@@ -161,7 +161,7 @@ public class LiveServerRollbackParticipationTests : ServerScenarioBase
 
     private async Task LeavesNothingBehindAsync()
     {
-        IsolationReport report = Isolation!;
+        IsolationReport report = IsolationReport!;
         if (report.Kind == IsolationKind.RolledBack)
         {
             Assert.True(report.ListenersRemoved >= 1, report.ToString());

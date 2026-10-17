@@ -23,21 +23,21 @@ public class IsolationModeTests
     {
         var overhead = IsolationOverhead.Zero;
 
-        Assert.Equal(IsolationMode.SharedClient, overhead.Mode);
+        Assert.Equal(Isolation.Recycle, overhead.Mode);
     }
 
     [Fact]
     public void ClientIsolationManager_DefaultMode_IsShared()
     {
-        var manager = new ClientIsolationManager(IsolationMode.SharedClient);
+        var manager = new ClientIsolationManager(Isolation.Recycle);
 
-        Assert.Equal(IsolationMode.SharedClient, manager.Mode);
+        Assert.Equal(Isolation.Recycle, manager.Mode);
     }
 
     [Fact]
     public void ClientIsolationManager_PrepareForTest_SharedMode_NoOp()
     {
-        var manager = new ClientIsolationManager(IsolationMode.SharedClient);
+        var manager = new ClientIsolationManager(Isolation.Recycle);
 
         var ex = Record.Exception(() => manager.PrepareForTest(null));
 
@@ -48,14 +48,14 @@ public class IsolationModeTests
     [Fact]
     public void ClientIsolationManager_MeasureOverhead_ReturnsTimedResult()
     {
-        var manager = new ClientIsolationManager(IsolationMode.SharedClient);
+        var manager = new ClientIsolationManager(Isolation.Recycle);
         bool executed = false;
 
         var overhead = manager.MeasureOverhead(() => executed = true);
 
         Assert.True(executed);
         Assert.True(overhead.Duration >= TimeSpan.Zero);
-        Assert.Equal(IsolationMode.SharedClient, overhead.Mode);
+        Assert.Equal(Isolation.Recycle, overhead.Mode);
     }
 
     [Fact]
@@ -120,9 +120,9 @@ public class IsolationModeTests
     [Fact]
     public void ClientIsolationManager_RollbackMode_StoresMode()
     {
-        var manager = new ClientIsolationManager(IsolationMode.RollbackState);
+        var manager = new ClientIsolationManager(Isolation.Rollback);
 
-        Assert.Equal(IsolationMode.RollbackState, manager.Mode);
+        Assert.Equal(Isolation.Rollback, manager.Mode);
     }
 
     /// <summary>

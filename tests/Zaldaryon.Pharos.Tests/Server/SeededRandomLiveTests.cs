@@ -12,7 +12,7 @@ namespace Zaldaryon.Pharos.Tests.Server;
 
 /// <summary>A seeded server: the world's generator, statics, block entities and players, replay and restore.</summary>
 [Seeded(1234)]
-[ServerWorld(seed: 4242, playStyle: "creativebuilding", worldType: "superflat", Isolation = WorldIsolation.Rollback)]
+[ServerWorld(seed: 4242, playStyle: "creativebuilding", worldType: "superflat", Isolation = Isolation.Rollback)]
 public class SeededRandomServerTests : ServerScenarioBase
 {
     private const BindingFlags AnyInstance = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
@@ -99,19 +99,19 @@ public class SeededRandomServerTests : ServerScenarioBase
     [ServerScenario]
     public void Restore_PutsTheGamesGeneratorsBack()
     {
-        ThreadLocal<Random> seeded = Server!.rand;
+        ThreadLocal<Random> seeded = Server!.Server.rand;
         Host!.Random.Restore();
 
         Assert.Null(Host.Random.CurrentSeed);
         Assert.Same(this, StaticRandomSeeding.Owner);
-        ThreadLocal<Random> original = Server.rand;
+        ThreadLocal<Random> original = Server.Server.rand;
         Assert.NotSame(seeded, original);
 
         Host.Random.Seed(1);
-        Assert.NotSame(original, Server.rand);
+        Assert.NotSame(original, Server.Server.rand);
         Assert.Same(Host.Random, StaticRandomSeeding.Owner);
         Host.Random.Restore();
-        Assert.Same(original, Server.rand);
+        Assert.Same(original, Server.Server.rand);
         Assert.Null(StaticRandomSeeding.Owner);
         Assert.Empty(Host.Random.Seeded);
     }
@@ -135,7 +135,7 @@ public class SeededRandomServerTests : ServerScenarioBase
 }
 
 /// <summary>A test that is not seeded keeps the game's own generators.</summary>
-[ServerWorld(seed: 4242, playStyle: "creativebuilding", worldType: "superflat", Isolation = WorldIsolation.Rollback)]
+[ServerWorld(seed: 4242, playStyle: "creativebuilding", worldType: "superflat", Isolation = Isolation.Rollback)]
 public class UnseededServerTests : ServerScenarioBase
 {
     [ServerScenario]

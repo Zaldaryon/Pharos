@@ -22,26 +22,45 @@ public class ServerScenarioAttributeTests
     }
 
     [Fact]
+    public void Isolation_Rollback_IsDefault()
+    {
+        Assert.Equal(Isolation.Rollback, default(Isolation));
+    }
+
+    [Fact]
+    public void Isolation_HasValues()
+    {
+        var values = Enum.GetValues<Isolation>();
+        Assert.Contains(Isolation.Rollback, values);
+        Assert.Contains(Isolation.Restart, values);
+        Assert.Contains(Isolation.Recycle, values);
+    }
+
+    [Fact]
     public void WorldIsolation_Rollback_IsDefault()
     {
+#pragma warning disable CS0618
         Assert.Equal(WorldIsolation.Rollback, default(WorldIsolation));
+#pragma warning restore CS0618
     }
 
     [Fact]
     public void WorldIsolation_HasThreeValues()
     {
+#pragma warning disable CS0618
         var values = Enum.GetValues<WorldIsolation>();
         Assert.Equal(3, values.Length);
         Assert.Contains(WorldIsolation.Rollback, values);
         Assert.Contains(WorldIsolation.Restart, values);
         Assert.Contains(WorldIsolation.Recycle, values);
+#pragma warning restore CS0618
     }
 
     [Fact]
     public void ServerScenarioAttribute_DefaultIsolation_IsRollback()
     {
         var attr = new ServerScenarioAttribute();
-        Assert.Equal(WorldIsolation.Rollback, attr.Isolation);
+        Assert.Equal(Isolation.Rollback, attr.Isolation);
     }
 
     [Fact]
@@ -63,7 +82,7 @@ public class ServerScenarioAttributeTests
     public void ServerTheoryAttribute_DefaultIsolation_IsRollback()
     {
         var attr = new ServerTheoryAttribute();
-        Assert.Equal(WorldIsolation.Rollback, attr.Isolation);
+        Assert.Equal(Isolation.Rollback, attr.Isolation);
     }
 
     [Fact]
@@ -82,7 +101,7 @@ public class ServerScenarioAttributeTests
         Assert.Equal("creativebuilding", attr.PlayStyle);
         Assert.Equal("superflat", attr.WorldType);
         Assert.Null(attr.WorldConfigurationJson);
-        Assert.Equal(WorldIsolation.Rollback, attr.Isolation);
+        Assert.Equal(Isolation.Rollback, attr.Isolation);
     }
 
     [Fact]

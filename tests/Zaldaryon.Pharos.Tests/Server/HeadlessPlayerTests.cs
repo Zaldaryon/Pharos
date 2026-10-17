@@ -14,7 +14,7 @@ using Zaldaryon.Pharos.XUnit;
 namespace Zaldaryon.Pharos.Tests.Server;
 
 [Collection("Sequential")]
-[ServerWorld(seed: 4242, Isolation = WorldIsolation.Restart)]
+[ServerWorld(seed: 4242, Isolation = Isolation.Restart)]
 public class HeadlessPlayerTests : ThreadPoolWarningScenarioBase
 {
     [ServerScenario]

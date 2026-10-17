@@ -15,10 +15,16 @@ public readonly struct IsolationOverhead
     /// <summary>
     /// The isolation mode that was applied.
     /// </summary>
-    public IsolationMode Mode { get; init; }
+    public Isolation Mode { get; init; }
+
+    /// <summary>
+    /// Legacy isolation mode.
+    /// </summary>
+    [Obsolete("Use Mode instead. This property will be removed in 0.8.")]
+    public IsolationMode IsolationMode => Mode.ToIsolationMode();
 
     /// <summary>
     /// A zero-overhead sentinel value for SharedClient mode.
     /// </summary>
-    public static IsolationOverhead Zero => new() { Duration = TimeSpan.Zero, Mode = IsolationMode.SharedClient };
+    public static IsolationOverhead Zero => new() { Duration = TimeSpan.Zero, Mode = Isolation.Recycle };
 }

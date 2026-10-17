@@ -3,6 +3,7 @@ using Vintagestory.Server;
 using Xunit;
 using Zaldaryon.Pharos.Bootstrap;
 using Zaldaryon.Pharos.Core;
+using Zaldaryon.Pharos.Server;
 using Zaldaryon.Pharos.XUnit;
 
 namespace Zaldaryon.Pharos.Tests.XUnit;
@@ -53,10 +54,10 @@ public class ServerScenarioLifecycleTests : ServerScenarioBase
 }
 
 [Collection("Sequential")]
-[ServerWorld(Isolation = WorldIsolation.Recycle)]
+[ServerWorld(Isolation = Isolation.Recycle)]
 public class ServerScenarioRecycleTests : ServerScenarioBase
 {
-    private static ServerMain? s_first;
+    private static EmbeddedServerHost? s_first;
 
     [ServerScenario]
     public void First_SharesTheServerWithTheOtherTest() => AssertShared();
@@ -73,10 +74,10 @@ public class ServerScenarioRecycleTests : ServerScenarioBase
 }
 
 [Collection("Sequential")]
-[ServerWorld(Isolation = WorldIsolation.Restart)]
+[ServerWorld(Isolation = Isolation.Restart)]
 public class ServerScenarioRestartTests : ServerScenarioBase
 {
-    private static ServerMain? s_first;
+    private static EmbeddedServerHost? s_first;
 
     [ServerScenario]
     public void First_GetsItsOwnServer() => AssertFresh();
@@ -121,7 +122,7 @@ public class FreshClientScenarioLifecycleTests : ClientScenarioBase
 {
     private static HeadlessClient? s_first;
 
-    protected override IsolationMode IsolationMode => IsolationMode.FreshClient;
+    protected override Isolation Isolation => Isolation.Restart;
 
     [ClientScenario]
     public void First_GetsItsOwnClient() => AssertFresh();
