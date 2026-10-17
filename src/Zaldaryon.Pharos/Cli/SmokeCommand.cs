@@ -49,6 +49,9 @@ public sealed record SmokeOptions
     /// <summary>The play style, <c>creativebuilding</c> by default.</summary>
     public string? PlayStyle { get; init; }
 
+    /// <summary>Cached world recipe; <c>survival</c> selects the survival superflat preset.</summary>
+    public WorldPreset Preset { get; init; }
+
     /// <summary>Whether the game's own output is shown instead of written to <c>smoke.log</c>.</summary>
     public bool Verbose { get; init; }
 }
@@ -92,6 +95,7 @@ public static class SmokeCommand
           --seed <seed>           The world seed
           --world-type <type>     The world type (default: superflat)
           --play-style <style>    The play style (default: creativebuilding)
+          --preset survival       Use the cached survival world preset
           -v, --verbose           Show the game's own output instead of writing it to smoke.log
           -h, --help              Show this help
 
@@ -160,6 +164,11 @@ public static class SmokeCommand
                     break;
                 case "--play-style":
                     options = options with { PlayStyle = Value(args, ref i, arg) };
+                    break;
+                case "--preset":
+                    string preset = Value(args, ref i, arg);
+                    if (preset != "survival") throw new ArgumentException($"Unknown smoke world preset '{preset}'. Use survival.");
+                    options = options with { Preset = WorldPreset.SurvivalFlat };
                     break;
                 default:
                     throw new ArgumentException($"Unknown option '{arg}'.");
@@ -377,7 +386,7 @@ public static class SmokeCommand
         {
             get
             {
-                ServerWorldOptions world = new() { WorldName = "Pharos-Smoke" };
+                ServerWorldOptions world = new() { WorldName = "Pharos-Smoke", Preset = options.Preset };
                 return world with
                 {
                     Seed = options.Seed ?? world.Seed,

@@ -38,7 +38,7 @@ public class ScenarioPipelineTests
         ScenarioRunnerHarness.RunResult result = await ScenarioRunnerHarness.RunAsync(typeof(Sample), nameof(Sample.Passes));
 
         Assert.Single(result.Passed);
-        Assert.Equal(["init", "before", "body", "check", "dispose"], Recorder.Events);
+        Assert.Equal(["init", "before", "environments", "body", "check", "dispose"], Recorder.Events);
     }
 
     [Fact]
@@ -48,7 +48,7 @@ public class ScenarioPipelineTests
 
         ScenarioRunnerHarness.RunResult result = await ScenarioRunnerHarness.RunAsync(typeof(Sample), nameof(Sample.Fails));
 
-        Assert.Equal(["init", "before", "body", "capture:failed", "dispose"], Recorder.Events);
+        Assert.Equal(["init", "before", "environments", "body", "capture:failed", "dispose"], Recorder.Events);
         Assert.Equal(typeof(ScenarioFailedException).FullName, result.FailureType);
         Assert.StartsWith("Xunit.Sdk.TrueException: the world is wrong", result.FailureMessage);
         Assert.Contains("captured by the sample", result.FailureMessage);
@@ -63,7 +63,7 @@ public class ScenarioPipelineTests
 
         ScenarioRunnerHarness.RunResult result = await ScenarioRunnerHarness.RunAsync(typeof(Sample), nameof(Sample.Passes));
 
-        Assert.Equal(["init", "before", "body", "check", "capture:failed", "dispose"], Recorder.Events);
+        Assert.Equal(["init", "before", "environments", "body", "check", "capture:failed", "dispose"], Recorder.Events);
         Assert.Contains("logged an error", result.FailureMessage);
     }
 
@@ -76,7 +76,7 @@ public class ScenarioPipelineTests
 
         Assert.Empty(result.Failed);
         Assert.Contains("mod absent", Assert.Single(result.Skipped).Reason);
-        Assert.Equal(["init", "before", "body", "dispose"], Recorder.Events);
+        Assert.Equal(["init", "before", "environments", "body", "dispose"], Recorder.Events);
     }
 
     [Fact]
@@ -97,7 +97,7 @@ public class ScenarioPipelineTests
 
         ScenarioRunnerHarness.RunResult result = await ScenarioRunnerHarness.RunAsync(typeof(Sample), nameof(Sample.StepsForever));
 
-        Assert.Equal(["init", "before", "body", "timedOut:stopped", "capture:timedOut", "dispose"], Recorder.Events);
+        Assert.Equal(["init", "before", "environments", "body", "timedOut:stopped", "capture:timedOut", "dispose"], Recorder.Events);
         Assert.StartsWith(typeof(TestTimeoutException).FullName + ": ", result.FailureMessage);
         // 200 ms, times PHAROS_TIMEOUT_SCALE where a slow lane sets it.
         Assert.Matches(@"timed out after \d+ milliseconds", result.FailureMessage);
@@ -112,7 +112,7 @@ public class ScenarioPipelineTests
         ScenarioRunnerHarness.RunResult result = await ScenarioRunnerHarness.RunAsync(typeof(Sample), nameof(Sample.StepsSynchronously));
 
         // xUnit's own timeout would have skipped DisposeAsync, which releases the scenario host.
-        Assert.Equal(["init", "before", "body", "timedOut:stopped", "capture:timedOut", "dispose"], Recorder.Events);
+        Assert.Equal(["init", "before", "environments", "body", "timedOut:stopped", "capture:timedOut", "dispose"], Recorder.Events);
         Assert.StartsWith(typeof(TestTimeoutException).FullName, result.FailureMessage);
     }
 
@@ -127,7 +127,7 @@ public class ScenarioPipelineTests
         {
             ScenarioRunnerHarness.RunResult result = await ScenarioRunnerHarness.RunAsync(typeof(Sample), nameof(Sample.AwaitsForever));
 
-            Assert.Equal(["init", "before", "body", "timedOut:stillRunning", "capture:timedOut", "dispose"], Recorder.Events);
+            Assert.Equal(["init", "before", "environments", "body", "timedOut:stillRunning", "capture:timedOut", "dispose"], Recorder.Events);
             Assert.StartsWith(typeof(TestTimeoutException).FullName, result.FailureMessage);
         }
         finally
@@ -186,6 +186,66 @@ public class ScenarioPipelineTests
         Assert.Equal(typeof(ScenarioFailedException).FullName, result.FailureType);
         Assert.Contains("boot failed", result.FailureMessage);
         Assert.Contains(nameof(FailsToStart.Never), result.FailureMessage);
+    }
+
+    [Fact]
+    public async Task EnvironmentFailure_IsCapturedAndCleanupRunsAfterPartialApply()
+    {
+        Recorder.Reset();
+
+        ScenarioRunnerHarness.RunResult result = await ScenarioRunnerHarness.RunAsync(typeof(Sample), nameof(Sample.EnvironmentFails));
+
+        Assert.Equal(["init", "before", "environments", "environment:apply", "capture:failed", "environment:cleanup", "dispose"], Recorder.Events);
+        Assert.Equal(typeof(ScenarioFailedException).FullName, result.FailureType);
+        Assert.Contains("environment setup failed", result.FailureMessage);
+    }
+
+    [Fact]
+    public async Task CleanupFailure_IsCapturedAndRemainsVisibleToFallbackDisposal()
+    {
+        Recorder.Reset();
+
+        ScenarioRunnerHarness.RunResult result = await ScenarioRunnerHarness.RunAsync(typeof(Sample), nameof(Sample.CleanupFails));
+
+        Assert.Equal(
+            ["init", "before", "environments", "body", "check", "environment:cleanup-fails", "capture:failed", "fallback:cleanup-fails", "dispose"],
+            Recorder.Events);
+        Assert.Equal(typeof(ScenarioFailedException).FullName, result.FailureType);
+        Assert.Contains("environment cleanup failed", result.FailureMessage);
+    }
+
+    [Fact]
+    public async Task EnvironmentTimeout_IsAbortedCapturedAndCleanedUp()
+    {
+        Recorder.Reset();
+
+        ScenarioRunnerHarness.RunResult result = await ScenarioRunnerHarness.RunAsync(typeof(Sample), nameof(Sample.EnvironmentTimesOut));
+
+        Assert.Equal(["init", "before", "environments", "environment:wait", "timedOut:stopped", "capture:timedOut", "environment:cleanup", "dispose"], Recorder.Events);
+        Assert.StartsWith(typeof(TestTimeoutException).FullName, result.FailureMessage);
+    }
+
+    [Fact]
+    public async Task EnvironmentSkipUsesTheDynamicSkipPath()
+    {
+        Recorder.Reset();
+
+        ScenarioRunnerHarness.RunResult result = await ScenarioRunnerHarness.RunAsync(typeof(Sample), nameof(Sample.EnvironmentSkips));
+
+        Assert.Empty(result.Failed);
+        Assert.Contains("environment unavailable", Assert.Single(result.Skipped).Reason);
+        Assert.Equal(["init", "before", "environments", "environment:skip", "environment:cleanup", "dispose"], Recorder.Events);
+    }
+
+    [Fact]
+    public async Task AsyncEnvironmentCanYieldAndTheBodyKeepsThePipelineThread()
+    {
+        Recorder.Reset();
+
+        ScenarioRunnerHarness.RunResult result = await ScenarioRunnerHarness.RunAsync(typeof(Sample), nameof(Sample.EnvironmentYields));
+
+        Assert.Single(result.Passed);
+        Assert.Equal(["init", "before", "environments", "environment:yield", "environment:ready", "body", "check", "environment:cleanup", "dispose"], Recorder.Events);
     }
 
     [Fact]
@@ -284,7 +344,7 @@ public class ScenarioPipelineTests
         {
             ScenarioRunnerHarness.RunResult result = await ScenarioRunnerHarness.RunAsync(typeof(Sample), nameof(Sample.HangsOnTheGameThread));
 
-            Assert.Equal(["init", "before", "body", "timedOut:stillRunning", "capture:timedOut", "dispose"], Recorder.Events);
+            Assert.Equal(["init", "before", "environments", "body", "timedOut:stillRunning", "capture:timedOut", "dispose"], Recorder.Events);
             Assert.StartsWith(typeof(TestTimeoutException).FullName, result.FailureMessage);
         }
         finally
@@ -381,19 +441,45 @@ public class ScenarioPipelineTests
 #pragma warning disable xUnit1000 // Samples are private so the real test run does not discover them.
     private sealed class Sample : IAsyncLifetime, IScenarioLifecycle
     {
+        private ScenarioContext? _environmentContext;
+
         public Task InitializeAsync()
         {
             Recorder.Add("init");
             return Task.CompletedTask;
         }
 
-        public Task DisposeAsync()
+        public async Task DisposeAsync()
         {
+            if (_environmentContext is { } context)
+            {
+                try { await context.DisposeAsync(); }
+                catch (InvalidOperationException ex) when (ex.Message == "environment cleanup failed")
+                {
+                    Recorder.Add("fallback:cleanup-fails");
+                }
+            }
             Recorder.Add("dispose");
-            return Task.CompletedTask;
         }
 
         void IScenarioLifecycle.BeforeBody() => Recorder.Add("before");
+
+        Task IScenarioLifecycle.ApplyEnvironmentsAsync(CancellationToken cancellationToken)
+        {
+            Recorder.Add("environments");
+            ScenarioTestInfo test = ScenarioTestInfo.Current!;
+            _environmentContext = new ScenarioContext(server: null, client: null, session: null);
+            return ScenarioEnvironments.ApplyAsync(test.TestClass, test.Method, _environmentContext, cancellationToken);
+        }
+
+        async Task IScenarioLifecycle.CleanupEnvironmentsAsync(CancellationToken cancellationToken)
+        {
+            if (_environmentContext is { } context)
+            {
+                await context.DisposeAsync(cancellationToken);
+                if (ReferenceEquals(_environmentContext, context)) _environmentContext = null;
+            }
+        }
 
         void IScenarioLifecycle.CheckLoggedErrors()
         {
@@ -413,6 +499,26 @@ public class ScenarioPipelineTests
 
         [ServerScenario]
         public void Passes() => Recorder.Add("body");
+
+        [ServerScenario]
+        [TestEnvironment(typeof(FailingEnvironment))]
+        public void EnvironmentFails() => Recorder.Add("body");
+
+        [ServerScenario]
+        [TestEnvironment(typeof(CleanupFailingEnvironment))]
+        public void CleanupFails() => Recorder.Add("body");
+
+        [ServerScenario(TimeoutMs = 200)]
+        [TestEnvironment(typeof(CancelledEnvironment))]
+        public void EnvironmentTimesOut() => Recorder.Add("body");
+
+        [ServerScenario]
+        [TestEnvironment(typeof(SkippingEnvironment))]
+        public void EnvironmentSkips() => Recorder.Add("body");
+
+        [ServerScenario(TimeoutMs = 1000)]
+        [TestEnvironment(typeof(YieldingEnvironment))]
+        public void EnvironmentYields() => Recorder.Add("body");
 
         [ServerScenario]
         public void Fails()
@@ -487,6 +593,62 @@ public class ScenarioPipelineTests
         public void ObjectRows(object value) => Assert.Fail("row " + value);
 
         public static IEnumerable<object[]> Objects() => [[new object()]];
+    }
+
+    public sealed class FailingEnvironment : ITestEnvironment
+    {
+        public Task ApplyAsync(ScenarioContext context, CancellationToken cancellationToken)
+        {
+            Recorder.Add("environment:apply");
+            context.OnCleanup(() => Recorder.Add("environment:cleanup"));
+            throw new InvalidOperationException("environment setup failed");
+        }
+    }
+
+    public sealed class CleanupFailingEnvironment : ITestEnvironment
+    {
+        public Task ApplyAsync(ScenarioContext context, CancellationToken cancellationToken)
+        {
+            context.OnCleanup(() =>
+            {
+                Recorder.Add("environment:cleanup-fails");
+                throw new InvalidOperationException("environment cleanup failed");
+            });
+            return Task.CompletedTask;
+        }
+    }
+
+    public sealed class CancelledEnvironment : ITestEnvironment
+    {
+        public async Task ApplyAsync(ScenarioContext context, CancellationToken cancellationToken)
+        {
+            Recorder.Add("environment:wait");
+            context.OnCleanup(() => Recorder.Add("environment:cleanup"));
+            await Task.Delay(Timeout.Infinite, cancellationToken);
+        }
+    }
+
+    public sealed class SkippingEnvironment : ITestEnvironment
+    {
+        public Task ApplyAsync(ScenarioContext context, CancellationToken cancellationToken)
+        {
+            Recorder.Add("environment:skip");
+            context.OnCleanup(() => Recorder.Add("environment:cleanup"));
+            PharosAssert.Skip("environment unavailable");
+            return Task.CompletedTask;
+        }
+    }
+
+    public sealed class YieldingEnvironment : ITestEnvironment
+    {
+        public async Task ApplyAsync(ScenarioContext context, CancellationToken cancellationToken)
+        {
+            Recorder.Add("environment:yield");
+            context.OnCleanup(() => Recorder.Add("environment:cleanup"));
+            await Task.Yield();
+            cancellationToken.ThrowIfCancellationRequested();
+            Recorder.Add("environment:ready");
+        }
     }
 
     private sealed class FailsToStart : IAsyncLifetime

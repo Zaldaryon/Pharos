@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Globalization;
 using System.Reflection;
 using System.Collections.Concurrent;
+using System.Collections;
 using Xunit;
 using Xunit.Abstractions;
 using Xunit.Sdk;
@@ -52,6 +53,32 @@ internal sealed class ScenarioSkipTracker
     public void MarkSkipped(ITest test) => _skipped.TryAdd(test, 0);
 }
 
+/// <summary>Runs async setup continuations on the thread that owns a fixture-mode game client.</summary>
+internal sealed class ScenarioThreadPump : SynchronizationContext
+{
+    private readonly BlockingCollection<(SendOrPostCallback Callback, object? State)> _queue = new();
+
+    public override void Post(SendOrPostCallback callback, object? state) => _queue.Add((callback, state));
+
+    public bool Run(Task task, CancellationToken abort, TimeSpan grace)
+    {
+        while (!task.IsCompleted && !abort.IsCancellationRequested)
+        {
+            if (_queue.TryTake(out var work, 25)) work.Callback(work.State);
+        }
+        if (!task.IsCompleted && abort.IsCancellationRequested)
+        {
+            DateTime deadline = DateTime.UtcNow + grace;
+            while (!task.IsCompleted && DateTime.UtcNow < deadline)
+                if (_queue.TryTake(out var work, 25)) work.Callback(work.State);
+            return task.IsCompleted;
+        }
+        while (_queue.TryTake(out var work)) work.Callback(work.State);
+        task.GetAwaiter().GetResult();
+        return true;
+    }
+}
+
 internal sealed class ScenarioSkipMessageBus(IMessageBus inner, ScenarioSkipTracker tracker) : IMessageBus
 {
     public bool QueueMessage(IMessageSinkMessage message)
@@ -78,6 +105,12 @@ internal interface IScenarioLifecycle
 {
     /// <summary>Called just before the test body runs, after the class is initialized.</summary>
     void BeforeBody();
+
+    /// <summary>Applies per-test environments under the scenario watchdog.</summary>
+    Task ApplyEnvironmentsAsync(CancellationToken cancellationToken);
+
+    /// <summary>Runs registered environment cleanup on the scenario's owning thread.</summary>
+    Task CleanupEnvironmentsAsync(CancellationToken cancellationToken);
 
     /// <summary>Throws when the scenario logged errors it does not allow; called when the body passed.</summary>
     void CheckLoggedErrors();
@@ -385,10 +418,100 @@ internal sealed class ScenarioTestInvoker(
         AbortScope scope = new(abort.Token);
         Timer? watchdog = timeoutMs > 0 ? new Timer(_ => abort.Cancel(), null, timeoutMs, Timeout.Infinite) : null;
         Task<decimal> run;
+        ScenarioThreadPump? threadPump = null;
+        bool timedOut = false;
+        bool timeoutReported = false;
+        bool abandonHost = false;
         ScenarioAbort.Enter(scope);
         try
         {
-            run = body.InvokeBody(testClassInstance);
+            ExceptionAggregator preparation = new();
+            if (lifecycle != null)
+            {
+                Task? prepare = null;
+                try
+                {
+                    // Start setup on xUnit's original thread and pump captured awaits there.
+                    // Fixture-mode HeadlessClient has no engine thread to marshal onto; its GL
+                    // context belongs to this thread, so Task.Run would silently call game APIs
+                    // from the wrong thread.
+                    SynchronizationContext? previous = SynchronizationContext.Current;
+                    ScenarioThreadPump pump = threadPump = new();
+                    try
+                    {
+                        SynchronizationContext.SetSynchronizationContext(pump);
+                        prepare = lifecycle.ApplyEnvironmentsAsync(abort.Token);
+                        if (prepare != null && !pump.Run(prepare, abort.Token, ScenarioTimeouts.Grace))
+                        {
+                            lifecycle.BodyTimedOut(stillRunning: true);
+                            abandonHost = true;
+                            timeoutReported = true;
+                            timedOut = true;
+                            preparation.Add(new TestTimeoutException(timeoutMs));
+                        }
+                    }
+                    finally { SynchronizationContext.SetSynchronizationContext(previous); }
+                }
+                catch (Exception ex)
+                {
+                    if (ex is OperationCanceledException && abort.IsCancellationRequested)
+                    {
+                        lifecycle.BodyTimedOut(stillRunning: false);
+                        timeoutReported = true;
+                        timedOut = true;
+                        preparation.Add(new TestTimeoutException(timeoutMs));
+                    }
+                    else preparation.Add(ex);
+                }
+
+                if (!timedOut && prepare != null && !preparation.HasExceptions)
+                {
+                    try { prepare.GetAwaiter().GetResult(); }
+                    catch (OperationCanceledException) when (abort.IsCancellationRequested)
+                    {
+                        abandonHost |= scope.Wedged;
+                        lifecycle.BodyTimedOut(stillRunning: abandonHost);
+                        timeoutReported = true;
+                        timedOut = true;
+                        preparation.Add(new TestTimeoutException(timeoutMs));
+                    }
+                    catch (Exception ex)
+                    {
+                        preparation.Add(ex);
+                    }
+                }
+            }
+
+            if (preparation.HasExceptions)
+            {
+                // Setup failures take the same reporting path as body failures so their artifacts
+                // are captured before IAsyncLifetime.DisposeAsync tears down the game instances.
+                bodyAggregator.Add(preparation.ToException());
+                run = Task.FromResult(0m);
+            }
+            else
+            {
+                SynchronizationContext? previous = SynchronizationContext.Current;
+                ScenarioThreadPump pump = threadPump ??= new ScenarioThreadPump();
+                try
+                {
+                    SynchronizationContext.SetSynchronizationContext(pump);
+                    run = body.InvokeBody(testClassInstance);
+                    try
+                    {
+                        if (!pump.Run(run, abort.Token, ScenarioTimeouts.Grace))
+                        {
+                            lifecycle?.BodyTimedOut(stillRunning: true);
+                            abandonHost = true;
+                            timeoutReported = true;
+                            timedOut = true;
+                            bodyAggregator.Add(new ScenarioAbortedException());
+                        }
+                    }
+                    catch { /* The body's own aggregator reports its exception below. */ }
+                }
+                finally { SynchronizationContext.SetSynchronizationContext(previous); }
+            }
         }
         finally
         {
@@ -402,7 +525,6 @@ internal sealed class ScenarioTestInvoker(
             await Task.WhenAny(run, aborted).ConfigureAwait(false);
         }
 
-        bool timedOut;
         decimal elapsed;
         if (!run.IsCompleted && abort.IsCancellationRequested)
         {
@@ -410,7 +532,8 @@ internal sealed class ScenarioTestInvoker(
             bool stopped = await Task.WhenAny(run, Task.Delay(ScenarioTimeouts.Grace)).ConfigureAwait(false) == run;
             timedOut = true;
             watchdog?.Dispose();
-            lifecycle?.BodyTimedOut(stillRunning: !stopped || scope.Wedged);
+            abandonHost |= !stopped || scope.Wedged;
+            if (!timeoutReported) lifecycle?.BodyTimedOut(stillRunning: abandonHost);
             Aggregator.Add(new TestTimeoutException(timeoutMs));
             elapsed = timeoutMs / 1000m;
         }
@@ -421,12 +544,13 @@ internal sealed class ScenarioTestInvoker(
 
             // A timeout only when the body was stopped by the abort, or left the game stuck even
             // if it swallowed the abort, not when the timer fired as it finished on its own.
-            timedOut = abort.IsCancellationRequested && (scope.Wedged || (bodyAggregator.HasExceptions && WasAborted(bodyAggregator.ToException())));
+            timedOut |= abort.IsCancellationRequested && (scope.Wedged || (bodyAggregator.HasExceptions && WasAborted(bodyAggregator.ToException())));
             if (timedOut)
             {
                 // The body ran out of time and stopped at its next step: a timeout, not whatever
                 // the abort made it throw.
-                lifecycle?.BodyTimedOut(stillRunning: scope.Wedged);
+                abandonHost |= scope.Wedged;
+                if (!timeoutReported) lifecycle?.BodyTimedOut(stillRunning: abandonHost);
                 Aggregator.Add(new TestTimeoutException(timeoutMs));
             }
             else if (bodyAggregator.HasExceptions)
@@ -447,39 +571,68 @@ internal sealed class ScenarioTestInvoker(
         // The body ran on an invoker of its own: its time is this test's time.
         Timer.Aggregate(TimeSpan.FromSeconds((double)elapsed));
 
-        if (lifecycle == null || ScenarioTestInfo.Current?.DynamicSkipReason != null) return elapsed;
+        if (lifecycle == null) return elapsed;
 
-        if (!Aggregator.HasExceptions)
-        {
-            Aggregator.Run(lifecycle.CheckLoggedErrors);
-        }
-
-        // pharos fixture: the world the test built, saved before the class rolls it back. What mods
-        // log while saving counts as well.
         ScenarioTestInfo info = new(Test.DisplayName, TestClass, TestMethod.Name);
-        if (!Aggregator.HasExceptions && FixtureExport.Requested(info) is { } destination)
+        if (ScenarioTestInfo.Current?.DynamicSkipReason == null)
         {
-            await Aggregator.RunAsync(() => FixtureExport.SaveAsync(lifecycle.FixtureServer, info, destination)).ConfigureAwait(false);
-            if (!Aggregator.HasExceptions) Aggregator.Run(lifecycle.CheckLoggedErrors);
+            if (!Aggregator.HasExceptions)
+                Aggregator.Run(lifecycle.CheckLoggedErrors);
+
+            // pharos fixture: the world the test built, saved before the class rolls it back. What mods
+            // log while saving counts as well.
+            if (!Aggregator.HasExceptions && FixtureExport.Requested(info) is { } destination)
+            {
+                await Aggregator.RunAsync(() => FixtureExport.SaveAsync(lifecycle.FixtureServer, info, destination)).ConfigureAwait(false);
+                if (!Aggregator.HasExceptions) Aggregator.Run(lifecycle.CheckLoggedErrors);
+            }
+
+            if (Aggregator.HasExceptions)
+            {
+                Exception failure = Aggregator.ToException();
+                string? details = null;
+                try { details = lifecycle.CaptureFailure(info, failure, timedOut); }
+                catch (Exception ex) { details = $"Pharos could not save the failure artifacts: {ex.GetType().Name}: {ex.Message}"; }
+
+                if (details != null)
+                {
+                    Aggregator.Clear();
+                    Aggregator.Add(new ScenarioFailedException(failure, details));
+                }
+            }
         }
 
-        if (Aggregator.HasExceptions)
+        // Capture the body's state before cleanup can roll it back, then run cleanup on the
+        // fixture-mode client's GL-owning thread. Base DisposeAsync remains an idempotent fallback.
+        if (!abandonHost)
         {
-            Exception failure = Aggregator.ToException();
-            string? details = null;
+            Exception? cleanupFailure = null;
             try
             {
-                details = lifecycle.CaptureFailure(info, failure, timedOut);
+                ScenarioThreadPump pump = threadPump ??= new ScenarioThreadPump();
+                SynchronizationContext? previous = SynchronizationContext.Current;
+                try
+                {
+                    SynchronizationContext.SetSynchronizationContext(pump);
+                    using CancellationTokenSource cleanupAbort = new(ScenarioTimeouts.Grace);
+                    Task cleanup = lifecycle.CleanupEnvironmentsAsync(cleanupAbort.Token);
+                    if (!pump.Run(cleanup, cleanupAbort.Token, ScenarioTimeouts.Grace))
+                    {
+                        abandonHost = true;
+                        lifecycle.BodyTimedOut(stillRunning: true);
+                        cleanupFailure = new TimeoutException("Scenario environment cleanup exceeded the grace period.");
+                    }
+                }
+                finally { SynchronizationContext.SetSynchronizationContext(previous); }
             }
-            catch (Exception ex)
-            {
-                details = $"Pharos could not save the failure artifacts: {ex.GetType().Name}: {ex.Message}";
-            }
+            catch (Exception ex) { cleanupFailure = ex; }
 
-            if (details != null)
+            if (cleanupFailure != null)
             {
-                Aggregator.Clear();
-                Aggregator.Add(new ScenarioFailedException(failure, details));
+                string? details = null;
+                try { details = lifecycle.CaptureFailure(info, cleanupFailure, timedOut: false); }
+                catch (Exception ex) { details = $"Pharos could not save cleanup failure artifacts: {ex.GetType().Name}: {ex.Message}"; }
+                Aggregator.Add(details == null ? cleanupFailure : new ScenarioFailedException(cleanupFailure, details));
             }
         }
 

@@ -64,6 +64,7 @@ xvfb-run -a pharos smoke --mod bin/Release/mymod.zip --strict
 | `--artifacts <dir>` | Where failure artifacts and `smoke.log` go: `$PHAROS_ARTIFACTS`, else `./pharos-artifacts`. |
 | `--game <dir>` | The game install, instead of `$VINTAGE_STORY`. |
 | `--seed`, `--world-type`, `--play-style` | The world. Superflat and creative building by default, which boot fast but skip world generation and survival systems: use `--world-type standard --play-style surviveandbuild` to cover them. |
+| `--preset survival` | Use the cached survival superflat world. Generate it first with `pharos fixture --preset survival-flat`; preset-owned world options cannot be combined with conflicting world flags. |
 | `-v`, `--verbose` | Show the game's own output instead of writing it to `smoke.log`. |
 
 | Exit code | Meaning |

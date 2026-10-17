@@ -129,6 +129,9 @@ internal static class ScenarioHostPool
     /// </summary>
     internal static void HostDisposed() => Volatile.Write(ref s_reclaim, 1);
 
+    /// <summary>A failed test-environment cleanup makes the current host unsafe to reuse.</summary>
+    internal static bool CanReuseAfterEnvironmentCleanup(Exception? cleanupFailure) => cleanupFailure is null;
+
     private static void DisposePooled()
     {
         PooledHost? pooled = s_pooled;

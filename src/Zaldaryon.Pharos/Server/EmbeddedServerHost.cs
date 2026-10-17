@@ -12,6 +12,7 @@ using Vintagestory.API.Datastructures;
 using Vintagestory.Common;
 using Vintagestory.Server;
 using Vintagestory.Server.Network;
+using Zaldaryon.Pharos.Core;
 using Zaldaryon.Pharos.Platform;
 using Zaldaryon.Pharos.XUnit;
 using Zaldaryon.Pharos.Reporting;
@@ -48,6 +49,7 @@ namespace Zaldaryon.Pharos.Server;
 public sealed partial class EmbeddedServerHost : IDisposable, IAsyncDisposable
 {
     private bool _disposed;
+    private int _sessionActivityRegistered;
     private readonly bool _ownsDataPath;
     private readonly MethodInfo? _waitOnBuildServerAssetsPacket;
     private int _tickCount;
@@ -304,6 +306,8 @@ public sealed partial class EmbeddedServerHost : IDisposable, IAsyncDisposable
         Options = options;
         DataPath = dataPath;
         _ownsDataPath = ownsDataPath;
+        GameSessionActivity.Started();
+        _sessionActivityRegistered = 1;
         Sandbox = sandbox;
 
         _waitOnBuildServerAssetsPacket = typeof(ServerMain).GetMethod(
@@ -333,7 +337,7 @@ public sealed partial class EmbeddedServerHost : IDisposable, IAsyncDisposable
         server.Config.VerifyPlayerAuth = options.VerifyPlayerAuth;
         if (options.ListenPort is not { } requested) return null;
 
-        int port = requested == 0 ? FreePort(options.ListenAddress) : requested;
+        int port = requested == 0 ? FreePorts.TakeTcpUdp(options.ListenAddress) : requested;
 
         server.MainSockets[1] = new TcpNetServer();
         server.MainSockets[1].SetIpAndPort(options.ListenAddress, port);
@@ -345,21 +349,6 @@ public sealed partial class EmbeddedServerHost : IDisposable, IAsyncDisposable
 
         ServerMain.Logger.Notification("Pharos: listening for network clients on {0}:{1}", options.ListenAddress, port);
         return port;
-    }
-
-    // The game binds TCP and UDP to the same port, so one free for TCP is taken for both.
-    private static int FreePort(string address)
-    {
-        System.Net.Sockets.TcpListener probe = new(System.Net.IPAddress.Parse(address), 0);
-        probe.Start();
-        try
-        {
-            return ((System.Net.IPEndPoint)probe.LocalEndpoint).Port;
-        }
-        finally
-        {
-            probe.Stop();
-        }
     }
 
     private static EmbeddedServerHost BootOnGameThread(System.Func<EngineThread, EmbeddedServerHost> boot)
@@ -908,8 +897,8 @@ public sealed partial class EmbeddedServerHost : IDisposable, IAsyncDisposable
         if (_disposed) return;
         _random?.ReleaseOnDispose();
         _disposed = true;
-
-        DisposeOnGameThread();
+        try { DisposeOnGameThread(); }
+        finally { ReleaseSessionActivity(); }
     }
 
     /// <summary>
@@ -923,11 +912,20 @@ public sealed partial class EmbeddedServerHost : IDisposable, IAsyncDisposable
         _disposed = true;
 
         Task disposal = Task.Factory.StartNew(
-            DisposeOnGameThread,
+            () =>
+            {
+                try { DisposeOnGameThread(); }
+                finally { ReleaseSessionActivity(); }
+            },
             CancellationToken.None,
             TaskCreationOptions.LongRunning,
             TaskScheduler.Default);
         return new ValueTask(disposal);
+    }
+
+    private void ReleaseSessionActivity()
+    {
+        GameSessionActivity.Release(ref _sessionActivityRegistered);
     }
 
     private void DisposeOnGameThread()

@@ -49,6 +49,7 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime, IScenarioLifecy
     private EmbeddedServerHost? _serverHost;
     private HeadlessClient? _client;
     private ClientServerLoopbackSession? _session;
+    private ScenarioContext? _environmentContext;
     private IDisposable? _classSettings;
     private bool _disposed;
     private IDisposable? _gate;
@@ -419,6 +420,25 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime, IScenarioLifecy
         ScenarioRun.SeedRandom(this, _serverHost?.Random, _client?.Random);
     }
 
+    Task IScenarioLifecycle.ApplyEnvironmentsAsync(CancellationToken cancellationToken)
+    {
+        ScenarioTestInfo test = ScenarioTestInfo.Current ?? throw new InvalidOperationException("Scenario test information is not available.");
+        _environmentContext = new ScenarioContext(_serverHost, _client, _session);
+        return ScenarioEnvironments.ApplyAsync(test.TestClass, test.Method, _environmentContext, cancellationToken);
+    }
+
+    Task IScenarioLifecycle.CleanupEnvironmentsAsync(CancellationToken cancellationToken) => CleanupEnvironmentsAsync(cancellationToken);
+
+    private async Task CleanupEnvironmentsAsync(CancellationToken cancellationToken)
+    {
+        ScenarioContext? context = _environmentContext;
+        if (context != null)
+        {
+            await context.DisposeAsync(cancellationToken);
+            if (ReferenceEquals(_environmentContext, context)) _environmentContext = null;
+        }
+    }
+
     /// <summary>
     /// Seeds the server's and the client's random generators, and the process-wide static ones,
     /// with <paramref name="seed"/>, undoing an earlier seeding first. <c>ServerHost.Random.Seed</c>
@@ -493,7 +513,7 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime, IScenarioLifecy
         }
 
         // Boot embedded server in sandbox
-        _serverHost = EmbeddedServerHost.Boot(_sandbox, WorldOptions);
+        _serverHost = EmbeddedServerHost.Boot(_sandbox, WorldPresetCache.Resolve(WorldOptions));
 
         // Initialize headless client (separate platform init)
         HeadlessClientOptions clientOptions = ClientOptions;
@@ -551,7 +571,7 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime, IScenarioLifecy
     {
         HeadlessClientOptions client = ClientOptions;
         return new ClientServerPoolKey(
-            WorldOptions,
+            WorldPresetCache.Resolve(WorldOptions),
             string.Join("|", ServerModPaths),
             string.Join("|", [.. ClientModPaths, .. client.ModPaths]),
             PlayerName,
@@ -584,19 +604,25 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime, IScenarioLifecy
 
         if (_run.Abandoned)
         {
-            World.RandomSeeding.Abandon();
-            IsolationLog.Left(GetType(), null, "the previous test timed out and was left running");
-
-            // The timed-out body still drives the client and the server: they are left as they are.
-            _classSettings = null;
-            _testPlayers.Clear();
-            _session = null;
-            _client = null;
-            _serverHost = null;
-            _sandbox = null;
-            _gate?.Dispose();
-            _gate = null;
+            AbandonRunningScenario();
             return;
+        }
+
+        Exception? environmentFailure = null;
+        if (_environmentContext is { } environmentContext)
+        {
+            try
+            {
+                await environmentContext.DisposeAsync(ScenarioTimeouts.Grace).ConfigureAwait(false);
+                if (ReferenceEquals(_environmentContext, environmentContext)) _environmentContext = null;
+            }
+            catch (Exception ex) { environmentFailure = ex; }
+        }
+        if (environmentFailure is TimeoutException)
+        {
+            _run.BodyTimedOut(stillRunning: true);
+            AbandonRunningScenario();
+            throw new TimeoutException("Scenario environment cleanup did not stop; the client and server were abandoned to avoid reusing them in a dirty state.", environmentFailure);
         }
 
         // Settings are process-wide: the next scenario's client must not inherit them.
@@ -643,7 +669,7 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime, IScenarioLifecy
         string? fallback = _setupFailed ? "the test failed to start"
             : _run.TimedOut ? "the test timed out"
             : _sandbox is { IsRetained: true } || _client is { IsDataPathRetained: true } ? "the sandbox was kept for inspection"
-            : random;
+            : ScenarioHostPool.CanReuseAfterEnvironmentCleanup(environmentFailure) ? random : "a test environment cleanup failed";
         bool strict = fallback == null && StrictIsolation;
         IsolationReport? rolledBack = null;
         if (_poolKey != null && fallback == null)
@@ -666,7 +692,10 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime, IScenarioLifecy
             ScenarioHostPool.Return(GetType(), _poolKey!, Detach());
             _gate?.Dispose();
             _gate = null;
-            ScenarioFailures.ThrowAll(isolationFailure, () => LoggedErrorGate.ThrowIfAny(loggedErrors));
+            Exception? teardownFailure = isolationFailure != null && environmentFailure != null
+                ? new AggregateException(isolationFailure, environmentFailure)
+                : isolationFailure ?? environmentFailure;
+            ScenarioFailures.ThrowAll(teardownFailure, () => LoggedErrorGate.ThrowIfAny(loggedErrors));
             return;
         }
 
@@ -729,7 +758,26 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime, IScenarioLifecy
         _gate?.Dispose();
         _gate = null;
 
-        ScenarioFailures.ThrowAll(isolationFailure, () => LoggedErrorGate.ThrowIfAny(loggedErrors));
+        Exception? finalFailure = isolationFailure != null && environmentFailure != null
+            ? new AggregateException(isolationFailure, environmentFailure)
+            : isolationFailure ?? environmentFailure;
+        ScenarioFailures.ThrowAll(finalFailure, () => LoggedErrorGate.ThrowIfAny(loggedErrors));
+    }
+
+    private void AbandonRunningScenario()
+    {
+        World.RandomSeeding.Abandon();
+        IsolationLog.Left(GetType(), null, "the previous test timed out and was left running");
+        // A timed-out body or environment cleanup may still be using these instances.
+        _classSettings = null;
+        _testPlayers.Clear();
+        _session = null;
+        _environmentContext = null;
+        _client = null;
+        _serverHost = null;
+        _sandbox = null;
+        _gate?.Dispose();
+        _gate = null;
     }
 
     // The next test starts with the window it was booted with. A client that cannot be put back

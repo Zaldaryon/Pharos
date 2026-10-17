@@ -1,4 +1,5 @@
 using Zaldaryon.Pharos.XUnit.Execution;
+using Zaldaryon.Pharos.Server;
 
 namespace Zaldaryon.Pharos.Cli.ParallelRuns;
 
@@ -13,6 +14,7 @@ public static class FixtureCommand
         pharos fixture - run a builder scenario and save the world it leaves
 
         Usage: pharos fixture <test project | folder | .dll> --scenario <name> --out <world.vcdbs> [options]
+               pharos fixture --preset survival-flat|survival-standard-small [--game <path>]
 
           --scenario <name>       The test that builds the world: Namespace.Class.Method, or any
                                   dotted tail of it (Class.Method) that names one test
@@ -29,6 +31,9 @@ public static class FixtureCommand
         world of its server is saved, before the class rolls it back. Boot tests from the save with
         [ServerWorld(SaveFile = "...")].
 
+        Preset generation runs in an isolated sandbox and caches an immutable save by game version.
+        It must run in a standalone process with no active Pharos client or server.
+
         Exit codes: 0 the save was written, 1 the test failed or its world could not be saved,
         2 the scenario named no test or several, or the test saved no world.
 
@@ -39,6 +44,38 @@ public static class FixtureCommand
     /// <summary>Runs <c>pharos fixture</c> with the arguments that follow <c>fixture</c>.</summary>
     public static int Run(IReadOnlyList<string> args, TextWriter stdout, TextWriter stderr)
     {
+        int presetIndex = Array.IndexOf(args.ToArray(), "--preset");
+        if (presetIndex >= 0)
+        {
+            if (presetIndex != 0 || (args.Count != 2 && !(args.Count == 4 && args[2] == "--game")))
+            {
+                stderr.WriteLine("Error: preset generation usage is `pharos fixture --preset survival-flat|survival-standard-small`.");
+                return RunCommand.ExitError;
+            }
+            WorldPreset preset = args[1] switch
+            {
+                "survival-flat" => WorldPreset.SurvivalFlat,
+                "survival-standard-small" => WorldPreset.SurvivalStandardSmall,
+                _ => WorldPreset.None,
+            };
+            if (preset == WorldPreset.None)
+            {
+                stderr.WriteLine($"Error: unknown world preset '{args[1]}'.");
+                return RunCommand.ExitError;
+            }
+            try
+            {
+                string save = WorldPresetCache.GenerateAsync(preset).GetAwaiter().GetResult();
+                stdout.WriteLine($"World preset {preset} ready: {save}");
+                return RunCommand.ExitPassed;
+            }
+            catch (Exception ex)
+            {
+                stderr.WriteLine($"Error: could not generate world preset: {ex.Message}");
+                return RunCommand.ExitError;
+            }
+        }
+
         FixtureOptions? options;
         try
         {

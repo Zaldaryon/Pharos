@@ -35,6 +35,9 @@ public sealed class ServerWorldAttribute : Attribute
     /// </summary>
     public string WorldType { get; }
 
+    /// <summary>Optional cached world preset.</summary>
+    public Server.WorldPreset Preset { get; set; }
+
     /// <summary>
     /// Gets or sets optional JSON configuration to merge with world settings.
     /// </summary>

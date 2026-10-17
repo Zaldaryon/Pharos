@@ -39,6 +39,7 @@ public abstract class ClientScenarioBase : IAsyncLifetime, IScenarioLifecycle
     private ClientIsolationManager? _isolationManager;
     private IDisposable? _gate;
     private PooledClient? _pooled;
+    private ScenarioContext? _environmentContext;
 
     /// <summary>
     /// The headless client instance. Null until <see cref="InitializeAsync"/> completes.
@@ -248,6 +249,25 @@ public abstract class ClientScenarioBase : IAsyncLifetime, IScenarioLifecycle
         ScenarioRun.SeedRandom(this, server: null, Client?.Random);
     }
 
+    Task IScenarioLifecycle.ApplyEnvironmentsAsync(CancellationToken cancellationToken)
+    {
+        ScenarioTestInfo test = ScenarioTestInfo.Current ?? throw new InvalidOperationException("Scenario test information is not available.");
+        _environmentContext = new ScenarioContext(server: null, Client, session: null);
+        return ScenarioEnvironments.ApplyAsync(test.TestClass, test.Method, _environmentContext, cancellationToken);
+    }
+
+    Task IScenarioLifecycle.CleanupEnvironmentsAsync(CancellationToken cancellationToken) => CleanupEnvironmentsAsync(cancellationToken);
+
+    private async Task CleanupEnvironmentsAsync(CancellationToken cancellationToken)
+    {
+        ScenarioContext? context = _environmentContext;
+        if (context != null)
+        {
+            await context.DisposeAsync(cancellationToken);
+            if (ReferenceEquals(_environmentContext, context)) _environmentContext = null;
+        }
+    }
+
     void IScenarioLifecycle.CheckLoggedErrors() =>
         LoggedErrorGate.ThrowIfAny(LoggedErrorGate.Collect(FailOnLoggedErrors, AllowedLoggedErrors, Client?.Logs));
 
@@ -280,7 +300,7 @@ public abstract class ClientScenarioBase : IAsyncLifetime, IScenarioLifecycle
     /// <summary>
     /// Disposes the client, or pools it for the next test of this class.
     /// </summary>
-    public virtual Task DisposeAsync()
+    public virtual async Task DisposeAsync()
     {
         if (!_run.Abandoned && Client is { IsEngineMode: true } langClient) langClient.Lang.RestoreBootLanguage();
 
@@ -290,14 +310,25 @@ public abstract class ClientScenarioBase : IAsyncLifetime, IScenarioLifecycle
 
         if (_run.Abandoned)
         {
-            // The timed-out body still drives the client: it is left as it is.
-            World.RandomSeeding.Abandon();
-            _classSettings = null;
-            _pooled = null;
-            Client = null;
-            _gate?.Dispose();
-            _gate = null;
-            return Task.CompletedTask;
+            AbandonRunningScenario();
+            return;
+        }
+
+        Exception? environmentFailure = null;
+        if (_environmentContext is { } environmentContext)
+        {
+            try
+            {
+                await environmentContext.DisposeAsync(ScenarioTimeouts.Grace).ConfigureAwait(false);
+                if (ReferenceEquals(_environmentContext, environmentContext)) _environmentContext = null;
+            }
+            catch (Exception ex) { environmentFailure = ex; }
+        }
+        if (environmentFailure is TimeoutException)
+        {
+            _run.BodyTimedOut(stillRunning: true);
+            AbandonRunningScenario();
+            throw new TimeoutException("Scenario environment cleanup did not stop; the client was abandoned to avoid reusing it in a dirty state.", environmentFailure);
         }
 
         Events.LeftOpenLogs.Close(null, Client);
@@ -328,7 +359,7 @@ public abstract class ClientScenarioBase : IAsyncLifetime, IScenarioLifecycle
         {
             if (_pooled != null)
             {
-                if (IsolationMode != IsolationMode.FreshClient && random == null && !_pooled.Client.IsDisposed && !_run.TimedOut && !_pooled.Client.IsDataPathRetained
+                if (ScenarioHostPool.CanReuseAfterEnvironmentCleanup(environmentFailure) && IsolationMode != IsolationMode.FreshClient && random == null && !_pooled.Client.IsDisposed && !_run.TimedOut && !_pooled.Client.IsDataPathRetained
                     && TryRestoreBootWindow(_pooled.Client))
                 {
                     // The next test judges only what it logs itself.
@@ -350,8 +381,19 @@ public abstract class ClientScenarioBase : IAsyncLifetime, IScenarioLifecycle
             _gate = null;
         }
 
-        LoggedErrorGate.ThrowIfAny(loggedErrors);
-        return Task.CompletedTask;
+        ScenarioFailures.ThrowAll(environmentFailure, () => LoggedErrorGate.ThrowIfAny(loggedErrors));
+    }
+
+    private void AbandonRunningScenario()
+    {
+        // A timed-out body or environment cleanup may still be using this client.
+        World.RandomSeeding.Abandon();
+        _classSettings = null;
+        _pooled = null;
+        Client = null;
+        _environmentContext = null;
+        _gate?.Dispose();
+        _gate = null;
     }
 
     /// <summary>

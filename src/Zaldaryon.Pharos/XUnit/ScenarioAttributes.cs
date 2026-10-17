@@ -32,7 +32,8 @@ internal static class ScenarioAttributes
     /// </summary>
     public static ServerWorldOptions WorldOptions(Type testClass)
     {
-        ServerWorldAttribute? world = ServerWorld(testClass);
+        ServerWorldAttribute? world = Execution.ScenarioTestInfo.Current?.Method?.GetCustomAttribute<ServerWorldAttribute>(inherit: true)
+            ?? ServerWorld(testClass);
         ServerWorldOptions options = new() { WorldName = "Pharos-" + testClass.Name };
         if (world == null) return options;
 
@@ -43,6 +44,7 @@ internal static class ScenarioAttributes
             WorldType = world.WorldType,
             WorldConfigurationJson = world.WorldConfigurationJson ?? options.WorldConfigurationJson,
             SaveFile = world.SaveFile,
+            Preset = world.Preset,
         };
     }
 

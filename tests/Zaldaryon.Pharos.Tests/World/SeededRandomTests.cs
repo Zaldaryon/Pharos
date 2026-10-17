@@ -340,6 +340,10 @@ public class SeededRandomUnitTests
 
         void IScenarioLifecycle.BeforeBody() => SeenSeed = ScenarioTestInfo.Current?.RandomSeed?.Seed;
 
+        Task IScenarioLifecycle.ApplyEnvironmentsAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+        Task IScenarioLifecycle.CleanupEnvironmentsAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
         void IScenarioLifecycle.CheckLoggedErrors()
         {
         }

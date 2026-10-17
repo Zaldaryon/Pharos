@@ -120,6 +120,13 @@ jobs:
           VINTAGE_STORY: ${{ steps.vs.outputs.path }}
         run: dotnet build Pharos.sln -c Release
 
+      - name: Warm cached survival world presets
+        env:
+          VINTAGE_STORY: ${{ steps.vs.outputs.path }}
+        run: |
+          dotnet run --project src/Zaldaryon.Pharos.Cli -c Release --no-build -- fixture --preset survival-flat --game "$VINTAGE_STORY"
+          dotnet run --project src/Zaldaryon.Pharos.Cli -c Release --no-build -- fixture --preset survival-standard-small --game "$VINTAGE_STORY"
+
       - name: Stage assets
         run: ln -sfn ${{ steps.vs.outputs.path }}/assets ./assets
 
@@ -183,8 +190,12 @@ jobs:
             --version "0.0.0-ci.${{ github.run_id }}.${{ github.run_attempt }}"
           # From outside the repository, as a mod's own CI would run it.
           cd "$RUNNER_TEMP"
+          # During join, the server can send region weather before the client has loaded that map region.
+          # Allow only this dropped update; strict still rejects every other boot warning.
           xvfb-run -a "$RUNNER_TEMP/pharos-tool/pharos" smoke --mod "$TEST_MODS/pharostestmod" --frames 300 \
-            --command "/time set day" --strict --artifacts "$GITHUB_WORKSPACE/artifacts/pharos/tool-smoke"
+            --command "/time set day" --strict \
+            --allow '^weatherSim for region -?[0-9]+/-?[0-9]+ is null\. No idea what to do here$' \
+            --preset survival --artifacts "$GITHUB_WORKSPACE/artifacts/pharos/tool-smoke"
           set +e
           # Keep the auth file outside xvfb-run's auto-cleanup directory so cleanup preserves the CLI exit code.
           xvfb-run -a -f "$RUNNER_TEMP/pharosbrokenmod.Xauthority" "$RUNNER_TEMP/pharos-tool/pharos" smoke --mod "$TEST_MODS/pharosbrokenmod" --strict \
@@ -369,6 +380,7 @@ jobs:
       matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
     env:
       VS_CACHE_PATH: C:\vintagestory-cache
+      PHAROS_CACHE: C:\pharos-cache
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -384,6 +396,12 @@ jobs:
         with:
           path: ${{ env.VS_CACHE_PATH }}\${{ env.VS_VERSION }}
           key: vintagestory-windows-${{ env.VS_VERSION }}-v2
+
+      - name: Cache Pharos world presets
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.PHAROS_CACHE }}
+          key: pharos-world-presets-Windows-${{ env.VS_VERSION }}-schema1
 
       - name: Download and extract Vintage Story
         if: steps.cache-vs.outputs.cache-hit != 'true'
@@ -406,6 +424,13 @@ jobs:
         env:
           VINTAGE_STORY: ${{ env.VS_CACHE_PATH }}\${{ env.VS_VERSION }}
         run: dotnet build Pharos.sln -c Release
+
+      - name: Warm cached survival world presets
+        env:
+          VINTAGE_STORY: ${{ env.VS_CACHE_PATH }}\${{ env.VS_VERSION }}
+        run: |
+          dotnet run --project src/Zaldaryon.Pharos.Cli -c Release --no-build -- fixture --preset survival-flat --game "$env:VINTAGE_STORY"
+          dotnet run --project src/Zaldaryon.Pharos.Cli -c Release --no-build -- fixture --preset survival-standard-small --game "$env:VINTAGE_STORY"
 
       - name: Install Mesa Windows
         uses: f3d-app/install-mesa-windows-action@v1
