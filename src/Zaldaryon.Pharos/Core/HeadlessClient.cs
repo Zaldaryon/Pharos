@@ -916,7 +916,7 @@ public sealed class HeadlessClient : IDisposable
     /// </summary>
     internal (LoopbackLink Link, LinkedTcpNetClient Tcp, LinkedUdpNetClient Udp) WireEngineLoopback(DummyNetwork tcpNetwork, DummyNetwork udpNetwork)
     {
-        LoopbackLink link = new(PacketRecorder, NetworkDegradation, ChannelName);
+        LoopbackLink link = new(PacketRecorder, NetworkDegradation, ChannelName, () => FrameController.TotalFrames);
 
         LinkedTcpNetClient tcp = new(link);
         tcp.SetNetwork(tcpNetwork);

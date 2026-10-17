@@ -75,7 +75,7 @@ internal sealed class HeadlessPlayerConnection
     /// then the identification. The server processes them on its next ticks.
     /// </summary>
     /// <remarks>Runs on the server's game thread.</remarks>
-    public static HeadlessPlayerConnection Open(ServerMain server, string playerName, string playerUid)
+    public static HeadlessPlayerConnection Open(ServerMain server, string playerName, string playerUid, Func<long>? frame = null)
     {
         DummyNetwork network = new();
         network.Start();
@@ -85,7 +85,7 @@ internal sealed class HeadlessPlayerConnection
 
         // The player's packets pass through a link, which degrades them only once the player's network is configured.
         NetworkDegradationSimulator degradation = new();
-        LoopbackLink link = new(new PacketRecorder(), degradation, (channelId, udp) => ServerChannelName(server, channelId, udp));
+        LoopbackLink link = new(new PacketRecorder(), degradation, (channelId, udp) => ServerChannelName(server, channelId, udp), frame);
         LinkedTcpNetClient client = new(link);
         client.SetNetwork(network);
 

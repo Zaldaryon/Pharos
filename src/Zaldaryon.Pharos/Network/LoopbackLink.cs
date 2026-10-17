@@ -42,12 +42,18 @@ internal sealed class LoopbackLink
     private double _lastToClientAt;
     private Action<Exception>? _onDisconnected;
 
-    public LoopbackLink(PacketRecorder recorder, NetworkDegradationSimulator degradation, Func<int, bool, string?>? channelName = null)
+    /// <param name="frame">The frame the recording stamps each packet with; -1 when there is none.</param>
+    public LoopbackLink(PacketRecorder recorder, NetworkDegradationSimulator degradation, Func<int, bool, string?>? channelName = null, Func<long>? frame = null)
     {
         _recorder = recorder;
         _degradation = degradation;
         _channelName = channelName ?? ((_, _) => null);
+        _frame = frame;
     }
+
+    private readonly Func<long>? _frame;
+
+    private long Frame => _frame?.Invoke() ?? -1;
 
     /// <summary>Whether the wire has been cut.</summary>
     public bool IsSevered { get; private set; }
@@ -124,6 +130,7 @@ internal sealed class LoopbackLink
     /// <summary>A datagram the client sends. Returns it when it may go now.</summary>
     public Packet_UdpPacket? ClientSendsUdp(Packet_UdpPacket packet)
     {
+        RecordUdp(packet, PacketDirection.Outbound);
         if (Filtered(() => PacketDescriber.Udp(PacketDirection.Outbound, packet, _channelName))) return null;
 
         lock (_lock)
@@ -152,6 +159,7 @@ internal sealed class LoopbackLink
             {
                 foreach (Packet_UdpPacket packet in packets)
                 {
+                    RecordUdp(packet, PacketDirection.Inbound);
                     if (Filtered(() => PacketDescriber.Udp(PacketDirection.Inbound, packet, _channelName))) continue;
 
                     PacketDegradationResult fate = _degradation.ProcessPacket(PacketDirection.Inbound);
@@ -281,7 +289,14 @@ internal sealed class LoopbackLink
             type = server ? "Packet_Server" : "Packet_Client";
         }
 
-        _recorder.Record(id, direction, data, type);
+        _recorder.Record(id, direction, data, Frame, PacketTransport.Tcp, type);
+    }
+
+    // A datagram is recorded as the bytes the engine serializes it to, so a replay can read it back.
+    private void RecordUdp(Packet_UdpPacket packet, PacketDirection direction)
+    {
+        if (!_recorder.IsRecording) return;
+        _recorder.Record(packet.Id, direction, Packet_UdpPacketSerializer.SerializeToBytes(packet), Frame, PacketTransport.Udp, "Packet_UdpPacket");
     }
 }
 
