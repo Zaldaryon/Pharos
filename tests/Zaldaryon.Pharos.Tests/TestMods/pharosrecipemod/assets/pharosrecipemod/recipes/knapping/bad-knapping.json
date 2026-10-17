@@ -1,0 +1,5 @@
+{
+  ingredient: { type: "item", code: "pharosrecipemod:missing-knapping-*" },
+  pattern: [["#"]],
+  output: { type: "item", code: "game:stick" }
+}

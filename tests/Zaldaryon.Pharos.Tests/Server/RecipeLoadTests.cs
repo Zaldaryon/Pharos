@@ -29,6 +29,23 @@ public class RecipeLoadTests : ServerScenarioBase
     }
 
     [ServerScenario]
+    public void Unresolved_ParsesMultilineIngredientsAndEveryRecipeCategory()
+    {
+        UnresolvedRecipe[] unresolved = Host!.Recipes.Unresolved(Domain).ToArray();
+
+        string report = string.Join(Environment.NewLine, unresolved.Select(recipe => $"{recipe.Recipe}: {recipe.Reason}"));
+        Assert.True(unresolved.Any(recipe => recipe.Recipe.EndsWith("multiline.json", StringComparison.Ordinal)
+            && recipe.Reason.Contains("matches no item or block", StringComparison.Ordinal)), report);
+        Assert.True(unresolved.Any(recipe => recipe.Recipe.EndsWith("multiline.json", StringComparison.Ordinal)
+            && recipe.Reason.Contains("game:clay-*", StringComparison.Ordinal)), report);
+        foreach (string file in new[] { "bad-knapping.json", "bad-clayforming.json", "bad-smithing.json", "bad-alloy.json", "bad-cooking.json", "bad-barrel.json" })
+        {
+            Assert.True(unresolved.Any(recipe => recipe.Recipe.EndsWith(file, StringComparison.Ordinal)
+                && recipe.Reason.Contains("matches no item or block", StringComparison.Ordinal)), report);
+        }
+    }
+
+    [ServerScenario]
     public void Unresolved_LeavesTheRecipeThatLoads()
     {
         Assert.DoesNotContain(Host!.Recipes.Unresolved(Domain), r => r.Recipe.Contains("good.json", StringComparison.Ordinal));
