@@ -504,7 +504,17 @@ jobs:
           path: artifacts/results-windows
           merge-multiple: true
 
+      - name: Set up Vintage Story
+        id: vs
+        uses: ./.github/actions/setup-vintage-story
+        with:
+          version: ${{ env.VS_VERSION }}
+          mesa: "false"
+          xvfb: "false"
+
       - name: Build and install Pharos CLI
+        env:
+          VINTAGE_STORY: ${{ steps.vs.outputs.path }}
         run: |
           dotnet pack src/Zaldaryon.Pharos.Cli/Zaldaryon.Pharos.Cli.csproj -c Release -o ./tool-nupkg -p:Version=0.0.0-ci.${{ github.run_id }}.${{ github.run_attempt }}
           dotnet tool install Zaldaryon.Pharos.Cli --tool-path "$RUNNER_TEMP/bin" --add-source ./tool-nupkg --version "0.0.0-ci.${{ github.run_id }}.${{ github.run_attempt }}"
