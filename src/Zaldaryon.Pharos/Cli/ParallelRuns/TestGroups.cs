@@ -1,5 +1,6 @@
 using System.Reflection.Metadata;
 using System.Reflection.PortableExecutable;
+using System.Xml.Linq;
 
 namespace Zaldaryon.Pharos.Cli.ParallelRuns;
 
@@ -61,8 +62,22 @@ internal static class TestGroups
 
         // Longest first, so the last group to finish is a short one. A group not seen last time
         // could be long: it goes first; without any history, the larger groups do.
-        TimeSpan? Took(TestGroup group) =>
-            durations == null || group.Tests.Any(t => !durations.ContainsKey(t)) ? null : group.Tests.Aggregate(TimeSpan.Zero, (sum, t) => sum + durations[t]);
+        TimeSpan? Took(TestGroup group)
+        {
+            if (durations == null) return null;
+            if (durations.TryGetValue(group.Name, out TimeSpan classDuration)) return classDuration;
+            TimeSpan sum = TimeSpan.Zero;
+            bool any = false;
+            foreach (string t in group.Tests)
+            {
+                if (durations.TryGetValue(t, out TimeSpan d))
+                {
+                    sum += d;
+                    any = true;
+                }
+            }
+            return any ? sum : null;
+        }
         return groups
             .OrderByDescending(g => Took(g) ?? TimeSpan.MaxValue)
             .ThenByDescending(g => g.Tests.Count)
@@ -80,6 +95,133 @@ internal static class TestGroups
         }
 
         return durations;
+    }
+
+    /// <summary>
+    /// Reads test or class durations from a TRX or JSON timing baseline file.
+    /// </summary>
+    public static IReadOnlyDictionary<string, TimeSpan>? LoadDurations(string path)
+    {
+        if (!File.Exists(path)) return null;
+        try
+        {
+            if (string.Equals(Path.GetExtension(path), ".trx", StringComparison.OrdinalIgnoreCase))
+            {
+                return Durations(Trx.Results(XDocument.Load(path)));
+            }
+
+            using System.Text.Json.JsonDocument document = System.Text.Json.JsonDocument.Parse(File.ReadAllText(path));
+            System.Text.Json.JsonElement root = document.RootElement;
+            Dictionary<string, TimeSpan> results = new(StringComparer.Ordinal);
+
+            if (root.ValueKind == System.Text.Json.JsonValueKind.Object)
+            {
+                if (root.TryGetProperty("tests", out System.Text.Json.JsonElement testArray) && testArray.ValueKind == System.Text.Json.JsonValueKind.Array)
+                {
+                    foreach (System.Text.Json.JsonElement item in testArray.EnumerateArray())
+                    {
+                        if (item.TryGetProperty("fullyQualifiedName", out System.Text.Json.JsonElement fqn) && fqn.ValueKind == System.Text.Json.JsonValueKind.String)
+                        {
+                            string key = fqn.GetString()!;
+                            if (item.TryGetProperty("duration", out System.Text.Json.JsonElement dur) && dur.ValueKind == System.Text.Json.JsonValueKind.String &&
+                                TimeSpan.TryParse(dur.GetString(), System.Globalization.CultureInfo.InvariantCulture, out TimeSpan parsed))
+                            {
+                                results[key] = parsed;
+                            }
+                        }
+                    }
+                }
+                else
+                {
+                    foreach (System.Text.Json.JsonProperty prop in root.EnumerateObject())
+                    {
+                        if (prop.Value.ValueKind == System.Text.Json.JsonValueKind.Number && prop.Value.TryGetDouble(out double seconds))
+                        {
+                            results[prop.Name] = TimeSpan.FromSeconds(seconds);
+                        }
+                        else if (prop.Value.ValueKind == System.Text.Json.JsonValueKind.String &&
+                                 TimeSpan.TryParse(prop.Value.GetString(), System.Globalization.CultureInfo.InvariantCulture, out TimeSpan parsed))
+                        {
+                            results[prop.Name] = parsed;
+                        }
+                    }
+                }
+            }
+
+            return results.Count > 0 ? results : null;
+        }
+        catch (Exception ex) when (ex is IOException or FormatException or System.Text.Json.JsonException or System.Xml.XmlException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Partitions <paramref name="groups"/> across <paramref name="total"/> shards and returns
+    /// the groups assigned to shard <paramref name="shardIndex"/> (1-indexed).
+    /// </summary>
+    public static IReadOnlyList<TestGroup> PartitionForShard(
+        IReadOnlyList<TestGroup> groups,
+        int shardIndex,
+        int total,
+        IReadOnlyDictionary<string, TimeSpan>? durations = null)
+    {
+        if (shardIndex < 1 || shardIndex > total) throw new ArgumentOutOfRangeException(nameof(shardIndex));
+        if (total <= 1 || groups.Count == 0) return groups;
+
+        TimeSpan Weight(TestGroup g)
+        {
+            if (durations != null)
+            {
+                TimeSpan totalGroup = TimeSpan.Zero;
+                bool any = false;
+                if (durations.TryGetValue(g.Name, out TimeSpan classDuration))
+                {
+                    totalGroup += classDuration;
+                    any = true;
+                }
+                foreach (string t in g.Tests)
+                {
+                    if (durations.TryGetValue(t, out TimeSpan d))
+                    {
+                        totalGroup += d;
+                        any = true;
+                    }
+                }
+                if (any) return totalGroup;
+            }
+
+            return TimeSpan.FromSeconds(Math.Max(1, g.Tests.Count));
+        }
+
+        List<TestGroup> sorted = groups
+            .OrderByDescending(Weight)
+            .ThenByDescending(g => g.Tests.Count)
+            .ThenBy(g => g.Name, StringComparer.Ordinal)
+            .ToList();
+
+        TimeSpan[] shardWeights = new TimeSpan[total];
+        List<TestGroup>[] shards = new List<TestGroup>[total];
+        for (int i = 0; i < total; i++) shards[i] = [];
+
+        foreach (TestGroup group in sorted)
+        {
+            int bestShard = 0;
+            TimeSpan minWeight = shardWeights[0];
+            for (int i = 1; i < total; i++)
+            {
+                if (shardWeights[i] < minWeight)
+                {
+                    minWeight = shardWeights[i];
+                    bestShard = i;
+                }
+            }
+
+            shards[bestShard].Add(group);
+            shardWeights[bestShard] += Weight(group);
+        }
+
+        return shards[shardIndex - 1];
     }
 
     /// <summary>

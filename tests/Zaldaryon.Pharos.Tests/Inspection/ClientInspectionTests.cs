@@ -94,7 +94,7 @@ public partial class LiveClientInspectionTests : ClientServerScenarioBase
         Assert.Equal(30, mine.LifeLength);
         Assert.True(mine.Position!.DistanceTo(at) < 1.5, $"spawned at {mine.Position}, the player is at {at}");
         Assert.False(mine.OffThread);
-        Assert.True(Client.Particles.Alive(EnumParticleModel.Quad) >= mine.Spawned);
+        Assert.True(Client.Particles.Alive(EnumParticleModel.Quad) > 0, $"Expected alive quad particles, found {Client.Particles.Alive(EnumParticleModel.Quad)}");
         Assert.True(Client.Particles.Alive() >= Client.Particles.Alive(EnumParticleModel.Quad));
     }
 

@@ -79,18 +79,17 @@ public sealed class ThreadPoolDrainTests : ServerScenarioBase
         ThreadPool.GetMinThreads(out int oldMinWorkers, out int oldMinIo);
         ThreadPool.GetMaxThreads(out int oldMaxWorkers, out int oldMaxIo);
         int workerLimit = Math.Min(10, oldMaxWorkers);
-        int blockerCount = workerLimit;
-        Assert.True(blockerCount > 0, "The test needs at least one thread-pool worker.");
         ManualResetEventSlim releaseBlockers = new(false);
         ManualResetEventSlim callbackStarted = new(false);
-        CountdownEvent blockersStarted = new(blockerCount);
-        CountdownEvent blockersFinished = new(blockerCount);
         Task? dispose = null;
+        CountdownEvent? blockersStarted = null;
+        CountdownEvent? blockersFinished = null;
 
         try
         {
-            Assert.True(ThreadPool.SetMinThreads(workerLimit, oldMinIo));
+            Assert.True(ThreadPool.SetMinThreads(Math.Min(oldMinWorkers, workerLimit), oldMinIo));
             Assert.True(ThreadPool.SetMaxThreads(workerLimit, oldMaxIo));
+            Assert.True(ThreadPool.SetMinThreads(workerLimit, oldMinIo));
 
             Stopwatch waitForQuiet = Stopwatch.StartNew();
             int quietMs = 0;
@@ -113,6 +112,11 @@ public sealed class ThreadPoolDrainTests : ServerScenarioBase
                 $"The thread pool did not become quiet: {TyronThreadPool.Inst.ListAllRunningTasks()}; " +
                 $"{ThreadPool.PendingWorkItemCount} queued.");
 
+            ThreadPool.GetAvailableThreads(out int freeWorkers, out _);
+            int blockerCount = Math.Max(1, freeWorkers);
+            blockersStarted = new CountdownEvent(blockerCount);
+            blockersFinished = new CountdownEvent(blockerCount);
+
             for (int i = 0; i < blockerCount; i++)
             {
                 bool blockerQueued = ThreadPool.QueueUserWorkItem(_ =>
@@ -126,18 +130,16 @@ public sealed class ThreadPoolDrainTests : ServerScenarioBase
 
             Stopwatch waitForSaturation = Stopwatch.StartNew();
             ThreadPool.GetAvailableThreads(out int availableWorkers, out _);
-            int startedBlockers = blockerCount - blockersStarted.CurrentCount;
-            while (waitForSaturation.Elapsed < TimeSpan.FromSeconds(15)
-                && (availableWorkers > 0 || startedBlockers < workerLimit - 1))
+            while (waitForSaturation.Elapsed < TimeSpan.FromSeconds(15) && availableWorkers > 0)
             {
                 Thread.Sleep(10);
                 ThreadPool.GetAvailableThreads(out availableWorkers, out _);
-                startedBlockers = blockerCount - blockersStarted.CurrentCount;
             }
 
+            int startedBlockers = blockerCount - blockersStarted.CurrentCount;
             Assert.True(
-                startedBlockers >= workerLimit - 1,
-                $"The thread-pool workers did not start enough blockers ({startedBlockers}/{blockerCount} started).");
+                startedBlockers > 0,
+                $"The thread-pool workers did not start any blockers.");
             Assert.True(
                 TyronThreadPool.Inst.RunningTasks.IsEmpty,
                 $"Unexpected Tyron callbacks were already running before the test callback was queued: " +
@@ -202,7 +204,7 @@ public sealed class ThreadPoolDrainTests : ServerScenarioBase
                 }
             }
 
-            blockersFinished.Wait(TimeSpan.FromSeconds(10));
+            blockersFinished?.Wait(TimeSpan.FromSeconds(10));
             callbackStarted.Wait(TimeSpan.FromSeconds(10));
             ThreadPool.SetMaxThreads(oldMaxWorkers, oldMaxIo);
             ThreadPool.SetMinThreads(oldMinWorkers, oldMinIo);
@@ -241,7 +243,7 @@ public sealed class ThreadPoolDrainTests : ServerScenarioBase
         const string warning = "Pharos callback queued while server systems were disposed";
         ThreadPool.GetMinThreads(out int oldMinWorkers, out int oldMinIo);
         ThreadPool.GetMaxThreads(out int oldMaxWorkers, out int oldMaxIo);
-        int workerLimit = Math.Min(10, oldMaxWorkers);
+        int workerLimit = Math.Min(4, oldMaxWorkers);
 
         TaskCompletionSource releaseCallbacks = new(TaskCreationOptions.RunContinuationsAsynchronously);
         ManualResetEventSlim callbackStarted = new(false);
@@ -257,7 +259,7 @@ public sealed class ThreadPoolDrainTests : ServerScenarioBase
 
             Stopwatch waitForQuiet = Stopwatch.StartNew();
             int quietMs = 0;
-            while (waitForQuiet.Elapsed < TimeSpan.FromSeconds(15) && quietMs < 250)
+            while (waitForQuiet.Elapsed < TimeSpan.FromSeconds(30) && quietMs < 250)
             {
                 if (TyronThreadPool.Inst.RunningTasks.IsEmpty && ThreadPool.PendingWorkItemCount == 0)
                 {

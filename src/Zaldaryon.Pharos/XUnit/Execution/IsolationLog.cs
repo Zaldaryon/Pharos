@@ -13,6 +13,7 @@ internal static class IsolationLog
 {
     private static readonly AsyncLocal<Notes?> s_current = new();
     private static readonly ConcurrentDictionary<Type, Tally> s_classes = new();
+    private static IsolationReport? s_lastSharedRollback;
 
     /// <summary>The notes of the test running on this flow, set by the test runner.</summary>
     public static Notes? Current
@@ -39,6 +40,11 @@ internal static class IsolationLog
             tally.LastKept = kept;
         }
 
+        lock (s_classes)
+        {
+            s_lastSharedRollback = kept ? rolledBack : null;
+        }
+
         Current?.SetAfter(rolledBack != null ? "after this test: " + rolledBack : fallback != null ? "after this test: not rolled back: " + fallback : null);
     }
 
@@ -53,7 +59,16 @@ internal static class IsolationLog
         lock (tally)
         {
             if (reused && recycled) report = new IsolationReport(IsolationKind.Recycled, null, 0, 0, TimeSpan.Zero);
-            else if (reused) report = tally.LastRollback ?? new IsolationReport(IsolationKind.RolledBack, null, 0, 0, TimeSpan.Zero);
+            else if (reused)
+            {
+                IsolationReport? shared;
+                lock (s_classes)
+                {
+                    shared = s_lastSharedRollback;
+                    s_lastSharedRollback = null;
+                }
+                report = tally.LastRollback ?? shared ?? new IsolationReport(IsolationKind.RolledBack, null, 0, 0, TimeSpan.Zero);
+            }
             else if (tally.Tests == 0) report = new IsolationReport(IsolationKind.FirstBoot, null, 0, 0, boot);
             else
             {
@@ -75,7 +90,15 @@ internal static class IsolationLog
     }
 
     /// <summary>Forgets <paramref name="testClass"/>, for tests of the log itself.</summary>
-    internal static void Forget(Type testClass) => s_classes.TryRemove(testClass, out _);
+    internal static void Forget(Type testClass)
+    {
+        lock (s_classes)
+        {
+            s_lastSharedRollback = null;
+        }
+
+        s_classes.TryRemove(testClass, out _);
+    }
 
     /// <summary>The class's tests so far, by how their hosts were made ready.</summary>
     public static string Summary(Type testClass)

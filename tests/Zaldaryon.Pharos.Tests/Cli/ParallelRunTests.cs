@@ -65,6 +65,74 @@ public class RunOptionsTests
     }
 
     [Fact]
+    public void ShardAndManifestOptions_AreParsedAndValidated()
+    {
+        RunOptions options = RunOptions.Parse(["tests/My.Tests", "--shard", "2/4", "--manifest", "out.json", "--timings", "time.json"])!;
+        Assert.NotNull(options.Shard);
+        Assert.Equal(2, options.Shard.Index);
+        Assert.Equal(4, options.Shard.Total);
+        Assert.Equal("out.json", options.ManifestPath);
+        Assert.Equal("time.json", options.TimingsPath);
+
+        // --json with path sets ManifestPath
+        RunOptions jsonPathOpt = RunOptions.Parse(["tests/My.Tests", "--json", "artifacts/run-1.json"])!;
+        Assert.Equal("artifacts/run-1.json", jsonPathOpt.ManifestPath);
+
+        // Invalid shards throw ArgumentException
+        Assert.Throws<ArgumentException>(() => RunOptions.Parse(["tests/My.Tests", "--shard", "0/4"]));
+        Assert.Throws<ArgumentException>(() => RunOptions.Parse(["tests/My.Tests", "--shard", "5/4"]));
+        Assert.Throws<ArgumentException>(() => RunOptions.Parse(["tests/My.Tests", "--shard", "abc"]));
+        Assert.Throws<ArgumentException>(() => RunOptions.Parse(["tests/My.Tests", "--shard", "1/"]));
+    }
+
+    [Fact]
+    public void TestGroups_PartitionForShard_DistributesGroupsDisjointlyAndEvenly()
+    {
+        List<TestGroup> groups =
+        [
+            new("ClassA", ["ClassA.T1", "ClassA.T2", "ClassA.T3"]),
+            new("ClassB", ["ClassB.T1", "ClassB.T2"]),
+            new("ClassC", ["ClassC.T1"]),
+            new("ClassD", ["ClassD.T1", "ClassD.T2", "ClassD.T3", "ClassD.T4"]),
+            new("ClassE", ["ClassE.T1"]),
+            new("ClassF", ["ClassF.T1", "ClassF.T2"]),
+        ];
+
+        int totalShards = 3;
+        List<TestGroup> allAssigned = [];
+        for (int shard = 1; shard <= totalShards; shard++)
+        {
+            IReadOnlyList<TestGroup> shardGroups = TestGroups.PartitionForShard(groups, shard, totalShards);
+            Assert.NotEmpty(shardGroups);
+            foreach (TestGroup g in shardGroups)
+            {
+                Assert.DoesNotContain(g, allAssigned);
+                allAssigned.Add(g);
+            }
+        }
+
+        // Complete union: every group was assigned exactly once
+        Assert.Equal(groups.OrderBy(g => g.Name).Select(g => g.Name), allAssigned.OrderBy(g => g.Name).Select(g => g.Name));
+
+        // With durations: heavy groups are distributed to different shards
+        Dictionary<string, TimeSpan> durations = new()
+        {
+            ["ClassD"] = TimeSpan.FromSeconds(100),
+            ["ClassA"] = TimeSpan.FromSeconds(90),
+            ["ClassB"] = TimeSpan.FromSeconds(80),
+        };
+
+        IReadOnlyList<TestGroup> shard1 = TestGroups.PartitionForShard(groups, 1, 3, durations);
+        IReadOnlyList<TestGroup> shard2 = TestGroups.PartitionForShard(groups, 2, 3, durations);
+        IReadOnlyList<TestGroup> shard3 = TestGroups.PartitionForShard(groups, 3, 3, durations);
+
+        // Top 3 heaviest groups each go to distinct shards
+        Assert.Contains(shard1, g => g.Name == "ClassD");
+        Assert.Contains(shard2, g => g.Name == "ClassA");
+        Assert.Contains(shard3, g => g.Name == "ClassB");
+    }
+
+    [Fact]
     public void FailedRows_UsesRawOutcomeAndExactTheoryDisplayIdentity()
     {
         string manifest = Path.Combine(Path.GetTempPath(), "pharos-rerun-" + Guid.NewGuid().ToString("N") + ".json");

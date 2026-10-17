@@ -81,15 +81,14 @@ internal static class ScenarioHostPool
     }
 
     /// <summary>
-    /// Takes the pooled host when it matches <paramref name="owner"/> and <paramref name="key"/>,
-    /// otherwise disposes whatever is pooled. The caller owns the result until it calls
-    /// <see cref="Return"/> or disposes it.
+    /// Takes the pooled host when it matches <paramref name="key"/>, otherwise disposes whatever
+    /// is pooled. The caller owns the result until it calls <see cref="Return"/> or disposes it.
     /// </summary>
     public static T? Take<T>(Type owner, object key) where T : class, IDisposable
     {
         lock (s_lock)
         {
-            if (s_pooled is { } pooled && pooled.Owner == owner && pooled.Host is T host && Equals(pooled.Key, key))
+            if (s_pooled is { } pooled && pooled.Host is T host && Equals(pooled.Key, key))
             {
                 s_pooled = null;
                 return host;
