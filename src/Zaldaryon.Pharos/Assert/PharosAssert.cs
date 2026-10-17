@@ -2,6 +2,7 @@ using Vintagestory.API.MathTools;
 using Zaldaryon.Pharos.Server;
 using static System.FormattableString;
 using Zaldaryon.Pharos.Culling;
+using Zaldaryon.Pharos.Core;
 using Zaldaryon.Pharos.Graphics;
 using Zaldaryon.Pharos.Memory;
 using Zaldaryon.Pharos.Timing;
@@ -710,6 +711,14 @@ public static class PharosAssert
     // -------------------------------------------------------------------------
     // Golden image assertions
     // -------------------------------------------------------------------------
+
+    /// <summary>Asserts a framebuffer snapshot against a named region-aware golden image.</summary>
+    /// <param name="frame">Captured framebuffer pixels.</param>
+    /// <param name="name">Golden name without a platform suffix; the final <c>.png</c> is optional.</param>
+    /// <param name="options">Regions, masks, comparison tolerances, and metric.</param>
+    /// <exception cref="PharosAssertException">The golden is missing or the comparison exceeds its tolerances.</exception>
+    public static void MatchesGolden(FramebufferSnapshot frame, string name, GoldenImageOptions? options = null) =>
+        GoldenImageMatcher.AssertMatches(frame, name, options);
 
     /// <summary>
     /// Asserts that a perceptual diff result indicates images are similar within tolerance.
