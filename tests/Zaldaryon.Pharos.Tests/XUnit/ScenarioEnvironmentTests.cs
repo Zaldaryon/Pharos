@@ -103,24 +103,30 @@ public sealed class ScenarioEnvironmentTests
     [Fact]
     public void ThreadPumpStartsGraceAfterLateCancellation()
     {
-        using CancellationTokenSource cancellation = new(TimeSpan.FromMilliseconds(200));
+        using CancellationTokenSource cancellation = new();
         ScenarioThreadPump pump = new();
+        TaskCompletionSource resume = new(TaskCreationOptions.RunContinuationsAsynchronously);
         SynchronizationContext? previous = SynchronizationContext.Current;
         try
         {
             SynchronizationContext.SetSynchronizationContext(pump);
-            Task cleanup = WaitForCancellationAndUnwindAsync();
-            Assert.True(pump.Run(cleanup, cancellation.Token, TimeSpan.FromMilliseconds(200)));
+            Task cleanup = ResumeAfterCancellationAsync();
+            // This owner-thread callback delays cancellation beyond the grace interval. It
+            // makes a deadline started at Run entry observably expire before the abort arrives.
+            pump.Post(_ =>
+            {
+                Thread.Sleep(150);
+                cancellation.Cancel();
+                pump.Post(_ => resume.TrySetResult(), null);
+            }, null);
+            Assert.True(pump.Run(cleanup, cancellation.Token, TimeSpan.FromMilliseconds(100)));
         }
         finally { SynchronizationContext.SetSynchronizationContext(previous); }
 
-        async Task WaitForCancellationAndUnwindAsync()
+        async Task ResumeAfterCancellationAsync()
         {
-            try { await Task.Delay(Timeout.Infinite, cancellation.Token); }
-            catch (OperationCanceledException)
-            {
-                await Task.Delay(40);
-            }
+            cancellation.Token.ThrowIfCancellationRequested();
+            await resume.Task;
         }
     }
 
