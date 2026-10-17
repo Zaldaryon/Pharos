@@ -1,3 +1,4 @@
+using System.Linq;
 using Vintagestory.API.Common;
 using Xunit;
 using Zaldaryon.Pharos.Server;
@@ -160,5 +161,79 @@ public class RecipeDriverTests : ServerScenarioBase
 
         ArgumentException error = Assert.Throws<ArgumentException>(() => Host!.Recipes.Match(player, new string?[,] { { "game:no-such-item", null, null }, { null, null, null }, { null, null, null } }));
         Assert.Contains("game:no-such-item", error.Message, StringComparison.Ordinal);
+    }
+
+    [ServerScenario]
+    public async Task MatchAsync_FindsTheFirestarterWithoutAPlayer()
+    {
+        GridMatch match = await Host!.Recipes.MatchAsync(new string?[,]
+        {
+            { "game:drygrass", "game:stick", null },
+            { "game:stick", null, null },
+            { null, null, null },
+        });
+
+        Assert.Equal(("game:firestarter", 1), match.Output);
+    }
+
+    [ServerScenario]
+    public async Task MatchAsync_GivesTheSameResultAsAnExplicitPlayer()
+    {
+        ServerTestPlayer player = await CreateTestPlayerAsync(PlayerNames.Next());
+        string?[,] firestarter = new string?[,]
+        {
+            { "game:drygrass", "game:stick", null },
+            { "game:stick", null, null },
+            { null, null, null },
+        };
+        string?[,] nearMiss = new string?[,]
+        {
+            { "game:drygrass", "game:stick", null },
+            { null, "game:stick", null },
+            { null, null, null },
+        };
+
+        foreach (string?[,] grid in new[] { firestarter, nearMiss })
+        {
+            GridMatch explicitMatch = Host!.Recipes.Match(player, grid);
+            GridMatch asyncMatch = await Host.Recipes.MatchAsync(grid);
+
+            Assert.Equal(explicitMatch.Recipe, asyncMatch.Recipe);
+            Assert.Equal(explicitMatch.Output, asyncMatch.Output);
+            Assert.Equal(explicitMatch.Matches, asyncMatch.Matches);
+        }
+    }
+
+    [ServerScenario]
+    public async Task MatchAsync_JoinsOneRecipePlayerForSeveralCalls()
+    {
+        string?[,] grid = new string?[,] { { "game:stick", null, null }, { null, null, null }, { null, null, null } };
+
+        await Host!.Recipes.MatchAsync(grid);
+        await Host.Recipes.MatchAsync(grid);
+
+        Assert.Equal(1, Host.TestPlayers.Count(player => player.PlayerName == "PharosRecipes"));
+    }
+
+    [ServerScenario]
+    public async Task MatchAsync_RejectsAGridLargerThanTheGameBeforeJoining()
+    {
+        InvalidOperationException error = await Assert.ThrowsAsync<InvalidOperationException>(() => Host!.Recipes.MatchAsync(new ItemStack?[4, 1]));
+
+        Assert.Contains("3 by 3", error.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(Host!.TestPlayers, player => player.PlayerName == "PharosRecipes");
+    }
+
+    [ServerScenario]
+    public async Task MatchAsync_JoinsAgainAfterTheRecipePlayerIsReleased()
+    {
+        string?[,] grid = new string?[,] { { "game:stick", null, null }, { null, null, null }, { null, null, null } };
+        await Host!.Recipes.MatchAsync(grid);
+
+        Host.ReleaseRecipePlayer();
+        Assert.DoesNotContain(Host.TestPlayers, player => player.PlayerName == "PharosRecipes");
+
+        await Host.Recipes.MatchAsync(grid);
+        Assert.Equal(1, Host.TestPlayers.Count(player => player.PlayerName == "PharosRecipes"));
     }
 }

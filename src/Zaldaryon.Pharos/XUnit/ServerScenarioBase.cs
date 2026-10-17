@@ -390,6 +390,9 @@ public abstract class ServerScenarioBase : IAsyncLifetime, IScenarioLifecycle
 
             _testPlayers.Clear();
 
+            // The recipe player leaves as the test players do, so rollback does not keep it.
+            _host?.ReleaseRecipePlayer();
+
             // The generators go back before anything else: the server is pooled or disposed next,
             // and the static ones belong to the whole process.
             string? random = RollbackParticipants.Try("Restoring the random generators", () => World.RandomSeeding.EndScenario(_host is { IsRunning: true } host ? host.Random : null, client: null));

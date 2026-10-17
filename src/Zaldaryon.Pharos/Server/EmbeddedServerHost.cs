@@ -190,6 +190,9 @@ public sealed partial class EmbeddedServerHost : IDisposable, IAsyncDisposable
     /// <summary>Matches crafting grids against the game's recipes, and explains a grid that matches none.</summary>
     public RecipeDriver Recipes => _recipes ??= new RecipeDriver(this);
 
+    /// <summary>Disconnects the player that matches recipes without one, so a test leaves no player behind.</summary>
+    internal void ReleaseRecipePlayer() => _recipes?.ReleaseRecipePlayer();
+
     private RecipeDriver? _recipes;
 
     /// <summary>
