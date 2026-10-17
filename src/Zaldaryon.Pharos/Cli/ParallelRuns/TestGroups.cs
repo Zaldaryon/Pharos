@@ -215,6 +215,10 @@ internal static class Filter
     /// <summary>A filter that matches <paramref name="fullyQualifiedName"/> exactly.</summary>
     public static string ForTest(string fullyQualifiedName) => "FullyQualifiedName=" + Escape(fullyQualifiedName);
 
+    /// <summary>A filter matching one theory row by method and display name.</summary>
+    public static string ForTestCase(string fullyQualifiedName, string displayName) =>
+        ForTest(fullyQualifiedName) + "&DisplayName=" + Escape(displayName);
+
     /// <summary>A filter that matches exactly the tests of <paramref name="group"/>.</summary>
     public static string ForGroup(TestGroup group) => string.Join("|", group.Tests.Select(ForTest));
 

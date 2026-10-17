@@ -365,11 +365,145 @@ internal sealed class ScenarioTestRunner(
     // They go to the test's output, where test explorers and trx files show it.
     protected override async Task<Tuple<decimal, string>> InvokeTestAsync(ExceptionAggregator aggregator)
     {
-        IsolationLog.Notes notes = new();
-        IsolationLog.Current = notes;
+        ScenarioAttemptPolicy policy;
+        try { policy = ScenarioAttemptPolicy.Read(TestMethod); }
+        catch (Exception ex)
+        {
+            aggregator.Add(ex);
+            return Tuple.Create(0m, s_versions + ex.Message + Environment.NewLine);
+        }
+
         _randomSeed = ScenarioRandomSeed.Resolve(TestClass, TestMethod, TestMethodArguments);
-        Tuple<decimal, string> result = await base.InvokeTestAsync(aggregator).ConfigureAwait(false);
-        return Tuple.Create(result.Item1, s_versions + _randomSeed?.OutputLine + result.Item2 + notes.Text);
+        if (policy.Attempts == 1)
+        {
+            ScenarioAttemptState state = new();
+            ScenarioAttemptState? previousState = ScenarioAttemptState.Current;
+            IsolationLog.Notes notes = new();
+            IsolationLog.Notes? previousNotes = IsolationLog.Current;
+            ScenarioAttemptState.Current = state;
+            IsolationLog.Current = notes;
+            try
+            {
+                Tuple<decimal, string> result = await base.InvokeTestAsync(aggregator).ConfigureAwait(false);
+                Exception? failure = aggregator.ToException();
+                ClassifyTerminalFailure(state, failure);
+                string outcome = state.Skipped && failure == null ? "Skipped" : failure == null ? "Passed" : "Failed";
+                ScenarioAttemptManifestWriter.Write(Test, policy,
+                    [new ScenarioAttemptEntry(1, state.Phase, outcome, (double)result.Item1, failure?.ToString(), state.ArtifactDirectories.ToArray())],
+                    outcome, false);
+                return Tuple.Create(result.Item1, s_versions + _randomSeed?.OutputLine + result.Item2 + notes.Text);
+            }
+            finally
+            {
+                ScenarioAttemptState.Current = previousState;
+                IsolationLog.Current = previousNotes;
+            }
+        }
+
+        List<ScenarioAttemptEntry> history = [];
+        int successes = 0;
+        decimal totalTime = 0;
+        Exception? lastFailure = null;
+        List<string> attemptOutputs = [];
+        bool skipped = false;
+        CapturingMessageBus? finalMessages = null;
+        for (int number = 1; number <= policy.Attempts; number++)
+        {
+            if (CancellationTokenSource.IsCancellationRequested) break;
+
+            ScenarioAttemptState state = new();
+            ScenarioAttemptState? previousState = ScenarioAttemptState.Current;
+            IsolationLog.Notes notes = new();
+            IsolationLog.Notes? previousNotes = IsolationLog.Current;
+            IMessageBus outerBus = MessageBus;
+            CapturingMessageBus attemptMessages = new();
+            ExceptionAggregator attemptAggregator = new(aggregator);
+            ScenarioAttemptState.Current = state;
+            IsolationLog.Current = notes;
+            MessageBus = attemptMessages;
+            Tuple<decimal, string> result;
+            try
+            {
+                result = await base.InvokeTestAsync(attemptAggregator).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                attemptAggregator.Add(ex);
+                result = Tuple.Create(0m, "");
+            }
+            finally
+            {
+                MessageBus = outerBus;
+                ScenarioAttemptState.Current = previousState;
+                IsolationLog.Current = previousNotes;
+            }
+
+            Exception? failure = attemptAggregator.ToException();
+            ClassifyTerminalFailure(state, failure);
+            lastFailure = failure;
+            totalTime += result.Item1;
+            attemptOutputs.Add(result.Item2 + notes.Text);
+            // A body skip is only the final outcome if teardown and reporting also succeeded.
+            skipped = state.Skipped && failure == null;
+            finalMessages = attemptMessages;
+            if (failure == null && !skipped) successes++;
+            string outcome = skipped ? "Skipped" : failure == null ? "Passed" : "Failed";
+            history.Add(new ScenarioAttemptEntry(number, state.Phase, outcome, (double)result.Item1, failure?.ToString(), state.ArtifactDirectories.ToArray()));
+
+            if (successes >= policy.RequiredSuccesses || skipped || state.NonRetryableFailure ||
+                (failure != null && (!state.RetryableBodyFailure || !ContainsOnlyRetryableFailure(failure, state.RetryableFailure))) ||
+                CancellationTokenSource.IsCancellationRequested)
+                break;
+            if (successes + policy.Attempts - number < policy.RequiredSuccesses) break;
+        }
+
+        // Each attempt's fixture and body messages are private until the final status is known.
+        if (finalMessages != null)
+            foreach (IMessageSinkMessage message in finalMessages.Messages)
+                if (!MessageBus.QueueMessage(message)) CancellationTokenSource.Cancel();
+
+        bool passed = successes >= policy.RequiredSuccesses;
+        bool flaky = passed && history.Count > 1 && history.Take(history.Count - 1).Any(a => a.Outcome == "Failed");
+        string finalOutcome = skipped ? "Skipped" : passed ? "Passed" : "Failed";
+        string historyText = $"Pharos attempts: {history.Count}/{policy.Attempts}; required successes: {policy.RequiredSuccesses}; successes: {successes}; flaky={flaky.ToString().ToLowerInvariant()}.";
+        if (history.Count > 1)
+            historyText += Environment.NewLine + string.Join(Environment.NewLine, history.Select(a => $"  attempt {a.Number}: {a.Outcome}{(string.IsNullOrWhiteSpace(a.Failure) ? "" : ": " + FirstLine(a.Failure))}"));
+        ScenarioAttemptManifestWriter.Write(Test, policy, history, finalOutcome, flaky);
+
+        if (!passed && !skipped)
+        {
+            lastFailure ??= new InvalidOperationException($"Scenario required {policy.RequiredSuccesses} successful attempts but got {successes} of {history.Count}.");
+            aggregator.Add(successes == 0 && history.Count > 0 ? lastFailure : new InvalidOperationException(historyText, lastFailure));
+        }
+        string output = string.Join(Environment.NewLine, attemptOutputs.Select((text, index) => $"--- attempt {index + 1} output ---{Environment.NewLine}{text}"));
+        return Tuple.Create(totalTime, s_versions + _randomSeed?.OutputLine + output + Environment.NewLine + historyText);
+    }
+
+    private static bool ContainsOnlyRetryableFailure(Exception exception, Exception? retryableFailure)
+    {
+        if (retryableFailure == null) return false;
+        if (ReferenceEquals(exception, retryableFailure)) return true;
+        return exception is AggregateException aggregate &&
+            aggregate.Flatten().InnerExceptions.Count == 1 && ReferenceEquals(aggregate.Flatten().InnerExceptions[0], retryableFailure);
+    }
+
+    private static void ClassifyTerminalFailure(ScenarioAttemptState state, Exception? failure)
+    {
+        // xUnit disposes the class after the scenario invoker has finished. A disposal or
+        // AfterTest failure can therefore be added after the body left Phase=body; fail closed
+        // for retries/quarantine when it is not the exact captured body failure.
+        if (failure != null && state.Phase == "body" &&
+            (!state.RetryableBodyFailure || !ContainsOnlyRetryableFailure(failure, state.RetryableFailure)))
+            state.MarkNonRetryable("teardown");
+    }
+
+    private static string FirstLine(string? text) => text?.Trim().Split('\n')[0] ?? "";
+
+    private sealed class CapturingMessageBus : IMessageBus
+    {
+        public List<IMessageSinkMessage> Messages { get; } = [];
+        public bool QueueMessage(IMessageSinkMessage message) { Messages.Add(message); return true; }
+        public void Dispose() { }
     }
 
     // The seed of this test, which its output starts with and its class seeds the game with.
@@ -402,7 +536,11 @@ internal sealed class ScenarioTestInvoker(
         if (lifecycle != null && !Aggregator.HasExceptions)
         {
             Aggregator.Run(lifecycle.BeforeBody);
-            if (Aggregator.HasExceptions) return 0m;
+            if (Aggregator.HasExceptions)
+            {
+                ScenarioAttemptState.Current?.MarkNonRetryable();
+                return 0m;
+            }
         }
 
         // The body gets an aggregator and a timer of its own: a body that outlives its timeout
@@ -443,6 +581,7 @@ internal sealed class ScenarioTestInvoker(
                         prepare = lifecycle.ApplyEnvironmentsAsync(abort.Token);
                         if (prepare != null && !pump.Run(prepare, abort.Token, ScenarioTimeouts.Grace))
                         {
+                            ScenarioAttemptState.Current?.MarkNonRetryable("timeout");
                             lifecycle.BodyTimedOut(stillRunning: true);
                             abandonHost = true;
                             timeoutReported = true;
@@ -456,6 +595,7 @@ internal sealed class ScenarioTestInvoker(
                 {
                     if (ex is OperationCanceledException && abort.IsCancellationRequested)
                     {
+                        ScenarioAttemptState.Current?.MarkNonRetryable("timeout");
                         lifecycle.BodyTimedOut(stillRunning: false);
                         timeoutReported = true;
                         timedOut = true;
@@ -469,6 +609,7 @@ internal sealed class ScenarioTestInvoker(
                     try { prepare.GetAwaiter().GetResult(); }
                     catch (OperationCanceledException) when (abort.IsCancellationRequested)
                     {
+                        ScenarioAttemptState.Current?.MarkNonRetryable("timeout");
                         abandonHost |= scope.Wedged;
                         lifecycle.BodyTimedOut(stillRunning: abandonHost);
                         timeoutReported = true;
@@ -484,6 +625,7 @@ internal sealed class ScenarioTestInvoker(
 
             if (preparation.HasExceptions)
             {
+                ScenarioAttemptState.Current?.MarkNonRetryable();
                 // Setup failures take the same reporting path as body failures so their artifacts
                 // are captured before IAsyncLifetime.DisposeAsync tears down the game instances.
                 bodyAggregator.Add(preparation.ToException());
@@ -501,6 +643,7 @@ internal sealed class ScenarioTestInvoker(
                     {
                         if (!pump.Run(run, abort.Token, ScenarioTimeouts.Grace))
                         {
+                            ScenarioAttemptState.Current?.MarkNonRetryable("timeout");
                             lifecycle?.BodyTimedOut(stillRunning: true);
                             abandonHost = true;
                             timeoutReported = true;
@@ -528,6 +671,7 @@ internal sealed class ScenarioTestInvoker(
         decimal elapsed;
         if (!run.IsCompleted && abort.IsCancellationRequested)
         {
+            ScenarioAttemptState.Current?.MarkNonRetryable("timeout");
             // Aborted while still running: it gets a grace period to reach its next step.
             bool stopped = await Task.WhenAny(run, Task.Delay(ScenarioTimeouts.Grace)).ConfigureAwait(false) == run;
             timedOut = true;
@@ -547,6 +691,7 @@ internal sealed class ScenarioTestInvoker(
             timedOut |= abort.IsCancellationRequested && (scope.Wedged || (bodyAggregator.HasExceptions && WasAborted(bodyAggregator.ToException())));
             if (timedOut)
             {
+                ScenarioAttemptState.Current?.MarkNonRetryable("timeout");
                 // The body ran out of time and stopped at its next step: a timeout, not whatever
                 // the abort made it throw.
                 abandonHost |= scope.Wedged;
@@ -558,13 +703,24 @@ internal sealed class ScenarioTestInvoker(
                 Exception bodyFailure = bodyAggregator.ToException();
                 if (bodyFailure is ScenarioSkipException skip)
                 {
+                    if (ScenarioAttemptState.Current is { } state) state.Skipped = true;
                     if (ScenarioTestInfo.Current is { } currentInfo)
                     {
                         currentInfo.DynamicSkipReason = skip.Message;
                         ScenarioSkipDispatch.Set(Test, skip.Message);
                     }
                 }
-                else Aggregator.Add(bodyFailure);
+                else
+                {
+                    if (ScenarioAttemptState.Current is { } state)
+                    {
+                        if (state.BodyEntered) state.RetryableBodyFailure = true;
+                        else state.MarkNonRetryable();
+                    }
+                    Aggregator.Add(bodyFailure);
+                    if (ScenarioAttemptState.Current is { } retryState && retryState.RetryableBodyFailure)
+                        retryState.RetryableFailure = bodyFailure;
+                }
             }
         }
 
@@ -577,7 +733,10 @@ internal sealed class ScenarioTestInvoker(
         if (ScenarioTestInfo.Current?.DynamicSkipReason == null)
         {
             if (!Aggregator.HasExceptions)
+            {
                 Aggregator.Run(lifecycle.CheckLoggedErrors);
+                if (Aggregator.HasExceptions) ScenarioAttemptState.Current?.MarkNonRetryable("logged-errors");
+            }
 
             // pharos fixture: the world the test built, saved before the class rolls it back. What mods
             // log while saving counts as well.
@@ -585,6 +744,7 @@ internal sealed class ScenarioTestInvoker(
             {
                 await Aggregator.RunAsync(() => FixtureExport.SaveAsync(lifecycle.FixtureServer, info, destination)).ConfigureAwait(false);
                 if (!Aggregator.HasExceptions) Aggregator.Run(lifecycle.CheckLoggedErrors);
+                if (Aggregator.HasExceptions) ScenarioAttemptState.Current?.MarkNonRetryable("fixture-export");
             }
 
             if (Aggregator.HasExceptions)
@@ -599,6 +759,8 @@ internal sealed class ScenarioTestInvoker(
                     Aggregator.Clear();
                     Aggregator.Add(new ScenarioFailedException(failure, details));
                 }
+                if (ScenarioAttemptState.Current is { RetryableBodyFailure: true } attempt)
+                    attempt.RetryableFailure = Aggregator.ToException();
             }
         }
 
@@ -629,6 +791,7 @@ internal sealed class ScenarioTestInvoker(
 
             if (cleanupFailure != null)
             {
+                ScenarioAttemptState.Current?.MarkNonRetryable("cleanup");
                 string? details = null;
                 try { details = lifecycle.CaptureFailure(info, cleanupFailure, timedOut: false); }
                 catch (Exception ex) { details = $"Pharos could not save cleanup failure artifacts: {ex.GetType().Name}: {ex.Message}"; }
@@ -653,5 +816,11 @@ internal sealed class ScenarioTestInvoker(
         : XunitTestInvoker(test, messageBus, testClass, constructorArguments, testMethod, testMethodArguments, beforeAfterAttributes, aggregator, cancellationTokenSource)
     {
         public Task<decimal> InvokeBody(object testClassInstance) => base.InvokeTestMethodAsync(testClassInstance);
+
+        protected override object CallTestMethod(object testClassInstance)
+        {
+            if (ScenarioAttemptState.Current is { } state) state.EnterBody();
+            return base.CallTestMethod(testClassInstance);
+        }
     }
 }
