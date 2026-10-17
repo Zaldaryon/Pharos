@@ -660,6 +660,7 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime, IScenarioLifecy
         }
 
         _testPlayers.Clear();
+        _serverHost?.ReleaseRecipePlayer();
 
         // The generators go back before anything else: the hosts are pooled or disposed next, and
         // the static ones belong to the whole process.

@@ -53,7 +53,12 @@ public sealed class RecipeDriver
     private const int SelectRecipePacket = 1001;
     private const int UserOverPacket = 1002;
 
+    // The name of the player that matches grids without one, chosen to stay clear of the names test players get.
+    private const string RecipePlayerName = "PharosRecipes";
+
     private readonly EmbeddedServerHost _host;
+    private readonly object _recipePlayerLock = new();
+    private Task<ServerTestPlayer>? _recipePlayer;
 
     internal RecipeDriver(EmbeddedServerHost host) => _host = host;
 
@@ -70,6 +75,83 @@ public sealed class RecipeDriver
     {
         ArgumentNullException.ThrowIfNull(player);
         ArgumentNullException.ThrowIfNull(grid);
+        return Match(player, ToStacks(grid));
+    }
+
+    /// <summary>
+    /// Matches a 3 by 3 grid of item codes without a player: the driver matches as a recipe player that it joins
+    /// the first time, as <c>PharosRecipes</c>, at the world spawn with the first character class. The join advances
+    /// the world by the ticks it takes, and the recipe player appears in <see cref="EmbeddedServerHost.TestPlayers"/>.
+    /// Recipes that need a trait match only if that class has it; use the overload with a player for those.
+    /// </summary>
+    /// <param name="grid">The grid, indexed [row, column]. A null cell is empty. The grid may be smaller than 3 by 3.</param>
+    /// <param name="ct">Cancels the wait for the match, not the join, which other calls share.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="grid"/> is null.</exception>
+    /// <exception cref="InvalidOperationException">The grid is larger than 3 by 3, or the call runs on the server's game thread.</exception>
+    /// <exception cref="ArgumentException">A cell names an item or block the game does not have.</exception>
+    public Task<GridMatch> MatchAsync(string?[,] grid, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(grid);
+        return MatchAsync(ToStacks(grid), ct);
+    }
+
+    /// <summary>
+    /// Matches a 3 by 3 grid of item stacks without a player; see the overload that takes item codes.
+    /// </summary>
+    /// <param name="grid">The grid, indexed [row, column]. A null cell is empty. The grid may be smaller than 3 by 3.</param>
+    /// <param name="ct">Cancels the wait for the match, not the join, which other calls share.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="grid"/> is null.</exception>
+    /// <exception cref="InvalidOperationException">The grid is larger than 3 by 3, or the call runs on the server's game thread.</exception>
+    public async Task<GridMatch> MatchAsync(ItemStack?[,] grid, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(grid);
+        RequireGridSize(grid.GetLength(0), grid.GetLength(1));
+        if (_host.IsOnGameThread) throw new InvalidOperationException("MatchAsync joins a player, which needs the server's game thread to run, so call it from the test thread.");
+
+        ServerTestPlayer player = await RecipePlayerAsync().ConfigureAwait(false);
+        ct.ThrowIfCancellationRequested();
+        return Match(player, grid);
+    }
+
+    /// <summary>Disconnects the recipe player, if one was joined. The next call without a player joins another.</summary>
+    internal void ReleaseRecipePlayer()
+    {
+        Task<ServerTestPlayer>? held;
+        lock (_recipePlayerLock)
+        {
+            held = _recipePlayer;
+            _recipePlayer = null;
+        }
+
+        if (held is { IsCompletedSuccessfully: true }) held.Result.Dispose();
+    }
+
+    private Task<ServerTestPlayer> RecipePlayerAsync()
+    {
+        lock (_recipePlayerLock)
+        {
+            bool usable = _recipePlayer is { } current && !current.IsFaulted && !current.IsCanceled && (!current.IsCompletedSuccessfully || current.Result.IsConnected);
+            _recipePlayer = usable ? _recipePlayer : JoinRecipePlayerAsync();
+            return _recipePlayer!;
+        }
+    }
+
+    private async Task<ServerTestPlayer> JoinRecipePlayerAsync()
+    {
+        try
+        {
+            return await _host.JoinPlayerAsync(RecipePlayerName).ConfigureAwait(false);
+        }
+        catch
+        {
+            lock (_recipePlayerLock) _recipePlayer = null;
+            throw;
+        }
+    }
+
+    // The codes become stacks on the calling thread, as the explicit overload does.
+    private ItemStack?[,] ToStacks(string?[,] grid)
+    {
         var stacks = new ItemStack?[grid.GetLength(0), grid.GetLength(1)];
         for (int row = 0; row < grid.GetLength(0); row++)
         {
@@ -80,7 +162,15 @@ public sealed class RecipeDriver
             }
         }
 
-        return Match(player, stacks);
+        return stacks;
+    }
+
+    private static void RequireGridSize(int rows, int columns)
+    {
+        if (rows > GridSize || columns > GridSize)
+        {
+            throw new InvalidOperationException($"The crafting grid is {GridSize} by {GridSize}; the grid given is {rows} by {columns}.");
+        }
     }
 
     /// <summary>
@@ -95,10 +185,7 @@ public sealed class RecipeDriver
     {
         ArgumentNullException.ThrowIfNull(player);
         ArgumentNullException.ThrowIfNull(grid);
-        if (grid.GetLength(0) > GridSize || grid.GetLength(1) > GridSize)
-        {
-            throw new InvalidOperationException($"The crafting grid is {GridSize} by {GridSize}; the grid given is {grid.GetLength(0)} by {grid.GetLength(1)}.");
-        }
+        RequireGridSize(grid.GetLength(0), grid.GetLength(1));
 
         IPlayer forPlayer = player.Player ?? throw new InvalidOperationException("The player is not connected, so the game cannot check recipes for it.");
         return _host.RunOnGameThread(() => MatchOnGameThread(forPlayer, grid));
