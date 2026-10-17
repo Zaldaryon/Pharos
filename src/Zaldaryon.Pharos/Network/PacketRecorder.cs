@@ -85,6 +85,20 @@ public sealed class PacketRecorder
     }
 
     /// <summary>
+    /// Records a packet with its frame and transport, so a replay can deliver it in order.
+    /// </summary>
+    public void Record(int packetId, PacketDirection direction, byte[] payload, long frame, PacketTransport transport, string? packetTypeName = null)
+    {
+        lock (_lock)
+        {
+            if (!_recording) return;
+
+            RecordedPacket packet = RecordedPacket.FromBytes(packetId, direction, _stopwatch.ElapsedMilliseconds, payload, packetTypeName);
+            _packets.Add(packet with { Frame = frame, Transport = transport });
+        }
+    }
+
+    /// <summary>
     /// Records a packet with pre-encoded Base64 payload if recording is active.
     /// </summary>
     public void RecordBase64(int packetId, PacketDirection direction, string payloadBase64, string? packetTypeName = null)

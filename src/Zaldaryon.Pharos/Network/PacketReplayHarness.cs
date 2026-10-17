@@ -132,6 +132,7 @@ public sealed class PacketReplayHarness
     /// <summary>
     /// Replays all packets synchronously against a HeadlessClient, advancing one tick per packet batch.
     /// </summary>
+    [Obsolete("It delivers no packets, it only advances the client's frame. Use the client's Replay.ServerTrafficAsync instead.", error: true)]
     public ReplayResult Replay(HeadlessClient client, IReadOnlyList<RecordedPacket> packets, float tickDt = 1f / 60f)
     {
         ArgumentNullException.ThrowIfNull(client);
