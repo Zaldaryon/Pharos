@@ -299,9 +299,20 @@ public sealed partial class EmbeddedServerHost : IDisposable, IAsyncDisposable
     /// <param name="maxTicks">How many server ticks each join step may take.</param>
     /// <param name="ct">Cancellation token.</param>
     /// <exception cref="InvalidOperationException">A player with that name is already connected.</exception>
-    /// <exception cref="TimeoutException">A join step did not complete in time.</exception>
     public Task<ServerTestPlayer> JoinPlayerAsync(string playerName, int maxTicks = 2000, CancellationToken ct = default) =>
         _players.JoinAsync(playerName, maxTicks, ct);
+
+    /// <summary>
+    /// Joins a headless test player to the server. Alias for <see cref="JoinPlayerAsync"/>.
+    /// </summary>
+    public Task<ServerTestPlayer> CreateTestPlayer(string playerName = "TestPlayer", int maxTicks = 2000, CancellationToken ct = default) =>
+        JoinPlayerAsync(playerName, maxTicks, ct);
+
+    /// <summary>
+    /// Joins a headless test player to the server. Alias for <see cref="JoinPlayerAsync"/>.
+    /// </summary>
+    public Task<ServerTestPlayer> CreateTestPlayerAsync(string playerName = "TestPlayer", int maxTicks = 2000, CancellationToken ct = default) =>
+        JoinPlayerAsync(playerName, maxTicks, ct);
 
     /// <summary>
     /// The packets of message type <typeparamref name="T"/> that mods on this server sent

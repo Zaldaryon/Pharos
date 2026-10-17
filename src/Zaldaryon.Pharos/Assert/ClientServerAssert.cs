@@ -117,6 +117,31 @@ public static class ClientServerAssert
     /// Asserts that the block at the specified position is synchronized between client and server.
     /// </summary>
     /// <param name="session">The loopback session to verify.</param>
+    /// <summary>
+    /// Checks whether the block at the specified position has the same ID on client and server.
+    /// </summary>
+    /// <param name="session">The connected client-server session.</param>
+    /// <param name="pos">The block position to check.</param>
+    /// <returns><c>true</c> if the block IDs match; otherwise, <c>false</c>.</returns>
+    public static bool BlockSynced(ClientServerLoopbackSession session, BlockPos pos)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        ArgumentNullException.ThrowIfNull(pos);
+        if (!session.IsConnected) return false;
+        try
+        {
+            return GetClientBlockId(session, pos) == GetServerBlockId(session, pos);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Asserts that a block at the specified position has the same block ID on client and server.
+    /// </summary>
+    /// <param name="session">The loopback session to verify.</param>
     /// <param name="pos">The block position to check.</param>
     /// <exception cref="ArgumentNullException"><paramref name="session"/> or <paramref name="pos"/> is null.</exception>
     /// <exception cref="InvalidOperationException">The session is not connected.</exception>

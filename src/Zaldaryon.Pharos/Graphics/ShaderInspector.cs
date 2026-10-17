@@ -168,6 +168,17 @@ public sealed class ShaderInspector
     }
 
     /// <summary>
+    /// Returns the total number of redundant uniform uploads recorded since enable or reset.
+    /// </summary>
+    public int GetRedundantUploadCount()
+    {
+        lock (_lock)
+        {
+            return _redundantUploads;
+        }
+    }
+
+    /// <summary>
     /// Returns the last uploaded value for the named uniform in the currently active program.
     /// Throws <see cref="KeyNotFoundException"/> if the uniform was not recorded.
     /// Throws <see cref="InvalidCastException"/> if the stored type does not match <typeparamref name="T"/>.

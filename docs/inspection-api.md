@@ -331,10 +331,9 @@ Objects are counted by hooks installed before anything boots, so a call the runt
 ### Example
 
 ```csharp
-[ClientScenario]
 public class DrawCallTests : ClientScenarioBase
 {
-    [Fact]
+    [ClientScenario]
     public void SteadyStateHasNoBatching()
     {
         var proxy = new GlCommandProxy();
@@ -384,10 +383,9 @@ Verify that frustum and occlusion culling work correctly. Check that chunks outs
 ### Example
 
 ```csharp
-[ClientScenario]
 public class CullingTests : ClientScenarioBase
 {
-    [Fact]
+    [ClientScenario]
     public void ChunksOutsideFrustumAreCulled()
     {
         var inspector = new CullingInspector(Client!.ClientMain);
@@ -470,10 +468,9 @@ PharosAssert.NoGlLeaks(scope, GlResourceKind.VertexArray | GlResourceKind.Textur
 ### Example
 
 ```csharp
-[ClientScenario]
 public class AllocationTests : ClientScenarioBase
 {
-    [Fact]
+    [ClientScenario]
     public void SteadyStateHasNoAllocations()
     {
         var inspector = new MemoryInspector();
@@ -525,10 +522,9 @@ Find shader uniform uploads that send the same value repeatedly. Verify that tex
 ### Example
 
 ```csharp
-[ClientScenario]
 public class ShaderTests : ClientScenarioBase
 {
-    [Fact]
+    [ClientScenario]
     public void NoRedundantUniformUploads()
     {
         var inspector = new ShaderInspector();
@@ -617,10 +613,9 @@ var baseline = FramebufferSnapshot.FromFile("baseline.png");
 ### Example
 
 ```csharp
-[ClientScenario]
 public class VisualRegressionTests : ClientScenarioBase
 {
-    [Fact]
+    [ClientScenario]
     public void RenderedFrameMatchesBaseline()
     {
         Player!.SetPosition(0, 100, 0);

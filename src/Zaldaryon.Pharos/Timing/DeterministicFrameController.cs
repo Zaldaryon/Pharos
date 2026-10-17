@@ -356,6 +356,21 @@ public sealed class DeterministicFrameController
     }
 
     /// <summary>
+    /// Advances the client by a single deterministic frame. Alias for <see cref="Step"/>.
+    /// </summary>
+    public void Frame(float dt = 1f / 60f) => Step(dt);
+
+    /// <summary>
+    /// Advances the client by multiple deterministic frames synchronously. Alias for <see cref="StepFrames"/>.
+    /// </summary>
+    public void Frames(int count, float dt = 1f / 60f) => StepFrames(count, dt);
+
+    /// <summary>
+    /// Advances frames until the specified predicate returns true, or the maximum frame budget is reached.
+    /// </summary>
+    public Task<bool> FramesUntil(Func<bool> predicate, int maxFrames = 600) => WaitFor(predicate, maxFrames);
+
+    /// <summary>
     /// Advances frames until the specified predicate returns true, or the maximum frame budget is reached.
     /// Returns false if maxFrames was reached without the predicate being satisfied.
     /// </summary>

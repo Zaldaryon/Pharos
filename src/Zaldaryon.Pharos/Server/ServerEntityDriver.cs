@@ -22,6 +22,16 @@ public sealed class ServerEntityDriver
     /// <param name="entityCode">The entity code, such as <c>game:chicken-hen</c>.</param>
     /// <param name="pos">The spawn position.</param>
     /// <param name="configure">An optional action applied after creation and before spawning.</param>
+    public Task<Entity> SpawnAsync(string entityCode, BlockPos pos, Action<Entity>? configure = null)
+    {
+        ArgumentNullException.ThrowIfNull(pos);
+        return SpawnAsync(entityCode, pos.ToVec3d(), configure);
+    }
+
+    /// <summary>Creates and spawns an entity on the server game thread.</summary>
+    /// <param name="entityCode">The entity code, such as <c>game:chicken-hen</c>.</param>
+    /// <param name="pos">The spawn position.</param>
+    /// <param name="configure">An optional action applied after creation and before spawning.</param>
     /// <exception cref="ArgumentException"><paramref name="entityCode"/> is empty or whitespace.</exception>
     /// <exception cref="InvalidOperationException">The entity code is unknown or the server API is unavailable.</exception>
     public Task<Entity> SpawnAsync(string entityCode, Vec3d pos, Action<Entity>? configure = null)

@@ -45,6 +45,7 @@ public sealed class ClientTestPlayer : IClientTestPlayer
     public IClientPlayer? RawPlayer => _client.player;
 
     public EntityPlayer? RawEntity => _client.EntityPlayer;
+    public EntityPlayer? Entity => RawEntity;
 
     /// <inheritdoc />
     public IMountableSeat? MountedOn => RawEntity?.MountedOn;
@@ -122,6 +123,10 @@ public sealed class ClientTestPlayer : IClientTestPlayer
         ArgumentNullException.ThrowIfNull(pos);
         Teleport(pos.X, pos.Y, pos.Z);
     }
+
+    public void SetPosition(double x, double y, double z) => Teleport(x, y, z);
+
+    public void LookAt(double x, double y, double z) => Camera.LookAt(x, y, z);
 
     public IPlayerCameraController Camera => _camera;
 

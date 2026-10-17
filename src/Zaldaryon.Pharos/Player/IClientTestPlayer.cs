@@ -25,6 +25,11 @@ public interface IClientTestPlayer
     /// </summary>
     EntityPlayer? RawEntity { get; }
 
+    /// <summary>
+    /// Gets the underlying Vintage Story EntityPlayer instance, or null if not yet spawned.
+    /// </summary>
+    EntityPlayer? Entity => RawEntity;
+
     /// <summary>Gets the seat this client player is mounted on, or null when unmounted.</summary>
     IMountableSeat? MountedOn { get; }
 
@@ -49,9 +54,19 @@ public interface IClientTestPlayer
     void Teleport(double x, double y, double z);
 
     /// <summary>
+    /// Sets the player entity's position to the target coordinates. Alias for <see cref="Teleport(double, double, double)"/>.
+    /// </summary>
+    void SetPosition(double x, double y, double z) => Teleport(x, y, z);
+
+    /// <summary>
     /// Teleports the player immediately to the target position vector.
     /// </summary>
     void Teleport(Vec3d pos);
+
+    /// <summary>
+    /// Points the camera at the given target world coordinates. Alias for <see cref="IPlayerCameraController.LookAt(double, double, double)"/>.
+    /// </summary>
+    void LookAt(double x, double y, double z) => Camera.LookAt(x, y, z);
 
     /// <summary>
     /// Gets the camera controller for adjusting orientation and querying frustum visibility.
