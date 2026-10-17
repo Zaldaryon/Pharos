@@ -10,6 +10,7 @@ namespace Zaldaryon.Pharos.Mods;
 /// - Harmony patch registration succeeds without duplicate patch exceptions
 /// - System reports clear diagnostic warnings when mutual exclusions are triggered
 /// </remarks>
+[Obsolete("ModCompatibilitySimulator uses hard-coded fake conflicts instead of testing real mod compatibility. Stage real mods with [ServerMods] or [PharosMods], or use ModSmokeTest instead. This type will be removed in 0.8.")]
 public sealed class ModCompatibilitySimulator
 {
     /// <summary>Well-known mod ID for Komet optimization mod.</summary>

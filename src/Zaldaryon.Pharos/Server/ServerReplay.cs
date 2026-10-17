@@ -57,7 +57,7 @@ public sealed class ServerReplay
 
         if (options.TeleportToFirstPosition && FirstPosition(frames) is { } first)
         {
-            await asPlayer.TeleportTo(first.X, first.Y, first.Z).ConfigureAwait(false);
+            await asPlayer.TeleportToAsync(first.X, first.Y, first.Z).ConfigureAwait(false);
         }
 
         double lastX = double.NaN;

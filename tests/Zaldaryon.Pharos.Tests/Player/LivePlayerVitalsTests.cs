@@ -10,7 +10,7 @@ namespace Zaldaryon.Pharos.Tests.Player;
 
 /// <summary>A survival player's health, hunger, oxygen and body temperature, on a live server.</summary>
 [Collection("Sequential")]
-[ServerWorld(seed: 4242, playStyle: "surviveandbuild", Isolation = WorldIsolation.Restart)]
+[ServerWorld(seed: 4242, playStyle: "surviveandbuild", Isolation = Isolation.Restart)]
 public class LivePlayerVitalsTests : ThreadPoolWarningScenarioBase
 {
     [ServerScenario]

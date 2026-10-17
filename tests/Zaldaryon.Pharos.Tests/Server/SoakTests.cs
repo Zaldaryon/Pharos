@@ -9,7 +9,7 @@ namespace Zaldaryon.Pharos.Tests.Server;
 /// Soak tests: game days on a real server with a player, in the nightly run only. Each test restarts
 /// the server, so nothing a test leaves behind reaches the next one.
 /// </summary>
-[ServerWorld(seed: 4242, playStyle: "creativebuilding", worldType: "superflat", Isolation = WorldIsolation.Restart)]
+[ServerWorld(seed: 4242, playStyle: "creativebuilding", worldType: "superflat", Isolation = Isolation.Restart)]
 public class SoakTests : ServerScenarioBase
 {
     // Speed 120 is 86,400 ticks for three days. At speed 60 it is 172,800 ticks, and at the measured 33 ms

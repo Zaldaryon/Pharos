@@ -63,6 +63,12 @@ public interface IServerTestPlayer
     /// <param name="y">The Y coordinate.</param>
     /// <param name="z">The Z coordinate.</param>
     /// <returns>A task that completes when the teleport is finished.</returns>
+    Task TeleportToAsync(double x, double y, double z);
+
+    /// <summary>
+    /// Teleports the player to the specified world coordinates.
+    /// </summary>
+    [Obsolete("Use TeleportToAsync instead. This method will be removed in 0.8.")]
     Task TeleportTo(double x, double y, double z);
 
     /// <summary>Mounts the first available seat on an entity through the game's mount system.</summary>

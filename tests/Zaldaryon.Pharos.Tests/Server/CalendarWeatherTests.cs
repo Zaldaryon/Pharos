@@ -67,7 +67,7 @@ public class CalendarMathTests
 /// <summary>The calendar and the weather of a live server, set and read back.</summary>
 [Collection("Sequential")]
 [Trait(PharosTraits.Category, PharosTraits.Live)]
-[ServerWorld(seed: 4242, playStyle: "creativebuilding", worldType: "superflat", Isolation = WorldIsolation.Restart)]
+[ServerWorld(seed: 4242, playStyle: "creativebuilding", worldType: "superflat", Isolation = Isolation.Restart)]
 public class LiveCalendarWeatherTests : ServerScenarioBase
 {
     private CalendarDriver Calendar => Host!.Calendar;

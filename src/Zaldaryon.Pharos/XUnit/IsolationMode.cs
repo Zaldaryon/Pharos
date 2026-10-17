@@ -1,8 +1,11 @@
+using System;
+
 namespace Zaldaryon.Pharos.XUnit;
 
 /// <summary>
 /// Specifies how test isolation is handled for client scenarios.
 /// </summary>
+[Obsolete("Use Isolation instead. This enum will be removed in 0.8.")]
 public enum IsolationMode
 {
     /// <summary>

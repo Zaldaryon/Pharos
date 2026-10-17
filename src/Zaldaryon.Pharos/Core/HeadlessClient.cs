@@ -275,7 +275,7 @@ public sealed class HeadlessClient : IDisposable
         if (!IsEngineMode) throw new InvalidOperationException("Assets are reloaded on an engine-mode client only.");
 
         ReloadResult result = RunOnClientThread(() => AssetReloader.Reload(Client, category, _lang));
-        await Frame(ct: ct).ConfigureAwait(false);
+        await FrameAsync(ct: ct).ConfigureAwait(false);
         if (!result.Succeeded && !allowErrors)
         {
             throw new InvalidOperationException($"Reloading {category.Code} reported errors; see the client log.");
@@ -302,7 +302,7 @@ public sealed class HeadlessClient : IDisposable
         if (!IsEngineMode) throw new InvalidOperationException("Assets are reloaded on an engine-mode client only.");
         ReloadResult[] results = RunOnClientThread(() =>
             AssetReloader.All.Select(category => AssetReloader.Reload(Client, category, _lang)).ToArray());
-        await Frame(ct: ct).ConfigureAwait(false);
+        await FrameAsync(ct: ct).ConfigureAwait(false);
         if (!allowErrors && results.FirstOrDefault(r => !r.Succeeded) is { } failed)
         {
             throw new InvalidOperationException($"Reloading {failed.Category.Code} reported errors; see the client log.");
@@ -393,7 +393,7 @@ public sealed class HeadlessClient : IDisposable
     /// </summary>
     internal System.Func<CancellationToken, Task>? SessionStepper { get; set; }
 
-    internal Task StepAsync(CancellationToken ct) => SessionStepper?.Invoke(ct) ?? Frame(ct: ct);
+    internal Task StepAsync(CancellationToken ct) => SessionStepper?.Invoke(ct) ?? FrameAsync(ct: ct);
 
     /// <summary>
     /// The client's settings, read and changed live as the settings menu does. See
@@ -531,114 +531,201 @@ public sealed class HeadlessClient : IDisposable
     /// <summary>
     /// Advances the client by one deterministic frame.
     /// </summary>
-    public Task Frame(float dt = 1f / 60f, CancellationToken ct = default)
+    public Task FrameAsync(float dt = 1f / 60f, CancellationToken ct = default)
     {
         return FrameController.FrameAsync(dt, ct);
+    }
+
+    [Obsolete("Use FrameAsync instead. This method will be removed in 0.8.")]
+    public Task Frame(float dt = 1f / 60f, CancellationToken ct = default)
+    {
+        return FrameAsync(dt, ct);
     }
 
     /// <summary>
     /// Advances the client by N deterministic frames.
     /// </summary>
-    public Task Frames(int count, float dt = 1f / 60f, CancellationToken ct = default)
+    public Task FramesAsync(int count, float dt = 1f / 60f, CancellationToken ct = default)
     {
         return FrameController.FramesAsync(count, dt, ct);
     }
 
+    [Obsolete("Use FramesAsync instead. This method will be removed in 0.8.")]
+    public Task Frames(int count, float dt = 1f / 60f, CancellationToken ct = default)
+    {
+        return FramesAsync(count, dt, ct);
+    }
+
     /// <summary>
-    /// Advances frames until the specified predicate returns true or maximum frames reached.
+    /// Advances frames until the specified predicate returns true.
+    /// Throws <see cref="PharosTimeoutException"/> if the condition is not met within maxFrames.
     /// </summary>
-    public Task<bool> WaitFor(Func<bool> predicate, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
+    public Task WaitForAsync(Func<bool> predicate, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
     {
         return FrameController.WaitForAsync(predicate, maxFrames, dt, ct);
     }
 
     /// <summary>
-    /// Advances frames until the specified chunk is meshed or confirmed empty.
+    /// Advances frames until the specified predicate returns true or maximum frames reached.
+    /// Returns false if maxFrames was reached without the predicate returning true.
     /// </summary>
-    public Task<bool> WaitForChunkMeshed(ChunkPos chunkPos, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
+    public Task<bool> TryWaitForAsync(Func<bool> predicate, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
+    {
+        return FrameController.TryWaitForAsync(predicate, maxFrames, dt, ct);
+    }
+
+    [Obsolete("Use WaitForAsync or TryWaitForAsync instead. This method will be removed in 0.8.")]
+    public Task<bool> WaitFor(Func<bool> predicate, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
+    {
+        return TryWaitForAsync(predicate, maxFrames, dt, ct);
+    }
+
+    /// <summary>
+    /// Advances frames until the specified chunk is meshed or confirmed empty.
+    /// Throws <see cref="PharosTimeoutException"/> if the chunk is not meshed within maxFrames.
+    /// </summary>
+    public Task WaitForChunkMeshedAsync(ChunkPos chunkPos, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
     {
         return FrameController.WaitForChunkMeshedAsync(chunkPos, maxFrames, dt, ct);
     }
 
-    public Task<bool> WaitForChunkMeshedAsync(ChunkPos chunkPos, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
+    public Task<bool> TryWaitForChunkMeshedAsync(ChunkPos chunkPos, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
     {
-        return FrameController.WaitForChunkMeshedAsync(chunkPos, maxFrames, dt, ct);
+        return FrameController.TryWaitForChunkMeshedAsync(chunkPos, maxFrames, dt, ct);
     }
 
-    public Task<bool> WaitForChunkMeshed(int chunkX, int chunkY, int chunkZ, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
+    public Task WaitForChunkMeshedAsync(int chunkX, int chunkY, int chunkZ, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
     {
         return FrameController.WaitForChunkMeshedAsync(chunkX, chunkY, chunkZ, maxFrames, dt, ct);
     }
 
-    public Task<bool> WaitForChunkMeshedAsync(int chunkX, int chunkY, int chunkZ, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
+    public Task<bool> TryWaitForChunkMeshedAsync(int chunkX, int chunkY, int chunkZ, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
     {
-        return FrameController.WaitForChunkMeshedAsync(chunkX, chunkY, chunkZ, maxFrames, dt, ct);
+        return FrameController.TryWaitForChunkMeshedAsync(chunkX, chunkY, chunkZ, maxFrames, dt, ct);
     }
 
-    public Task<bool> WaitForChunkMeshed(Vec3i chunkPos, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
+    public Task WaitForChunkMeshedAsync(Vec3i chunkPos, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
     {
         return FrameController.WaitForChunkMeshedAsync(chunkPos, maxFrames, dt, ct);
     }
 
-    public Task<bool> WaitForChunkMeshedAsync(Vec3i chunkPos, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
+    public Task<bool> TryWaitForChunkMeshedAsync(Vec3i chunkPos, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
     {
-        return FrameController.WaitForChunkMeshedAsync(chunkPos, maxFrames, dt, ct);
+        return FrameController.TryWaitForChunkMeshedAsync(chunkPos, maxFrames, dt, ct);
     }
 
-    public Task<bool> WaitForChunkMeshed(BlockPos blockPos, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
+    public Task WaitForChunkMeshedAsync(BlockPos blockPos, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
     {
         return FrameController.WaitForChunkMeshedAsync(blockPos, maxFrames, dt, ct);
     }
 
-    public Task<bool> WaitForChunkMeshedAsync(BlockPos blockPos, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
+    public Task<bool> TryWaitForChunkMeshedAsync(BlockPos blockPos, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
     {
-        return FrameController.WaitForChunkMeshedAsync(blockPos, maxFrames, dt, ct);
+        return FrameController.TryWaitForChunkMeshedAsync(blockPos, maxFrames, dt, ct);
+    }
+
+    [Obsolete("Use WaitForChunkMeshedAsync instead. This method will be removed in 0.8.")]
+    public async Task<bool> WaitForChunkMeshed(ChunkPos chunkPos, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
+    {
+        await WaitForChunkMeshedAsync(chunkPos, maxFrames, dt, ct).ConfigureAwait(false);
+        return true;
+    }
+
+    [Obsolete("Use WaitForChunkMeshedAsync instead. This method will be removed in 0.8.")]
+    public async Task<bool> WaitForChunkMeshed(int chunkX, int chunkY, int chunkZ, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
+    {
+        await WaitForChunkMeshedAsync(chunkX, chunkY, chunkZ, maxFrames, dt, ct).ConfigureAwait(false);
+        return true;
+    }
+
+    [Obsolete("Use WaitForChunkMeshedAsync instead. This method will be removed in 0.8.")]
+    public async Task<bool> WaitForChunkMeshed(Vec3i chunkPos, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
+    {
+        await WaitForChunkMeshedAsync(chunkPos, maxFrames, dt, ct).ConfigureAwait(false);
+        return true;
+    }
+
+    [Obsolete("Use WaitForChunkMeshedAsync instead. This method will be removed in 0.8.")]
+    public async Task<bool> WaitForChunkMeshed(BlockPos blockPos, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
+    {
+        await WaitForChunkMeshedAsync(blockPos, maxFrames, dt, ct).ConfigureAwait(false);
+        return true;
     }
 
     /// <summary>
     /// Advances frames until the specified chunk radius around the player is loaded and meshed.
+    /// Throws <see cref="PharosTimeoutException"/> if chunks are not ready within maxFrames.
     /// </summary>
-    public Task<bool> WaitForWorldReady(int radius = 1, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
+    public Task WaitForWorldReadyAsync(int radius = 1, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
     {
         return FrameController.WaitForWorldReadyAsync(radius, maxFrames, dt, ct);
     }
 
-    public Task<bool> WaitForWorldReadyAsync(int radius = 1, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
+    public Task<bool> TryWaitForWorldReadyAsync(int radius = 1, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
     {
-        return FrameController.WaitForWorldReadyAsync(radius, maxFrames, dt, ct);
+        return FrameController.TryWaitForWorldReadyAsync(radius, maxFrames, dt, ct);
     }
 
-    public Task<bool> WaitForWorldReady(ChunkPos center, int radius = 1, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
+    public Task WaitForWorldReadyAsync(ChunkPos center, int radius = 1, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
     {
         return FrameController.WaitForWorldReadyAsync(center, radius, maxFrames, dt, ct);
     }
 
-    public Task<bool> WaitForWorldReadyAsync(ChunkPos center, int radius = 1, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
+    public Task<bool> TryWaitForWorldReadyAsync(ChunkPos center, int radius = 1, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
+    {
+        return FrameController.TryWaitForWorldReadyAsync(center, radius, maxFrames, dt, ct);
+    }
+
+    public Task WaitForWorldReadyAsync(BlockPos center, int radius = 1, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
     {
         return FrameController.WaitForWorldReadyAsync(center, radius, maxFrames, dt, ct);
     }
 
-    public Task<bool> WaitForWorldReady(BlockPos center, int radius = 1, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
+    public Task<bool> TryWaitForWorldReadyAsync(BlockPos center, int radius = 1, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
     {
-        return FrameController.WaitForWorldReadyAsync(center, radius, maxFrames, dt, ct);
+        return FrameController.TryWaitForWorldReadyAsync(center, radius, maxFrames, dt, ct);
     }
 
-    public Task<bool> WaitForWorldReadyAsync(BlockPos center, int radius = 1, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
+    [Obsolete("Use WaitForWorldReadyAsync instead. This method will be removed in 0.8.")]
+    public async Task<bool> WaitForWorldReady(int radius = 1, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
     {
-        return FrameController.WaitForWorldReadyAsync(center, radius, maxFrames, dt, ct);
+        await WaitForWorldReadyAsync(radius, maxFrames, dt, ct).ConfigureAwait(false);
+        return true;
+    }
+
+    [Obsolete("Use WaitForWorldReadyAsync instead. This method will be removed in 0.8.")]
+    public async Task<bool> WaitForWorldReady(ChunkPos center, int radius = 1, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
+    {
+        await WaitForWorldReadyAsync(center, radius, maxFrames, dt, ct).ConfigureAwait(false);
+        return true;
+    }
+
+    [Obsolete("Use WaitForWorldReadyAsync instead. This method will be removed in 0.8.")]
+    public async Task<bool> WaitForWorldReady(BlockPos center, int radius = 1, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
+    {
+        await WaitForWorldReadyAsync(center, radius, maxFrames, dt, ct).ConfigureAwait(false);
+        return true;
     }
 
     /// <summary>
     /// Advances frames until all background chunk tessellation and upload queues have drained.
+    /// Throws <see cref="PharosTimeoutException"/> if queues do not drain within maxFrames.
     /// </summary>
-    public Task<bool> WaitForAllMeshesReady(int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
+    public Task WaitForAllMeshesReadyAsync(int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
     {
         return FrameController.WaitForAllMeshesReadyAsync(maxFrames, dt, ct);
     }
 
-    public Task<bool> WaitForAllMeshesReadyAsync(int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
+    public Task<bool> TryWaitForAllMeshesReadyAsync(int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
     {
-        return FrameController.WaitForAllMeshesReadyAsync(maxFrames, dt, ct);
+        return FrameController.TryWaitForAllMeshesReadyAsync(maxFrames, dt, ct);
+    }
+
+    [Obsolete("Use WaitForAllMeshesReadyAsync instead. This method will be removed in 0.8.")]
+    public async Task<bool> WaitForAllMeshesReady(int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
+    {
+        await WaitForAllMeshesReadyAsync(maxFrames, dt, ct).ConfigureAwait(false);
+        return true;
     }
 
     /// <summary>

@@ -54,7 +54,7 @@ public sealed class ThreadPoolWarningScenarioBaseLiveTests
         }
     }
 
-    [ServerWorld(seed: 4242, Isolation = Zaldaryon.Pharos.XUnit.WorldIsolation.Restart)]
+    [ServerWorld(seed: 4242, Isolation = Isolation.Restart)]
 #pragma warning disable xUnit1000
     private sealed class WarningScenario : ThreadPoolWarningScenarioBase
     {

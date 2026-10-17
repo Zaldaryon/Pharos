@@ -95,7 +95,7 @@ internal static class PlayerStateProbe
 /// connected player: entity state, player data and mod data come back.
 /// </summary>
 [Collection("Sequential")]
-[ServerWorld(seed: 4244, playStyle: "creativebuilding", worldType: "superflat", Isolation = WorldIsolation.Restart)]
+[ServerWorld(seed: 4244, playStyle: "creativebuilding", worldType: "superflat", Isolation = Isolation.Restart)]
 public class PlayerStateSnapshotTests : ServerScenarioBase
 {
     [ServerScenario]
@@ -159,7 +159,7 @@ public class PlayerStateSnapshotTests : ServerScenarioBase
 /// come back, except a key the class keeps. Whichever test runs later checks the earlier one.
 /// </summary>
 [Collection("Sequential")]
-[ServerWorld(seed: 4245, playStyle: "creativebuilding", worldType: "superflat", Isolation = WorldIsolation.Rollback)]
+[ServerWorld(seed: 4245, playStyle: "creativebuilding", worldType: "superflat", Isolation = Isolation.Rollback)]
 public class LiveServerModDataRollbackTests : ServerScenarioBase
 {
     private static int s_tests;
@@ -175,11 +175,11 @@ public class LiveServerModDataRollbackTests : ServerScenarioBase
     private void LeavesModDataBehind()
     {
         int earlier = s_tests++;
-        Assert.True(Isolation!.Kind is IsolationKind.FirstBoot or IsolationKind.RolledBack, Isolation.ToString());
-        if (Isolation.Kind == IsolationKind.RolledBack)
+        Assert.True(IsolationReport!.Kind is IsolationKind.FirstBoot or IsolationKind.RolledBack, IsolationReport.ToString());
+        if (IsolationReport.Kind == IsolationKind.RolledBack)
         {
-            Assert.Equal(1, Isolation.ModDataKeysRestored);
-            Assert.True(Isolation.MapRegionsRestored >= 1, Isolation.ToString());
+            Assert.Equal(1, IsolationReport.ModDataKeysRestored);
+            Assert.True(IsolationReport.MapRegionsRestored >= 1, IsolationReport.ToString());
         }
 
         int kept = Host!.RunOnGameThread(() =>
@@ -196,7 +196,7 @@ public class LiveServerModDataRollbackTests : ServerScenarioBase
             return keep?[0] ?? 0;
         });
 
-        if (Isolation.Kind == IsolationKind.RolledBack) Assert.Equal(earlier, kept);
+        if (IsolationReport.Kind == IsolationKind.RolledBack) Assert.Equal(earlier, kept);
     }
 }
 
@@ -207,7 +207,7 @@ public class LiveServerModDataRollbackTests : ServerScenarioBase
 /// and on the client, and that the keys the class keeps were kept.
 /// </summary>
 [Collection("Sequential")]
-[ServerWorld(seed: 4246, playStyle: "creativebuilding", worldType: "superflat", Isolation = WorldIsolation.Rollback)]
+[ServerWorld(seed: 4246, playStyle: "creativebuilding", worldType: "superflat", Isolation = Isolation.Rollback)]
 public class LiveClientServerPlayerStateRollbackTests : ClientServerScenarioBase
 {
     private static PlayerStateProbe.State? s_booted;
@@ -232,17 +232,17 @@ public class LiveClientServerPlayerStateRollbackTests : ClientServerScenarioBase
         string uid = ServerHost!.RunOnGameThread(() => Server!.GetClientByPlayername(PlayerName).Player.PlayerUID);
         ICoreServerAPI api = (ICoreServerAPI)Server!.Api;
         PlayerStateProbe.State now = ServerHost.RunOnGameThread(() => PlayerStateProbe.Read(api, PlayerStateProbe.Player(api, uid)));
-        Assert.True(Isolation!.Kind is IsolationKind.FirstBoot or IsolationKind.RolledBack, Isolation.ToString());
+        Assert.True(IsolationReport!.Kind is IsolationKind.FirstBoot or IsolationKind.RolledBack, IsolationReport.ToString());
 
-        if (Isolation!.Kind == IsolationKind.FirstBoot)
+        if (IsolationReport!.Kind == IsolationKind.FirstBoot)
         {
             s_booted = now;
         }
-        else if (Isolation.Kind == IsolationKind.RolledBack && s_booted is { } booted)
+        else if (IsolationReport.Kind == IsolationKind.RolledBack && s_booted is { } booted)
         {
-            Assert.Equal(1, Isolation.PlayersRestored);
-            Assert.Equal(1, Isolation.ModDataKeysRestored);
-            Assert.True(Isolation.MapRegionsRestored >= 1, Isolation.ToString());
+            Assert.Equal(1, IsolationReport.PlayersRestored);
+            Assert.Equal(1, IsolationReport.ModDataKeysRestored);
+            Assert.True(IsolationReport.MapRegionsRestored >= 1, IsolationReport.ToString());
             Assert.Equal(booted with { KeptModData = earlier, KeptAttribute = earlier }, now);
 
             // The client has what the server has.

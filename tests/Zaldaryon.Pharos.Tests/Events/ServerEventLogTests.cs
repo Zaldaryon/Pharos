@@ -199,7 +199,7 @@ public class ServerEventLogTests : ServerScenarioBase
 
 /// <summary>Chunk events, in a class of their own: the test loads chunks far from the world's baseline.</summary>
 [Collection("Sequential")]
-[ServerWorld(seed: 4242, playStyle: "creativebuilding", worldType: "superflat", Isolation = WorldIsolation.Restart)]
+[ServerWorld(seed: 4242, playStyle: "creativebuilding", worldType: "superflat", Isolation = Isolation.Restart)]
 public class ServerChunkEventLogTests : ServerScenarioBase
 {
     [ServerScenario]

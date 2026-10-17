@@ -47,7 +47,7 @@ public abstract class ModSmokeTest : ClientServerScenarioBase
     protected override bool FailOnLoggedErrors => true;
 
     /// <inheritdoc />
-    protected override WorldIsolation WorldIsolation => WorldIsolation.Restart;
+    protected override Isolation Isolation => Isolation.Restart;
 
     /// <inheritdoc />
     protected override HeadlessClientOptions ClientOptions => new() { BootMode = ClientBootMode.Engine, Width = 640, Height = 360 };

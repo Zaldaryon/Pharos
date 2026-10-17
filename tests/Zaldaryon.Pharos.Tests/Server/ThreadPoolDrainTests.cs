@@ -10,7 +10,7 @@ namespace Zaldaryon.Pharos.Tests.Server;
 
 /// <summary>Checks that server teardown waits for started callbacks before releasing its logger.</summary>
 [Collection("Sequential")]
-[ServerWorld(seed: 4242, Isolation = WorldIsolation.Restart)]
+[ServerWorld(seed: 4242, Isolation = Isolation.Restart)]
 public sealed class ThreadPoolDrainTests : ServerScenarioBase
 {
     [ServerScenario]

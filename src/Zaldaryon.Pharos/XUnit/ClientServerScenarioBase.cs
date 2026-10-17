@@ -1,4 +1,8 @@
 using Vintagestory.API.Common;
+using Vintagestory.API.Common.Entities;
+using Vintagestory.API.Config;
+using Vintagestory.API.MathTools;
+using Vintagestory.API.Server;
 using Vintagestory.Server;
 using Xunit;
 using Zaldaryon.Pharos.Bootstrap;
@@ -68,15 +72,167 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime, IScenarioLifecy
 
     /// <summary>
     /// Gets the headless client instance.
-    /// Null until <see cref="InitializeAsync"/> completes.
     /// </summary>
-    protected HeadlessClient? Client => _client;
+    /// <exception cref="InvalidOperationException">The client is accessed before scenario initialization.</exception>
+    protected HeadlessClient Client => _client
+        ?? throw new InvalidOperationException("Client is not initialized. It is available after scenario boot.");
 
     /// <summary>
     /// Gets the embedded server host managing the test server instance.
-    /// Null until <see cref="InitializeAsync"/> completes.
     /// </summary>
-    protected EmbeddedServerHost? ServerHost => _serverHost;
+    /// <exception cref="InvalidOperationException">The server is accessed before scenario initialization.</exception>
+    protected EmbeddedServerHost Server => _serverHost
+        ?? throw new InvalidOperationException("Server is not initialized. It is available after scenario boot.");
+
+    /// <summary>
+    /// Gets the embedded server host managing the test server instance.
+    /// </summary>
+    [Obsolete("Use Server instead. This property will be removed in 0.8.")]
+    protected EmbeddedServerHost ServerHost => Server;
+
+    /// <summary>
+    /// Gets the loopback session coordinating client and server.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">The session is accessed before scenario initialization.</exception>
+    protected ClientServerLoopbackSession Session => _session
+        ?? throw new InvalidOperationException("Session is not initialized. It is available after scenario boot.");
+
+    /// <summary>
+    /// Gets the client's test player interface.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">The player is accessed before the client is connected.</exception>
+    protected IClientTestPlayer Player => Client.TestPlayer;
+
+    /// <summary>
+    /// Gets the server-side API for game interactions.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">The server API is accessed before scenario initialization.</exception>
+    protected ICoreServerAPI Api => (ICoreServerAPI)Server.Server.Api;
+
+    /// <summary>Sets a block at the specified position by block code.</summary>
+    protected void SetBlock(BlockPos pos, string blockCode) => Server.SetBlock(pos, blockCode);
+
+    /// <summary>Sets a block at the specified position by numeric ID.</summary>
+    protected void SetBlock(BlockPos pos, int blockId) => Server.SetBlock(pos, blockId);
+
+    /// <summary>Gets the block at the specified position.</summary>
+    protected Block GetBlock(BlockPos pos) => Server.GetBlock(pos);
+
+    /// <summary>Gets the block entity at the specified position, or null if none exists.</summary>
+    protected BlockEntity? GetBlockEntity(BlockPos pos) => Server.GetBlockEntity(pos);
+
+    /// <summary>Gets the block entity of type <typeparamref name="T"/> at the specified position.</summary>
+    protected T? GetBlockEntity<T>(BlockPos pos) where T : BlockEntity => Server.GetBlockEntity<T>(pos);
+
+    /// <summary>Spawns an entity at the specified position.</summary>
+    protected Entity SpawnEntity(string entityCode, Vec3d pos) => Server.SpawnEntity(entityCode, pos);
+
+    /// <summary>
+    /// Executes a console command on the server.
+    /// </summary>
+    public Task<CommandResult> ExecuteCommandAsync(string command) => ExecuteCommandCore(command, caller: null);
+
+    /// <summary>
+    /// Executes a console command on the server.
+    /// </summary>
+    [Obsolete("Use ExecuteCommandAsync instead. This method will be removed in 0.8.")]
+    public Task<CommandResult> ExecuteCommand(string command) => ExecuteCommandAsync(command);
+
+    /// <summary>
+    /// Executes a command as if issued by the specified test player.
+    /// </summary>
+    public Task<CommandResult> ExecuteCommandAsPlayerAsync(IServerTestPlayer player, string command)
+    {
+        ArgumentNullException.ThrowIfNull(player);
+        if (player.Player is null)
+        {
+            throw new InvalidOperationException("Player is not connected to the server.");
+        }
+
+        Caller caller = new()
+        {
+            Type = EnumCallerType.Player,
+            Player = player.Player
+        };
+
+        return ExecuteCommandCore(command, caller);
+    }
+
+    /// <summary>
+    /// Executes a command as if issued by the specified test player.
+    /// </summary>
+    [Obsolete("Use ExecuteCommandAsPlayerAsync instead. This method will be removed in 0.8.")]
+    public Task<CommandResult> ExecuteCommandAsPlayer(IServerTestPlayer player, string command) => ExecuteCommandAsPlayerAsync(player, command);
+
+    /// <summary>
+    /// Executes a command and asserts that it succeeds.
+    /// </summary>
+    public async Task ExecuteSuccessAsync(string command)
+    {
+        CommandResult result = await ExecuteCommandAsync(command).ConfigureAwait(false);
+        if (!result.Ok)
+        {
+            throw new CommandExecutionException(
+                $"Command '{command}' failed with status {result.Status}: {result.StatusMessage ?? "(no message)"}",
+                result);
+        }
+    }
+
+    /// <summary>
+    /// Executes a command and asserts that it succeeds.
+    /// </summary>
+    [Obsolete("Use ExecuteSuccessAsync instead. This method will be removed in 0.8.")]
+    public Task ExecuteSuccess(string command) => ExecuteSuccessAsync(command);
+
+    /// <summary>
+    /// Executes a command as a player and asserts that it succeeds.
+    /// </summary>
+    public async Task ExecuteSuccessAsPlayerAsync(IServerTestPlayer player, string command)
+    {
+        CommandResult result = await ExecuteCommandAsPlayerAsync(player, command).ConfigureAwait(false);
+        if (!result.Ok)
+        {
+            throw new CommandExecutionException(
+                $"Command '{command}' as player '{player.PlayerUID}' failed with status {result.Status}: {result.StatusMessage ?? "(no message)"}",
+                result);
+        }
+    }
+
+    /// <summary>
+    /// Executes a command as a player and asserts that it succeeds.
+    /// </summary>
+    [Obsolete("Use ExecuteSuccessAsPlayerAsync instead. This method will be removed in 0.8.")]
+    public Task ExecuteSuccessAsPlayer(IServerTestPlayer player, string command) => ExecuteSuccessAsPlayerAsync(player, command);
+
+    private Task<CommandResult> ExecuteCommandCore(string command, Caller? caller)
+    {
+        EmbeddedServerHost host = Server;
+
+        TaskCompletionSource<CommandResult> tcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        string normalizedCommand = command.TrimStart('/');
+        int spaceIndex = normalizedCommand.IndexOf(' ');
+        string rawArgs = spaceIndex >= 0 ? normalizedCommand[(spaceIndex + 1)..] : string.Empty;
+
+        TextCommandCallingArgs args = new()
+        {
+            RawArgs = new CmdArgs(rawArgs),
+            Caller = caller ?? ServerScenarioBase.ConsoleCaller()
+        };
+
+        void Execute() => Api.ChatCommands.ExecuteUnparsed("/" + normalizedCommand, args, result =>
+        {
+            CommandResult cmdResult = new(
+                result.Status,
+                result.StatusMessage,
+                result.Data);
+
+            tcs.TrySetResult(cmdResult);
+        });
+
+        host.RunOnGameThread(Execute);
+        return tcs.Task;
+    }
 
     /// <summary>Polls an assertion once per deterministic client and server frame.</summary>
     protected Task SucceedWhenAsync(Action assertion, int maxFrames = 600, CancellationToken ct = default)
@@ -131,23 +287,6 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime, IScenarioLifecy
         _serverHost = session.NativeServer;
     }
 
-    /// <summary>
-    /// Gets the underlying Vintage Story server instance.
-    /// Null if the host is not initialized.
-    /// </summary>
-    protected ServerMain? Server => _serverHost?.Server;
-
-    /// <summary>
-    /// Gets the loopback session coordinating client and server.
-    /// Null until <see cref="InitializeAsync"/> completes.
-    /// </summary>
-    protected ClientServerLoopbackSession? Session => _session;
-
-    /// <summary>
-    /// Gets the client's test player interface.
-    /// Null until the client is connected.
-    /// </summary>
-    protected IClientTestPlayer? Player => _client?.TestPlayer;
 
     /// <summary>
     /// Gets whether the client has connected to the server.
@@ -156,13 +295,22 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime, IScenarioLifecy
 
     /// <summary>
     /// Gets the world isolation mode used for tests in this class. Defaults to the
-    /// <see cref="ServerWorldAttribute.Isolation"/> of the class, or <see cref="WorldIsolation.Rollback"/>.
+    /// <see cref="ServerWorldAttribute.Isolation"/> of the class, or <see cref="Isolation.Rollback"/>.
     /// </summary>
-    protected virtual WorldIsolation WorldIsolation =>
-        ScenarioAttributes.ServerWorld(GetType())?.Isolation ?? WorldIsolation.Rollback;
+    protected virtual Isolation Isolation =>
+        ScenarioAttributes.ServerWorld(GetType())?.Isolation ?? Isolation.Rollback;
+
+    /// <summary>Legacy world isolation mode.</summary>
+    [Obsolete("Use Isolation instead. This property will be removed in 0.8.")]
+    protected virtual WorldIsolation WorldIsolation => (WorldIsolation)(int)Isolation;
+
+    private Isolation EffectiveIsolation =>
+        (WorldIsolation)(int)Isolation != WorldIsolation.Rollback && WorldIsolation != WorldIsolation.Rollback
+            ? (Isolation)(int)WorldIsolation
+            : Isolation;
 
     /// <summary>
-    /// Whether a test whose world cannot be rolled back fails, under <see cref="WorldIsolation.Rollback"/>.
+    /// Whether a test whose world cannot be rolled back fails, under <see cref="Isolation.Rollback"/>.
     /// Defaults to <see cref="ServerWorldAttribute.StrictIsolation"/>.
     /// </summary>
     protected virtual bool StrictIsolation => ScenarioAttributes.ServerWorld(GetType())?.StrictIsolation ?? false;
@@ -172,7 +320,7 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime, IScenarioLifecy
     /// with its world rolled back, with what it cost and why they were booted again when a
     /// rollback was expected. Null until <see cref="InitializeAsync"/> completes.
     /// </summary>
-    protected IsolationReport? Isolation { get; private set; }
+    protected IsolationReport? IsolationReport { get; private set; }
 
     /// <summary>
     /// Called once the world has been captured for rollbacks, after
@@ -328,7 +476,7 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime, IScenarioLifecy
 
         try
         {
-            bool rollback = WorldIsolation == WorldIsolation.Rollback && WaitForPlayerJoinOnInit;
+            bool rollback = EffectiveIsolation == Isolation.Rollback && WaitForPlayerJoinOnInit;
             _files = ScenarioAttributes.DataFiles(GetType(), EnumAppSide.Server, EnumAppSide.Client);
             _poolKey = rollback ? PoolKey() : null;
 
@@ -337,7 +485,7 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime, IScenarioLifecy
                 Adopt(pooled);
                 _client?.Window.RestoreBootSize();
                 ApplyClassSettings();
-                Isolation = IsolationLog.Prepared(GetType(), reused: true, recycled: false, TimeSpan.Zero);
+                IsolationReport = IsolationLog.Prepared(GetType(), reused: true, recycled: false, TimeSpan.Zero);
                 return;
             }
 
@@ -369,7 +517,7 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime, IScenarioLifecy
                 _clientFiles = _client!.RunOnClientThread(() => DataFileBaseline.Capture(_client.DataPath!, _files, EnumAppSide.Client));
             }
 
-            Isolation = IsolationLog.Prepared(GetType(), reused: false, recycled: false, System.Diagnostics.Stopwatch.GetElapsedTime(bootStart));
+            IsolationReport = IsolationLog.Prepared(GetType(), reused: false, recycled: false, System.Diagnostics.Stopwatch.GetElapsedTime(bootStart));
         }
         catch (Exception ex)
         {
@@ -483,8 +631,8 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime, IScenarioLifecy
         ServerDataPath = _sandbox?.RootPath,
         Sandbox = _sandbox,
         World = WorldOptions,
-        Isolation = WorldIsolation.ToString(),
-        IsolationReport = Isolation,
+        Isolation = EffectiveIsolation.ToString(),
+        IsolationReport = IsolationReport,
         RandomSeed = _serverHost?.Random.CurrentSeed ?? _client?.Random.CurrentSeed,
         RandomSeedSource = _serverHost?.Random.CurrentSource ?? _client?.Random.CurrentSource,
         Frames = ScenarioRun.Since(_run.FramesAtStart, _session?.FrameCount),
@@ -1076,13 +1224,13 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime, IScenarioLifecy
         {
             if (_serverPlayer is not null) return _serverPlayer;
 
-            EmbeddedServerHost host = _serverHost ?? throw new InvalidOperationException("Session is not initialized. Call InitializeAsync first.");
-            string uid = _client?.Client?.player?.PlayerUID
+            EmbeddedServerHost host = Server;
+            string uid = Client.Client?.player?.PlayerUID
                 ?? throw new InvalidOperationException("The client has not joined yet: it has no player.");
 
             Vintagestory.API.Server.IServerPlayer? joined = host.Server.Clients.Values
                 .Select(c => c.Player)
-                .FirstOrDefault(p => p.PlayerUID == uid);
+                .FirstOrDefault(p => p?.PlayerUID == uid);
 
             if (joined is null) throw new InvalidOperationException($"The player '{uid}' is not connected to the server.");
 
@@ -1098,12 +1246,7 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime, IScenarioLifecy
     /// <param name="dt">Delta time for the frame. Default is 1/60 second.</param>
     protected void Step(float dt = 1f / 60f)
     {
-        if (_session is null)
-        {
-            throw new InvalidOperationException("Session is not initialized. Call InitializeAsync first.");
-        }
-
-        _session.Step(dt);
+        Session.Step(dt);
     }
 
     /// <summary>
@@ -1113,62 +1256,69 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime, IScenarioLifecy
     /// <param name="dt">Delta time per frame. Default is 1/60 second.</param>
     protected void StepFrames(int count, float dt = 1f / 60f)
     {
-        if (_session is null)
-        {
-            throw new InvalidOperationException("Session is not initialized. Call InitializeAsync first.");
-        }
-
-        _session.StepFrames(count, dt);
+        Session.StepFrames(count, dt);
     }
 
     /// <summary>
     /// Asynchronously advances until a condition is met or max frames reached.
+    /// Returns false if maxFrames was reached without the condition becoming true.
     /// </summary>
-    /// <param name="condition">Condition to wait for.</param>
-    /// <param name="maxFrames">Maximum frames to step. Default is 600 (10 seconds at 60 FPS).</param>
-    /// <param name="dt">Delta time per frame. Default is 1/60 second.</param>
-    /// <param name="ct">Cancellation token.</param>
-    /// <returns>True if condition was met; false if maxFrames reached.</returns>
-    protected async Task<bool> StepUntilAsync(
+    protected Task<bool> TryStepUntilAsync(
         Func<bool> condition,
         int maxFrames = 600,
         float dt = 1f / 60f,
         CancellationToken ct = default)
     {
-        if (_session is null)
-        {
-            throw new InvalidOperationException("Session is not initialized. Call InitializeAsync first.");
-        }
+        return Session.TryStepUntilAsync(condition, maxFrames, dt, ct: ct);
+    }
 
-        for (int i = 0; i < maxFrames; i++)
-        {
-            ct.ThrowIfCancellationRequested();
+    /// <summary>
+    /// Asynchronously advances until a condition is met.
+    /// Throws <see cref="PharosTimeoutException"/> if maxFrames was reached without the condition becoming true.
+    /// </summary>
+    protected Task WaitStepUntilAsync(
+        Func<bool> condition,
+        int maxFrames = 600,
+        float dt = 1f / 60f,
+        CancellationToken ct = default)
+    {
+        return Session.WaitStepUntilAsync(condition, maxFrames, dt, ct: ct);
+    }
 
-            if (condition())
-            {
-                return true;
-            }
-
-            await _session.StepAsync(dt, 1, ct).ConfigureAwait(false);
-        }
-
-        return condition();
+    /// <summary>
+    /// Asynchronously advances until a condition is met or max frames reached.
+    /// </summary>
+    [Obsolete("Use TryStepUntilAsync or WaitStepUntilAsync instead. This method will be removed in 0.8.")]
+    protected Task<bool> StepUntilAsync(
+        Func<bool> condition,
+        int maxFrames = 600,
+        float dt = 1f / 60f,
+        CancellationToken ct = default)
+    {
+        return TryStepUntilAsync(condition, maxFrames, dt, ct);
     }
 
     /// <summary>
     /// Waits for the world to be ready with chunks loaded and meshed around the player.
+    /// Throws <see cref="PharosTimeoutException"/> if maxFrames was reached without the world becoming ready.
     /// </summary>
     /// <param name="radius">Chunk radius around the player. Default is 1.</param>
     /// <param name="maxFrames">Maximum frames to wait. Default is 600.</param>
     /// <param name="ct">Cancellation token.</param>
-    /// <returns>True if world became ready; throws TimeoutException otherwise.</returns>
-    protected Task<bool> WaitForWorldReadyAsync(int radius = 1, int maxFrames = 600, CancellationToken ct = default)
+    protected Task WaitForWorldReadyAsync(int radius = 1, int maxFrames = 600, CancellationToken ct = default)
     {
-        if (_session is null)
-        {
-            throw new InvalidOperationException("Session is not initialized. Call InitializeAsync first.");
-        }
+        return Session.WaitForWorldReadyAsync(radius, maxFrames, ct: ct);
+    }
 
-        return _session.WaitForWorldReadyAsync(radius, maxFrames, ct: ct);
+    /// <summary>
+    /// Waits for the world to be ready with chunks loaded and meshed around the player.
+    /// Returns false if maxFrames was reached without the world becoming ready.
+    /// </summary>
+    /// <param name="radius">Chunk radius around the player. Default is 1.</param>
+    /// <param name="maxFrames">Maximum frames to wait. Default is 600.</param>
+    /// <param name="ct">Cancellation token.</param>
+    protected Task<bool> TryWaitForWorldReadyAsync(int radius = 1, int maxFrames = 600, CancellationToken ct = default)
+    {
+        return Session.TryWaitForWorldReadyAsync(radius, maxFrames, ct: ct);
     }
 }

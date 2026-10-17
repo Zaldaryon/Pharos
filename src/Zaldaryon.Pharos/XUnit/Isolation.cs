@@ -3,6 +3,58 @@ using System.Globalization;
 namespace Zaldaryon.Pharos.XUnit;
 
 /// <summary>
+/// Specifies how scenario state isolation is handled between test runs.
+/// </summary>
+public enum Isolation
+{
+    /// <summary>
+    /// State is rolled back to a snapshot between tests.
+    /// This is the fastest isolation mode, reusing the instance.
+    /// </summary>
+    Rollback = 0,
+
+    /// <summary>
+    /// The instance is fully restarted between tests.
+    /// This provides complete isolation but is the slowest option.
+    /// </summary>
+    Restart = 1,
+
+    /// <summary>
+    /// The instance is reused without rollback between tests in the same class.
+    /// Tests may observe side effects from previous tests.
+    /// </summary>
+    Recycle = 2,
+
+    /// <summary>Alias for <see cref="Recycle"/> (client scenario legacy naming).</summary>
+    SharedClient = Recycle,
+
+    /// <summary>Alias for <see cref="Rollback"/> (client scenario legacy naming).</summary>
+    RollbackState = Rollback,
+
+    /// <summary>Alias for <see cref="Restart"/> (client scenario legacy naming).</summary>
+    FreshClient = Restart
+}
+
+internal static class IsolationConversions
+{
+    public static IsolationMode ToIsolationMode(this Isolation isolation) => isolation switch
+    {
+        Isolation.Rollback => IsolationMode.RollbackState,
+        Isolation.Restart => IsolationMode.FreshClient,
+        Isolation.Recycle => IsolationMode.SharedClient,
+        _ => IsolationMode.SharedClient
+    };
+
+    public static Isolation ToIsolation(this IsolationMode mode) => mode switch
+    {
+        IsolationMode.RollbackState => Isolation.Rollback,
+        IsolationMode.FreshClient => Isolation.Restart,
+        IsolationMode.SharedClient => Isolation.Recycle,
+        _ => Isolation.Recycle
+    };
+}
+
+/// <summary>
 /// The event-bus events Pharos fires on the server and on the client around a rollback, so a mod
 /// can save and reload state of its own. Listen with <c>api.Event.RegisterEventBusListener</c>.
 /// </summary>

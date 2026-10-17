@@ -39,7 +39,7 @@ public sealed class SoakArtifactLiveTests : IDisposable
     }
 
 #pragma warning disable xUnit1000 // Samples are private so the real test run does not discover them.
-    [ServerWorld(seed: 4242, playStyle: "creativebuilding", worldType: "superflat", Isolation = WorldIsolation.Restart)]
+    [ServerWorld(seed: 4242, playStyle: "creativebuilding", worldType: "superflat", Isolation = Isolation.Restart)]
     private sealed class SoakingClass : ServerScenarioBase
     {
         [ServerScenario]

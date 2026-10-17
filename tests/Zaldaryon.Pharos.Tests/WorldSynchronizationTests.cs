@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using Vintagestory.API.MathTools;
 using Vintagestory.Client.NoObf;
 using Xunit;
+using Zaldaryon.Pharos;
 using Zaldaryon.Pharos.Bootstrap;
 using Zaldaryon.Pharos.Core;
 using Zaldaryon.Pharos.Platform;
@@ -55,7 +56,7 @@ public class WorldSynchronizationTests
         using HeadlessClient client = HeadlessClientBootstrap.Boot(options);
 
         ChunkPos targetChunk = new(42, 1, 99);
-        TimeoutException ex = await Assert.ThrowsAsync<TimeoutException>(async () =>
+        PharosTimeoutException ex = await Assert.ThrowsAsync<PharosTimeoutException>(async () =>
         {
             await client.WaitForChunkMeshed(targetChunk, maxFrames: 3, dt: 1f / 60f);
         });
@@ -78,7 +79,7 @@ public class WorldSynchronizationTests
 
         using HeadlessClient client = HeadlessClientBootstrap.Boot(options);
 
-        TimeoutException ex = await Assert.ThrowsAsync<TimeoutException>(async () =>
+        PharosTimeoutException ex = await Assert.ThrowsAsync<PharosTimeoutException>(async () =>
         {
             await client.WaitForWorldReady(radius: 1, maxFrames: 3, dt: 1f / 60f);
         });
@@ -120,13 +121,13 @@ public class WorldSynchronizationTests
         using HeadlessClient client = HeadlessClientBootstrap.Boot(options);
 
         ChunkPos chunkCenter = new(10, 2, 10);
-        await Assert.ThrowsAsync<TimeoutException>(async () =>
+        await Assert.ThrowsAsync<PharosTimeoutException>(async () =>
         {
             await client.WaitForWorldReady(chunkCenter, radius: 0, maxFrames: 2);
         });
 
         BlockPos blockCenter = new(320, 64, 320);
-        await Assert.ThrowsAsync<TimeoutException>(async () =>
+        await Assert.ThrowsAsync<PharosTimeoutException>(async () =>
         {
             await client.WaitForWorldReady(blockCenter, radius: 0, maxFrames: 2);
         });
@@ -152,7 +153,7 @@ public class WorldSynchronizationTests
 
         // Timeout on an unreachable distant chunk
         ChunkPos distantChunk = new(9999, 0, 9999);
-        await Assert.ThrowsAsync<TimeoutException>(async () =>
+        await Assert.ThrowsAsync<PharosTimeoutException>(async () =>
         {
             await session.WaitForChunkMeshed(distantChunk, maxFrames: 2);
         });
@@ -252,7 +253,7 @@ public class WorldSynchronizationTests
         using ClientServerLoopbackSession session = client.ConnectLoopback(server, "DiagPilot");
 
         ChunkPos unreachable = new(8888, 1, 8888);
-        TimeoutException ex = await Assert.ThrowsAsync<TimeoutException>(async () =>
+        PharosTimeoutException ex = await Assert.ThrowsAsync<PharosTimeoutException>(async () =>
         {
             await session.WaitForChunkMeshed(unreachable, maxFrames: 2);
         });
@@ -262,7 +263,7 @@ public class WorldSynchronizationTests
         Assert.Contains("awaitingTesselation=", ex.Message);
         Assert.Contains("dirtyPriority=", ex.Message);
 
-        TimeoutException worldEx = await Assert.ThrowsAsync<TimeoutException>(async () =>
+        PharosTimeoutException worldEx = await Assert.ThrowsAsync<PharosTimeoutException>(async () =>
         {
             await session.WaitForWorldReady(radius: 1, maxFrames: 2);
         });

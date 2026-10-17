@@ -30,6 +30,6 @@ public class LiveSchematicTests : ClientServerScenarioBase
         Assert.Equal("game:chest-east", Client.RunOnClientThread(() => Client.Client.World.BlockAccessor.GetBlock(origin.AddCopy(1, 1, 1)).Code.ToString()));
         Assert.NotNull(Client.RunOnClientThread(() => Client.Client.World.BlockAccessor.GetBlockEntity(origin.AddCopy(1, 1, 1))));
         Assert.All(placement.Chunks, chunk => Assert.True(Client.FrameController.IsChunkMeshed(chunk), $"Chunk {chunk} is not meshed"));
-        Assert.True(await Session!.WaitForChunkMeshedAsync(origin));
+        await Session!.WaitForChunkMeshedAsync(origin);
     }
 }

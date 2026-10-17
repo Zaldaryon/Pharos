@@ -41,20 +41,23 @@ public abstract class ClientScenarioBase : IAsyncLifetime, IScenarioLifecycle
     private PooledClient? _pooled;
     private ScenarioContext? _environmentContext;
 
+    private HeadlessClient? _client;
+
     /// <summary>
-    /// The headless client instance. Null until <see cref="InitializeAsync"/> completes.
+    /// The headless client instance.
     /// </summary>
-    protected HeadlessClient? Client { get; private set; }
+    /// <exception cref="InvalidOperationException">The client is accessed before InitializeAsync has booted it.</exception>
+    protected HeadlessClient Client => _client ?? throw new InvalidOperationException("Client is not available. It can only be accessed after scenario initialization has booted the client.");
 
     /// <summary>
     /// Test player abstraction for controlling and querying the player entity.
     /// </summary>
-    protected IClientTestPlayer? Player => Client?.TestPlayer;
+    protected IClientTestPlayer Player => Client.TestPlayer;
 
     /// <summary>
     /// Frame controller for deterministic frame stepping.
     /// </summary>
-    protected DeterministicFrameController? FrameController => Client?.FrameController;
+    protected DeterministicFrameController FrameController => Client.FrameController;
 
     /// <summary>Polls an assertion once per deterministic client frame until it passes.</summary>
     protected Task SucceedWhenAsync(Action assertion, int maxFrames = 600, CancellationToken ct = default)
@@ -84,7 +87,18 @@ public abstract class ClientScenarioBase : IAsyncLifetime, IScenarioLifecycle
     /// The isolation mode used for tests in this class.
     /// Override in derived classes to change isolation behavior.
     /// </summary>
-    protected virtual IsolationMode IsolationMode => IsolationMode.SharedClient;
+    protected virtual Isolation Isolation => Isolation.Recycle;
+
+    /// <summary>
+    /// The legacy isolation mode used for tests in this class.
+    /// </summary>
+    [Obsolete("Use Isolation instead. This property will be removed in 0.8.")]
+    protected virtual IsolationMode IsolationMode => Isolation.ToIsolationMode();
+
+    private Isolation EffectiveIsolation =>
+        Isolation != Isolation.Recycle
+            ? Isolation
+            : (IsolationMode != IsolationMode.SharedClient ? IsolationMode.ToIsolation() : Isolation.Recycle);
 
     /// <summary>
     /// The options the client is booted with. Fixture mode by default.
@@ -124,16 +138,16 @@ public abstract class ClientScenarioBase : IAsyncLifetime, IScenarioLifecycle
     }
 
     /// <summary>
-    /// Gets the isolation manager, creating it lazily with the current IsolationMode.
+    /// Gets the isolation manager, creating it lazily with the current Isolation mode.
     /// </summary>
     /// <returns>The ClientIsolationManager for this scenario.</returns>
     protected ClientIsolationManager GetIsolationManager()
     {
-        return _isolationManager ??= new ClientIsolationManager(IsolationMode);
+        return _isolationManager ??= new ClientIsolationManager(EffectiveIsolation);
     }
 
     /// <summary>
-    /// Boots the client, or takes the pooled one when <see cref="IsolationMode"/> allows it.
+    /// Boots the client, or takes the pooled one when <see cref="Isolation"/> allows it.
     /// </summary>
     public virtual async Task InitializeAsync()
     {
@@ -152,7 +166,7 @@ public abstract class ClientScenarioBase : IAsyncLifetime, IScenarioLifecycle
             IReadOnlyList<string> mods = ScenarioAttributes.ClientMods(GetType());
             ClientPoolKey key = new(options.BootMode, options.Width, options.Height, options.CharacterClass, string.Join("|", mods));
 
-            _pooled = IsolationMode == IsolationMode.FreshClient
+            _pooled = EffectiveIsolation == Isolation.Restart
                 ? null
                 : ScenarioHostPool.Take<PooledClient>(GetType(), key);
 
@@ -169,15 +183,15 @@ public abstract class ClientScenarioBase : IAsyncLifetime, IScenarioLifecycle
                     _pooled.Client.Logs.Clear();
                 }
             }
-            else if (IsolationMode == IsolationMode.RollbackState && _pooled.Baseline != null)
+            else if (EffectiveIsolation == Isolation.Rollback && _pooled.Baseline != null)
             {
                 GetIsolationManager().RestoreState(_pooled.Client, _pooled.Baseline);
             }
 
             if (!_pooled.Client.IsDisposed) _pooled.Client.Window.RestoreBootSize();
 
-            Client = _pooled.Client;
-            GetIsolationManager().PrepareForTest(Client);
+            _client = _pooled.Client;
+            GetIsolationManager().PrepareForTest(_client);
 
             if (ScenarioAttributes.ClientSettings(GetType()) is { } settings)
             {
@@ -215,7 +229,7 @@ public abstract class ClientScenarioBase : IAsyncLifetime, IScenarioLifecycle
                 ScenarioHostPool.HostDisposed();
             }
 
-            Client = null;
+            _client = null;
 
             _gate.Dispose();
             _gate = null;
@@ -289,7 +303,7 @@ public abstract class ClientScenarioBase : IAsyncLifetime, IScenarioLifecycle
         // A fixture-mode client renders on the test's own thread: after a timeout the body may
         // still hold its GL context. An engine-mode client's capture queues on its own thread.
         ClientReachable = !_run.Abandoned && !(timedOut && client?.BootMode == ClientBootMode.Fixture),
-        Isolation = IsolationMode.ToString(),
+        Isolation = EffectiveIsolation.ToString(),
         RandomSeed = client?.Random.CurrentSeed,
         RandomSeedSource = client?.Random.CurrentSource,
         Frames = ScenarioRun.Since(_run.FramesAtStart, client?.FrameController.TotalFrames),
@@ -334,7 +348,7 @@ public abstract class ClientScenarioBase : IAsyncLifetime, IScenarioLifecycle
         Events.LeftOpenLogs.Close(null, Client);
 
         // The recording started for the failure artifacts must not run on into the next test.
-        if (_recordingForArtifacts && Client is { IsDisposed: false } recorded)
+        if (_recordingForArtifacts && _client is { IsDisposed: false } recorded)
         {
             recorded.PacketRecorder.Stop();
             recorded.PacketRecorder.Clear();
@@ -351,7 +365,7 @@ public abstract class ClientScenarioBase : IAsyncLifetime, IScenarioLifecycle
         }
 
         // The static generators belong to the whole process: they go back before the client is pooled or disposed.
-        string? random = Client is { IsDisposed: false } seeded
+        string? random = _client is { IsDisposed: false } seeded
             ? RollbackParticipants.Try("Restoring the random generators", () => World.RandomSeeding.EndScenario(server: null, seeded.Random))
             : RollbackParticipants.Try("Restoring the random generators", () => World.RandomSeeding.EndScenario(null, null));
 
@@ -359,7 +373,7 @@ public abstract class ClientScenarioBase : IAsyncLifetime, IScenarioLifecycle
         {
             if (_pooled != null)
             {
-                if (ScenarioHostPool.CanReuseAfterEnvironmentCleanup(environmentFailure) && IsolationMode != IsolationMode.FreshClient && random == null && !_pooled.Client.IsDisposed && !_run.TimedOut && !_pooled.Client.IsDataPathRetained
+                if (ScenarioHostPool.CanReuseAfterEnvironmentCleanup(environmentFailure) && EffectiveIsolation != Isolation.Restart && random == null && !_pooled.Client.IsDisposed && !_run.TimedOut && !_pooled.Client.IsDataPathRetained
                     && TryRestoreBootWindow(_pooled.Client))
                 {
                     // The next test judges only what it logs itself.
@@ -376,7 +390,7 @@ public abstract class ClientScenarioBase : IAsyncLifetime, IScenarioLifecycle
         finally
         {
             _pooled = null;
-            Client = null;
+            _client = null;
             _gate?.Dispose();
             _gate = null;
         }
@@ -390,7 +404,7 @@ public abstract class ClientScenarioBase : IAsyncLifetime, IScenarioLifecycle
         World.RandomSeeding.Abandon();
         _classSettings = null;
         _pooled = null;
-        Client = null;
+        _client = null;
         _environmentContext = null;
         _gate?.Dispose();
         _gate = null;
@@ -401,7 +415,7 @@ public abstract class ClientScenarioBase : IAsyncLifetime, IScenarioLifecycle
     /// </summary>
     internal void SetClient(HeadlessClient client)
     {
-        Client = client;
+        _client = client;
     }
 
     private sealed record ClientPoolKey(ClientBootMode BootMode, int Width, int Height, string CharacterClass, string Mods);

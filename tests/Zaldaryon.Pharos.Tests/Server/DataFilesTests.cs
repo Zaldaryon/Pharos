@@ -201,7 +201,7 @@ public class LiveDataFilesClientServerTests : ClientServerScenarioBase
         s_changed = false;
         Assert.Equal("label=alternate port=1", await ServerCommandAsync("/pharosconfig"));
         Assert.StartsWith("label=client", (await Client!.Commands.ExecuteSuccessAsync(".pharosconfig")).Message);
-        Assert.NotEqual(IsolationKind.RolledBack, Isolation!.Kind);
+        Assert.NotEqual(IsolationKind.RolledBack, IsolationReport!.Kind);
     }
 
     // Each side reads its own file again, though the client booted after the server: server mods
@@ -222,7 +222,7 @@ public class LiveDataFilesClientServerTests : ClientServerScenarioBase
     // After a test that changed both files, the rollback rewrote them.
     private void CheckPutBack()
     {
-        if (Isolation!.Kind == IsolationKind.RolledBack && s_changed) Assert.Equal(2, Isolation.DataFilesRestored);
+        if (IsolationReport!.Kind == IsolationKind.RolledBack && s_changed) Assert.Equal(2, IsolationReport.DataFilesRestored);
         s_changed = false;
     }
 
@@ -272,7 +272,7 @@ public class LiveDataFilesServerTests : ServerScenarioBase
 
     private void CheckPutBack()
     {
-        if (Isolation!.Kind == IsolationKind.RolledBack && s_changed) Assert.Equal(1, Isolation.DataFilesRestored);
+        if (IsolationReport!.Kind == IsolationKind.RolledBack && s_changed) Assert.Equal(1, IsolationReport.DataFilesRestored);
         s_changed = false;
     }
 }

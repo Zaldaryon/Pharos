@@ -58,7 +58,7 @@ public class LiveReconnectTests : ClientServerScenarioBase
         Assert.Single(Client.ModNetwork.Messages(Channel), m => m.Sequence > mark && m.Direction == ModMessageDirection.Received);
 
         Assert.Equal(1, ServerHost!.RunOnGameThread(() => Server!.Clients.Values.Count(c => c.PlayerName == PlayerName)));
-        Assert.True(await Session.WaitForWorldReadyAsync(1));
+        await Session.WaitForWorldReadyAsync(1);
     }
 
     [ClientServerScenario]
@@ -102,7 +102,7 @@ public class LiveReconnectTests : ClientServerScenarioBase
 
         Assert.True(Client!.IsJoined);
         Assert.False(Session.IsLinkSevered);
-        Assert.True(await Session.WaitForWorldReadyAsync(1));
+        await Session.WaitForWorldReadyAsync(1);
 
         // The server moving the player proves both its TCP and UDP reach the new connection.
         double start = ServerPlayerX();
@@ -163,7 +163,7 @@ public class LiveReconnectTests : ClientServerScenarioBase
     }
 
     private double ServerPlayerX() => ServerHost!.RunOnGameThread(() =>
-        ((ServerMain)Server!).Clients.Values.Single(c => c.PlayerName == PlayerName).Entityplayer.Pos.X);
+        Server!.Clients.Values.Single(c => c.PlayerName == PlayerName).Entityplayer.Pos.X);
 
     private readonly record struct Counts(int Instance, int Active, int Started, int Disposed, int Hellos, int Pings, int Hotkeys, int Watched, int HotkeyInstance = 0);
 

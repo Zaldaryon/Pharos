@@ -11,7 +11,7 @@ namespace Zaldaryon.Pharos.Tests.Server;
 /// The soak budgets on the real server: each one breaks on purpose, or passes, against a run that does
 /// the thing it measures. Each test restarts the server, so the listeners a test adds do not carry over.
 /// </summary>
-[ServerWorld(seed: 4242, playStyle: "creativebuilding", worldType: "superflat", Isolation = WorldIsolation.Restart)]
+[ServerWorld(seed: 4242, playStyle: "creativebuilding", worldType: "superflat", Isolation = Isolation.Restart)]
 public class SoakBudgetLiveTests : ServerScenarioBase
 {
     [ServerScenario]

@@ -54,9 +54,17 @@ public sealed class ServerWorldAttribute : Attribute
 
     /// <summary>
     /// Gets or sets the world isolation mode for tests using this world configuration.
-    /// When not set, uses <see cref="WorldIsolation.Rollback"/>.
+    /// When not set, uses <see cref="Isolation.Rollback"/>.
     /// </summary>
-    public WorldIsolation Isolation { get; set; } = WorldIsolation.Rollback;
+    public Isolation Isolation { get; set; } = Isolation.Rollback;
+
+    /// <summary>Legacy world isolation mode.</summary>
+    [Obsolete("Use Isolation instead. This property will be removed in 0.8.")]
+    public WorldIsolation WorldIsolation
+    {
+        get => (WorldIsolation)Isolation;
+        set => Isolation = (Isolation)value;
+    }
 
     /// <summary>
     /// Gets or sets whether a test whose world cannot be rolled back fails, under

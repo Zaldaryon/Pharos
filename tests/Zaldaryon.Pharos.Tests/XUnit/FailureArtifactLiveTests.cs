@@ -127,7 +127,7 @@ public sealed class FailureArtifactLiveTests : IDisposable
     {
         protected override HeadlessClientOptions ClientOptions => new() { BootMode = ClientBootMode.Engine, Width = 640, Height = 360 };
 
-        protected override WorldIsolation WorldIsolation => WorldIsolation.Restart;
+        protected override Isolation Isolation => Isolation.Restart;
 
         protected override FailureArtifacts Artifacts => FailureArtifacts.All;
 

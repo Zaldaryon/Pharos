@@ -357,8 +357,9 @@ public sealed class DeterministicFrameController
 
     /// <summary>
     /// Advances frames until the specified predicate returns true, or the maximum frame budget is reached.
+    /// Returns false if maxFrames was reached without the predicate being satisfied.
     /// </summary>
-    public async Task<bool> WaitForAsync(Func<bool> predicate, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
+    public async Task<bool> TryWaitForAsync(Func<bool> predicate, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(predicate);
 
@@ -381,6 +382,23 @@ public sealed class DeterministicFrameController
 
         return predicate();
     }
+
+    /// <summary>
+    /// Advances frames until the specified predicate returns true or throws <see cref="PharosTimeoutException"/>.
+    /// </summary>
+    public async Task WaitForAsync(Func<bool> predicate, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
+    {
+        bool ok = await TryWaitForAsync(predicate, maxFrames, dt, ct).ConfigureAwait(false);
+        if (!ok)
+        {
+            throw new PharosTimeoutException($"Condition was not met within {maxFrames} frames.");
+        }
+    }
+
+    /// <summary>Legacy frame waiter.</summary>
+    [Obsolete("Use TryWaitForAsync or WaitForAsync instead. This method will be removed in 0.8.")]
+    public Task<bool> WaitFor(Func<bool> predicate, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
+        => TryWaitForAsync(predicate, maxFrames, dt, ct);
 
     /// <summary>
     /// Determines whether the chunk at the specified position has been meshed or is empty.
@@ -530,48 +548,74 @@ public sealed class DeterministicFrameController
 
     /// <summary>
     /// Advances frames until the chunk at the given coordinate is meshed or confirmed empty.
-    /// Throws TimeoutException if the chunk is not meshed within the specified frame budget.
+    /// Throws <see cref="PharosTimeoutException"/> if the chunk is not meshed within the specified frame budget.
     /// </summary>
-    public async Task<bool> WaitForChunkMeshedAsync(ChunkPos chunkPos, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
+    public async Task WaitForChunkMeshedAsync(ChunkPos chunkPos, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
     {
-        bool meshed = await WaitForAsync(() => IsChunkMeshed(chunkPos), maxFrames, dt, ct);
+        bool meshed = await TryWaitForChunkMeshedAsync(chunkPos, maxFrames, dt, ct).ConfigureAwait(false);
         if (!meshed)
         {
             IWorldChunk? chunk = _client.WorldMap?.GetChunk(chunkPos.X, chunkPos.Y, chunkPos.Z);
             string status = chunk == null ? "Not loaded / null" : chunk.Empty ? "Empty" : "Loaded, pending tessellation";
 
-            throw new TimeoutException(
+            throw new PharosTimeoutException(
                 $"Chunk at {chunkPos} was not meshed within {maxFrames} frames (dt={dt:F4}s). " +
                 $"Chunk status: {status}. " +
                 $"Queues: awaitingTesselation={RuntimeStats.chunksAwaitingTesselation}, awaitingPooling={RuntimeStats.chunksAwaitingPooling}, " +
                 $"dirtyPriority={DirtyChunksPriorityCount}, dirtyNormal={DirtyChunksCount}.");
         }
-        return true;
-    }
-
-    public Task<bool> WaitForChunkMeshedAsync(int chunkX, int chunkY, int chunkZ, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
-    {
-        return WaitForChunkMeshedAsync(new ChunkPos(chunkX, chunkY, chunkZ), maxFrames, dt, ct);
-    }
-
-    public Task<bool> WaitForChunkMeshedAsync(Vec3i chunkPos, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
-    {
-        return WaitForChunkMeshedAsync(new ChunkPos(chunkPos), maxFrames, dt, ct);
-    }
-
-    public Task<bool> WaitForChunkMeshedAsync(BlockPos blockPos, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
-    {
-        return WaitForChunkMeshedAsync(ChunkPos.FromBlockPos(blockPos), maxFrames, dt, ct);
     }
 
     /// <summary>
-    /// Advances frames until the specified chunk radius around the player is loaded and meshed.
-    /// Throws TimeoutException with actionable diagnostics if chunks are not ready within the frame budget.
+    /// Advances frames until the chunk at the given coordinate is meshed or confirmed empty.
+    /// Returns false if maxFrames was reached without the chunk being meshed.
     /// </summary>
-    public async Task<bool> WaitForWorldReadyAsync(int radius = 1, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
+    public Task<bool> TryWaitForChunkMeshedAsync(ChunkPos chunkPos, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
+    {
+        return TryWaitForAsync(() => IsChunkMeshed(chunkPos), maxFrames, dt, ct);
+    }
+
+    public Task WaitForChunkMeshedAsync(int chunkX, int chunkY, int chunkZ, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
+        => WaitForChunkMeshedAsync(new ChunkPos(chunkX, chunkY, chunkZ), maxFrames, dt, ct);
+
+    public Task<bool> TryWaitForChunkMeshedAsync(int chunkX, int chunkY, int chunkZ, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
+        => TryWaitForChunkMeshedAsync(new ChunkPos(chunkX, chunkY, chunkZ), maxFrames, dt, ct);
+
+    public Task WaitForChunkMeshedAsync(Vec3i chunkPos, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
+        => WaitForChunkMeshedAsync(new ChunkPos(chunkPos), maxFrames, dt, ct);
+
+    public Task<bool> TryWaitForChunkMeshedAsync(Vec3i chunkPos, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
+        => TryWaitForChunkMeshedAsync(new ChunkPos(chunkPos), maxFrames, dt, ct);
+
+    public Task WaitForChunkMeshedAsync(BlockPos blockPos, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
+        => WaitForChunkMeshedAsync(ChunkPos.FromBlockPos(blockPos), maxFrames, dt, ct);
+
+    public Task<bool> TryWaitForChunkMeshedAsync(BlockPos blockPos, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
+        => TryWaitForChunkMeshedAsync(ChunkPos.FromBlockPos(blockPos), maxFrames, dt, ct);
+
+    [Obsolete("Use WaitForChunkMeshedAsync instead. This method will be removed in 0.8.")]
+    public async Task<bool> WaitForChunkMeshed(ChunkPos chunkPos, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
+    {
+        await WaitForChunkMeshedAsync(chunkPos, maxFrames, dt, ct).ConfigureAwait(false);
+        return true;
+    }
+
+    [Obsolete("Use WaitForChunkMeshedAsync instead. This method will be removed in 0.8.")]
+    public Task<bool> WaitForChunkMeshed(int chunkX, int chunkY, int chunkZ, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
+        => WaitForChunkMeshed(new ChunkPos(chunkX, chunkY, chunkZ), maxFrames, dt, ct);
+
+    [Obsolete("Use WaitForChunkMeshedAsync instead. This method will be removed in 0.8.")]
+    public Task<bool> WaitForChunkMeshed(BlockPos blockPos, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
+        => WaitForChunkMeshed(ChunkPos.FromBlockPos(blockPos), maxFrames, dt, ct);
+
+    /// <summary>
+    /// Advances frames until the specified chunk radius around the player is loaded and meshed.
+    /// Throws <see cref="PharosTimeoutException"/> with actionable diagnostics if chunks are not ready within the frame budget.
+    /// </summary>
+    public async Task WaitForWorldReadyAsync(int radius = 1, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
     {
         List<ChunkPos> unmeshed = new();
-        bool ready = await WaitForAsync(() => IsWorldReady(radius, out unmeshed), maxFrames, dt, ct);
+        bool ready = await TryWaitForAsync(() => IsWorldReady(radius, out unmeshed), maxFrames, dt, ct).ConfigureAwait(false);
         if (!ready)
         {
             Vec3d pos = _client.EntityPlayer?.Pos?.XYZ ?? _client.MainCamera?.CamSourcePosition ?? new Vec3d(0, 0, 0);
@@ -583,66 +627,117 @@ public sealed class DeterministicFrameController
                 ? string.Join(", ", unmeshed)
                 : $"{string.Join(", ", unmeshed.Take(10))}... ({unmeshed.Count} total)";
 
-            throw new TimeoutException(
+            throw new PharosTimeoutException(
                 $"World was not ready within {maxFrames} frames (dt={dt:F4}s). " +
                 $"Player chunk: ({cx}, {cy}, {cz}), radius: {radius}. " +
                 $"Unmeshed chunks remaining ({unmeshed.Count}): [{unmeshedSummary}]. " +
                 $"Queues: awaitingTesselation={RuntimeStats.chunksAwaitingTesselation}, awaitingPooling={RuntimeStats.chunksAwaitingPooling}, " +
                 $"dirtyPriority={DirtyChunksPriorityCount}, dirtyNormal={DirtyChunksCount}.");
         }
+    }
 
+    /// <summary>
+    /// Advances frames until the specified chunk radius around the player is loaded and meshed.
+    /// Returns false if not ready within maxFrames without throwing.
+    /// </summary>
+    public Task<bool> TryWaitForWorldReadyAsync(int radius = 1, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
+    {
+        return TryWaitForAsync(() => IsWorldReady(radius, out _), maxFrames, dt, ct);
+    }
+
+    [Obsolete("Use WaitForWorldReadyAsync instead. This method will be removed in 0.8.")]
+    public async Task<bool> WaitForWorldReady(int radius = 1, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
+    {
+        await WaitForWorldReadyAsync(radius, maxFrames, dt, ct).ConfigureAwait(false);
         return true;
     }
 
     /// <summary>
     /// Advances frames until the specified chunk radius around a center coordinate is loaded and meshed.
     /// </summary>
-    public async Task<bool> WaitForWorldReadyAsync(ChunkPos center, int radius = 1, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
+    public async Task WaitForWorldReadyAsync(ChunkPos center, int radius = 1, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
     {
         List<ChunkPos> unmeshed = new();
-        bool ready = await WaitForAsync(() => IsWorldReady(radius, out unmeshed, center), maxFrames, dt, ct);
+        bool ready = await TryWaitForAsync(() => IsWorldReady(radius, out unmeshed, center), maxFrames, dt, ct).ConfigureAwait(false);
         if (!ready)
         {
             string unmeshedSummary = unmeshed.Count <= 10
                 ? string.Join(", ", unmeshed)
                 : $"{string.Join(", ", unmeshed.Take(10))}... ({unmeshed.Count} total)";
 
-            throw new TimeoutException(
+            throw new PharosTimeoutException(
                 $"World was not ready within {maxFrames} frames (dt={dt:F4}s). " +
                 $"Center chunk: {center}, radius: {radius}. " +
                 $"Unmeshed chunks remaining ({unmeshed.Count}): [{unmeshedSummary}]. " +
                 $"Queues: awaitingTesselation={RuntimeStats.chunksAwaitingTesselation}, awaitingPooling={RuntimeStats.chunksAwaitingPooling}, " +
                 $"dirtyPriority={DirtyChunksPriorityCount}, dirtyNormal={DirtyChunksCount}.");
         }
+    }
 
+    public Task<bool> TryWaitForWorldReadyAsync(ChunkPos center, int radius = 1, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
+    {
+        return TryWaitForAsync(() => IsWorldReady(radius, out _, center), maxFrames, dt, ct);
+    }
+
+    [Obsolete("Use WaitForWorldReadyAsync instead. This method will be removed in 0.8.")]
+    public async Task<bool> WaitForWorldReady(ChunkPos center, int radius = 1, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
+    {
+        await WaitForWorldReadyAsync(center, radius, maxFrames, dt, ct).ConfigureAwait(false);
         return true;
     }
 
     /// <summary>
     /// Advances frames until the specified chunk radius around a block position is loaded and meshed.
     /// </summary>
-    public Task<bool> WaitForWorldReadyAsync(BlockPos center, int radius = 1, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
+    public Task WaitForWorldReadyAsync(BlockPos center, int radius = 1, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(center);
         return WaitForWorldReadyAsync(ChunkPos.FromBlockPos(center), radius, maxFrames, dt, ct);
     }
 
+    public Task<bool> TryWaitForWorldReadyAsync(BlockPos center, int radius = 1, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(center);
+        return TryWaitForWorldReadyAsync(ChunkPos.FromBlockPos(center), radius, maxFrames, dt, ct);
+    }
+
+    [Obsolete("Use WaitForWorldReadyAsync instead. This method will be removed in 0.8.")]
+    public async Task<bool> WaitForWorldReady(BlockPos center, int radius = 1, int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
+    {
+        await WaitForWorldReadyAsync(center, radius, maxFrames, dt, ct).ConfigureAwait(false);
+        return true;
+    }
+
     /// <summary>
     /// Advances frames until all background chunk tessellation and upload queues have drained.
-    /// Throws TimeoutException if the queues do not drain within the frame budget.
+    /// Throws <see cref="PharosTimeoutException"/> if the queues do not drain within the frame budget.
     /// </summary>
-    public async Task<bool> WaitForAllMeshesReadyAsync(int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
+    public async Task WaitForAllMeshesReadyAsync(int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
     {
-        bool ready = await WaitForAsync(AreAllMeshesReady, maxFrames, dt, ct);
+        bool ready = await TryWaitForAsync(AreAllMeshesReady, maxFrames, dt, ct).ConfigureAwait(false);
         if (!ready)
         {
-            throw new TimeoutException(
+            throw new PharosTimeoutException(
                 $"Background mesh tessellation queue was not drained within {maxFrames} frames (dt={dt:F4}s). " +
                 $"Queues remaining: awaitingTesselation={RuntimeStats.chunksAwaitingTesselation}, awaitingPooling={RuntimeStats.chunksAwaitingPooling}, " +
                 $"dirtyPriority={DirtyChunksPriorityCount}, dirtyNormal={DirtyChunksCount}, dirtyLast={DirtyChunksLastCount}, " +
                 $"tessPriority={TesselatedChunksPriorityCount}, tessNormal={TesselatedChunksCount}.");
         }
+    }
 
+    /// <summary>
+    /// Advances frames until all background chunk tessellation and upload queues have drained.
+    /// Returns false if not drained within maxFrames without throwing.
+    /// </summary>
+    public Task<bool> TryWaitForAllMeshesReadyAsync(int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
+    {
+        return TryWaitForAsync(AreAllMeshesReady, maxFrames, dt, ct);
+    }
+
+    [Obsolete("Use WaitForAllMeshesReadyAsync instead. This method will be removed in 0.8.")]
+    public async Task<bool> WaitForAllMeshesReady(int maxFrames = 600, float dt = 1f / 60f, CancellationToken ct = default)
+    {
+        await WaitForAllMeshesReadyAsync(maxFrames, dt, ct).ConfigureAwait(false);
         return true;
     }
 }
