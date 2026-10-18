@@ -715,7 +715,7 @@ method the first time a fault names it, and the patch stays; an inlined method c
 through a delegate or a virtual call. `DelayChunkLoads` counts ticks, not time, and it is a lower bound: a load already under way
 can still finish. `FailSaves` affects saves the test makes on the game thread, not the chunk thread's off-thread saves, so a chunk
 those saves write is stored whatever the fault says. The game clears a chunk's dirty mark before it writes the chunk, so a chunk whose write
-failed may be left clean, and the game does not promise that a later save stores it.
+failed is left clean in memory. A later change marks that chunk dirty again, allowing a later save to write it to disk. However, if other chunks in the column were never previously saved, SQLite holds only a partial column; on restart, the engine discards any column with missing chunks and regenerates it from scratch. Scenarios that check later save recovery therefore save the world before the fault so all chunks in the column exist on disk.
 
 ## Calendar and Weather
 
