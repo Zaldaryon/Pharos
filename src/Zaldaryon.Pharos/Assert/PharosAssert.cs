@@ -23,7 +23,7 @@ public static class PharosAssert
     public static void Skip(string reason)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(reason);
-        throw new Zaldaryon.Pharos.XUnit.Execution.ScenarioSkipException(reason);
+        throw new ScenarioSkipException(reason);
     }
 
     /// <summary>

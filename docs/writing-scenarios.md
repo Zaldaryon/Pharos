@@ -6,13 +6,19 @@ This guide explains how to write client scenario tests using Pharos. A scenario 
 
 ### 1. Install the Package
 
-Add the Pharos XUnit metapackage to your test project:
+Add the Pharos XUnit package to your test project:
 
 ```bash
 dotnet add package Zaldaryon.Pharos.XUnit
 ```
 
-This brings in `Zaldaryon.Pharos` and `xunit.core` as dependencies.
+For projects targeting xUnit v3, install the preview package instead:
+
+```bash
+dotnet add package Zaldaryon.Pharos.XUnit.V3 --prerelease
+```
+
+This brings in `Zaldaryon.Pharos` and the scenario runner as dependencies.
 
 ### 2. Create a Scenario Class
 

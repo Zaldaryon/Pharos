@@ -1,8 +1,8 @@
-using Xunit;
 using Zaldaryon.Pharos.Bootstrap;
 using Zaldaryon.Pharos.Core;
 using Zaldaryon.Pharos.Player;
 using Zaldaryon.Pharos.Reporting;
+using Zaldaryon.Pharos.Scenarios;
 using Zaldaryon.Pharos.Server;
 using Zaldaryon.Pharos.Timing;
 using Zaldaryon.Pharos.XUnit.Execution;
@@ -31,7 +31,7 @@ namespace Zaldaryon.Pharos.XUnit;
 /// static state, so two clients or servers cannot boot side by side in one process.
 /// </para>
 /// </remarks>
-public abstract class ClientScenarioBase : IAsyncLifetime, IScenarioLifecycle
+public abstract class ClientScenarioBase : IScenarioLifecycle, IAsyncDisposable
 {
     private readonly ScenarioRun _run = new();
     private bool _recordingForArtifacts;
@@ -153,7 +153,7 @@ public abstract class ClientScenarioBase : IAsyncLifetime, IScenarioLifecycle
     {
         BootCheck.ThrowIfFailedBefore(GetType());
         if (GetType().IsDefined(typeof(DataFilesAttribute), inherit: true)
-            || Execution.ScenarioTestInfo.Current?.Method?.IsDefined(typeof(DataFilesAttribute), inherit: true) == true)
+            || ScenarioTestInfo.Current?.Method?.IsDefined(typeof(DataFilesAttribute), inherit: true) == true)
         {
             throw new NotSupportedException("[DataFiles] works in ServerScenarioBase and ClientServerScenarioBase classes, not in client-only scenarios.");
         }
@@ -397,6 +397,8 @@ public abstract class ClientScenarioBase : IAsyncLifetime, IScenarioLifecycle
 
         ScenarioFailures.ThrowAll(environmentFailure, () => LoggedErrorGate.ThrowIfAny(loggedErrors));
     }
+
+    ValueTask IAsyncDisposable.DisposeAsync() => new(DisposeAsync());
 
     private void AbandonRunningScenario()
     {

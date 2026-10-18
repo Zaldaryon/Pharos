@@ -81,7 +81,7 @@ public class LiveClientSettingsTests : ClientServerScenarioBase
         Assert.Throws<ArgumentException>(() => Client!.Settings.Set("viewDistance", "far"));
     }
 
-    [Theory]
+    [ClientServerTheory]
     [ClientSettingsMatrix("minimum", "high")]
     public async Task EachPreset_RendersAfterTheShadersReload(ClientSettingsProfile profile)
     {

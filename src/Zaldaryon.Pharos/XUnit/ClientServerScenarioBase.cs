@@ -4,11 +4,11 @@ using Vintagestory.API.Config;
 using Vintagestory.API.MathTools;
 using Vintagestory.API.Server;
 using Vintagestory.Server;
-using Xunit;
 using Zaldaryon.Pharos.Bootstrap;
 using Zaldaryon.Pharos.Core;
 using Zaldaryon.Pharos.Player;
 using Zaldaryon.Pharos.Reporting;
+using Zaldaryon.Pharos.Scenarios;
 using Zaldaryon.Pharos.Server;
 using Zaldaryon.Pharos.Timing;
 using Zaldaryon.Pharos.XUnit.Execution;
@@ -22,7 +22,7 @@ namespace Zaldaryon.Pharos.XUnit;
 /// <remarks>
 /// <para>
 /// Test classes inheriting from this should be marked with <see cref="ClientServerScenarioAttribute"/>
-/// and use <see cref="IAsyncLifetime"/> for setup and teardown.
+/// and use <see cref="IScenarioLifecycle"/> for setup and teardown.
 /// </para>
 /// <para>
 /// The lifecycle sequence:
@@ -47,7 +47,7 @@ namespace Zaldaryon.Pharos.XUnit;
 /// client and server compete for shared resources.
 /// </para>
 /// </remarks>
-public abstract class ClientServerScenarioBase : IAsyncLifetime, IScenarioLifecycle
+public abstract class ClientServerScenarioBase : IScenarioLifecycle, IAsyncDisposable
 {
     private readonly ScenarioRun _run = new();
     private ServerSandbox? _sandbox;
@@ -926,6 +926,8 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime, IScenarioLifecy
             : isolationFailure ?? environmentFailure;
         ScenarioFailures.ThrowAll(finalFailure, () => LoggedErrorGate.ThrowIfAny(loggedErrors));
     }
+
+    ValueTask IAsyncDisposable.DisposeAsync() => new(DisposeAsync());
 
     private void AbandonRunningScenario()
     {

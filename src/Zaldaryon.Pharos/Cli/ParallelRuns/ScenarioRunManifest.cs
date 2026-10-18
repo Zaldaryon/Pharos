@@ -1,7 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Xml.Linq;
-using Zaldaryon.Pharos.XUnit.Execution;
+using Zaldaryon.Pharos.Scenarios;
 
 namespace Zaldaryon.Pharos.Cli.ParallelRuns;
 

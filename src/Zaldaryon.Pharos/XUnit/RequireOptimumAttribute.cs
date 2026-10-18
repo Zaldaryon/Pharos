@@ -1,11 +1,11 @@
 using System.Reflection;
-using Xunit;
+using Zaldaryon.Pharos.Bootstrap;
 
 namespace Zaldaryon.Pharos.XUnit;
 
 /// <summary>
 /// Skips a scenario, or every scenario of a class, unless the tests run on an Optimum build of
-/// the game. See <c>docs/optimum.md</c>. For a plain xUnit test, use <see cref="OptimumFactAttribute"/>.
+/// the game. See <c>docs/optimum.md</c>.
 /// </summary>
 [AttributeUsage(AttributeTargets.Method | AttributeTargets.Class, Inherited = true)]
 public sealed class RequireOptimumAttribute : Attribute
@@ -15,8 +15,7 @@ public sealed class RequireOptimumAttribute : Attribute
 }
 
 /// <summary>
-/// Skips a scenario, or every scenario of a class, when the tests run on an Optimum build. For a
-/// plain xUnit test, use <see cref="NotOptimumFactAttribute"/>.
+/// Skips a scenario, or every scenario of a class, when the tests run on an Optimum build.
 /// </summary>
 [AttributeUsage(AttributeTargets.Method | AttributeTargets.Class, Inherited = true)]
 public sealed class SkipOnOptimumAttribute : Attribute
@@ -26,9 +25,9 @@ public sealed class SkipOnOptimumAttribute : Attribute
 }
 
 /// <summary>A test both requires Optimum and skips on it.</summary>
-internal sealed class OptimumGateConflictException(string message) : InvalidOperationException(message);
+public sealed class OptimumGateConflictException(string message) : InvalidOperationException(message);
 
-internal static class OptimumGate
+public static class OptimumGate
 {
     /// <summary>
     /// Why the test is skipped on <paramref name="optimum"/> (null for vanilla), or null when it runs.
@@ -63,25 +62,4 @@ internal static class OptimumGate
     }
 
     private static string Suffix(string? reason) => reason == null ? "" : " " + reason;
-}
-
-/// <summary>A plain xUnit fact that runs only on an Optimum build.</summary>
-public sealed class OptimumFactAttribute : FactAttribute
-{
-    /// <summary>Skips the fact on vanilla Vintage Story.</summary>
-    public OptimumFactAttribute() => Skip ??= OptimumInstall.Loaded == null ? OptimumGate.Vanilla() : null;
-}
-
-/// <summary>A plain xUnit theory that runs only on an Optimum build.</summary>
-public sealed class OptimumTheoryAttribute : TheoryAttribute
-{
-    /// <summary>Skips the theory on vanilla Vintage Story.</summary>
-    public OptimumTheoryAttribute() => Skip ??= OptimumInstall.Loaded == null ? OptimumGate.Vanilla() : null;
-}
-
-/// <summary>A plain xUnit fact that runs only on vanilla Vintage Story, not on an Optimum build.</summary>
-public sealed class NotOptimumFactAttribute : FactAttribute
-{
-    /// <summary>Skips the fact on an Optimum build.</summary>
-    public NotOptimumFactAttribute() => Skip ??= OptimumInstall.Loaded is { } optimum ? $"Skipped on {OptimumInstall.Describe(optimum)}." : null;
 }

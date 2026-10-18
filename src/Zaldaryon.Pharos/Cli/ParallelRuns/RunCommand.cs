@@ -176,7 +176,7 @@ public static partial class RunCommand
                 stdout.WriteLine($"Rerunning {failureRows.Count} failed test row(s) from {Path.GetFullPath(sourceManifestPath)}.");
                 Dictionary<string, string> workerEnvironment = new(options.WorkerEnvironment)
                 {
-                    [Zaldaryon.Pharos.XUnit.Execution.ScenarioExplicitSkip.RunExplicitVariable] = "1",
+                    [ScenarioGate.RunExplicitVariable] = "1",
                 };
                 options = options with { WorkerEnvironment = workerEnvironment };
             }
@@ -344,9 +344,9 @@ public static partial class RunCommand
         Dictionary<string, string> environment = new(options.WorkerEnvironment);
         // A name filter is an explicit request for the selected scenario. Broad trait filters
         // such as Category=Live do not opt every explicit scenario into the run.
-        if (SelectsByTestName(options.Filter) && string.IsNullOrEmpty(Environment.GetEnvironmentVariable(Zaldaryon.Pharos.XUnit.Execution.ScenarioExplicitSkip.RunExplicitVariable)))
+        if (SelectsByTestName(options.Filter) && string.IsNullOrEmpty(Environment.GetEnvironmentVariable(ScenarioGate.RunExplicitVariable)))
         {
-            environment[Zaldaryon.Pharos.XUnit.Execution.ScenarioExplicitSkip.RunExplicitVariable] = "1";
+            environment[ScenarioGate.RunExplicitVariable] = "1";
         }
         // One id for the whole run in every failure's run.json.
         string runId = environment.GetValueOrDefault(Reporting.FailureArtifactWriter.RunIdVariable)
@@ -400,7 +400,7 @@ public static partial class RunCommand
                 // Artifact folders are named after the class's short name: one root per worker
                 // keeps two namespaces' FooTests apart.
                 [Reporting.FailureArtifactWriter.DirectoryVariable] = Path.Combine(artifacts, $"worker-{index}"),
-                [Zaldaryon.Pharos.XUnit.Execution.ScenarioAttemptManifestWriter.DirectoryVariable] = Path.Combine(attemptsDirectory, $"worker-{index}"),
+                [Zaldaryon.Pharos.Scenarios.ScenarioAttemptManifestWriter.DirectoryVariable] = Path.Combine(attemptsDirectory, $"worker-{index}"),
             };
             running.Add(Task.Run(async () =>
             {
@@ -596,6 +596,22 @@ public static partial class RunCommand
         return File.Exists(path) ? path : throw new RunSetupException($"{path} does not exist: build {project}, or leave out --no-build.");
     }
 
+    /// <summary>Whether the assembly uses Microsoft.Testing.Platform / xUnit v3 runner.</summary>
+    internal static bool IsTestingPlatform(string assembly)
+    {
+        string deps = Path.ChangeExtension(assembly, ".deps.json");
+        if (!File.Exists(deps)) return false;
+        try
+        {
+            string text = File.ReadAllText(deps);
+            return text.Contains("\"Microsoft.Testing.Platform\"") || text.Contains("\"xunit.v3\"");
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     /// <summary>The fully qualified names of the tests <paramref name="filter"/> matches; nothing runs.</summary>
     internal static async Task<IReadOnlyList<string>> ListAsync(string dotnet, string assembly, string? filter, string results, CancellationToken ct)
     {
@@ -603,12 +619,39 @@ public static partial class RunCommand
         string list = Path.Combine(results, "tests.txt");
         File.Delete(list);
 
-        List<string> args = ["vstest", assembly, "--ListFullyQualifiedTests", $"--ListTestsTargetPath:{list}"];
-        if (!string.IsNullOrWhiteSpace(filter)) args.Add($"--TestCaseFilter:{filter}");
-        ProcessResult listing = await RunProcessAsync(dotnet, args, ct).ConfigureAwait(false);
-        if (listing.ExitCode != 0 || !File.Exists(list))
+        if (IsTestingPlatform(assembly))
         {
-            throw new RunSetupException($"Listing the tests of {assembly} failed:\n{listing.Output.Trim()}");
+            List<string> args = [assembly, "-list", "methods"];
+            if (!string.IsNullOrWhiteSpace(filter))
+            {
+                if (filter.Contains('=') && !filter.Contains('|') && !filter.Contains('&') && !filter.Contains('~'))
+                {
+                    args.AddRange(["-trait", filter]);
+                }
+                else
+                {
+                    args.AddRange(["-filter", filter]);
+                }
+            }
+
+            ProcessResult listing = await RunProcessAsync(dotnet, args, ct).ConfigureAwait(false);
+            if (listing.ExitCode != 0)
+            {
+                throw new RunSetupException($"Listing the tests of {assembly} failed:\n{listing.Output.Trim()}");
+            }
+
+            return listing.Output
+                .Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Where(l => !l.StartsWith("xUnit.net") && !l.StartsWith("===") && l.Contains('.'))
+                .ToList();
+        }
+
+        List<string> vstestArgs = ["vstest", assembly, "--ListFullyQualifiedTests", $"--ListTestsTargetPath:{list}"];
+        if (!string.IsNullOrWhiteSpace(filter)) vstestArgs.Add($"--TestCaseFilter:{filter}");
+        ProcessResult vstestListing = await RunProcessAsync(dotnet, vstestArgs, ct).ConfigureAwait(false);
+        if (vstestListing.ExitCode != 0 || !File.Exists(list))
+        {
+            throw new RunSetupException($"Listing the tests of {assembly} failed:\n{vstestListing.Output.Trim()}");
         }
 
         return File.ReadAllLines(list).Select(l => l.Trim()).Where(l => l.Length > 0).ToList();

@@ -35,11 +35,18 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="Zaldaryon.Pharos.Tests" />
+    <InternalsVisibleTo Include="Zaldaryon.Pharos.XUnit" />
+    <InternalsVisibleTo Include="Zaldaryon.Pharos.XUnit.V3" />
+    <InternalsVisibleTo Include="Zaldaryon.Pharos.XUnit.V3.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Zaldaryon.Pharos.Scenarios" />
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
-    <PackageReference Include="xunit.core" Version="2.9.3" />
+    <PackageReference Include="xunit.abstractions" Version="2.0.3" />
   </ItemGroup>
 
   <ItemGroup>
