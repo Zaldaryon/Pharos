@@ -429,6 +429,23 @@ internal sealed class ScenarioTestInvoker(
         if (TestCase.InitializationException != null) return await base.InvokeTestMethodAsync(testClassInstance).ConfigureAwait(false);
 
         IScenarioLifecycle? lifecycle = testClassInstance as IScenarioLifecycle;
+        bool hasNativeAsyncLifetime = testClassInstance is IAsyncLifetime;
+        bool initialized = false;
+        if (lifecycle != null && !hasNativeAsyncLifetime)
+        {
+            try
+            {
+                await lifecycle.InitializeAsync().ConfigureAwait(false);
+                initialized = true;
+            }
+            catch (Exception ex)
+            {
+                Aggregator.Add(ex);
+                ScenarioAttemptState.Current?.MarkNonRetryable();
+                return 0m;
+            }
+        }
+
         if (lifecycle != null && !Aggregator.HasExceptions)
         {
             Aggregator.Run(lifecycle.BeforeBody);
@@ -692,6 +709,18 @@ internal sealed class ScenarioTestInvoker(
                 try { details = lifecycle.CaptureFailure(info, cleanupFailure, timedOut: false); }
                 catch (Exception ex) { details = $"Pharos could not save cleanup failure artifacts: {ex.GetType().Name}: {ex.Message}"; }
                 Aggregator.Add(details == null ? cleanupFailure : new ScenarioFailedException(cleanupFailure, details));
+            }
+        }
+
+        if (initialized && lifecycle != null)
+        {
+            try
+            {
+                await lifecycle.DisposeAsync().ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                Aggregator.Add(ex);
             }
         }
 

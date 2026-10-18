@@ -72,11 +72,6 @@ public class ScenarioTestRunnerV3 : XunitTestRunner
                 ? testClassInstance
                 : Activator.CreateInstance(testClass, ctxt.ConstructorArguments ?? Array.Empty<object>());
 
-            if (attempt > 1 && currentInstance is IScenarioLifecycle initializable)
-            {
-                await initializable.InitializeAsync().ConfigureAwait(false);
-            }
-
             ExceptionAggregator attemptAggregator = new();
             XunitTestRunnerContext attemptContext = new(
                 ctxt.Test,
@@ -89,22 +84,6 @@ public class ScenarioTestRunnerV3 : XunitTestRunner
 
             TimeSpan attemptTime = await RunAttemptAsync(attemptContext, currentInstance, method, timeoutMs, onArtifact).ConfigureAwait(false);
             totalTime += attemptTime;
-
-            if (attempt > 1)
-            {
-                if (currentInstance is IScenarioLifecycle disposableLifecycle)
-                {
-                    try { await disposableLifecycle.DisposeAsync().ConfigureAwait(false); } catch { }
-                }
-                else if (currentInstance is IAsyncDisposable asyncDisposable)
-                {
-                    try { await asyncDisposable.DisposeAsync().ConfigureAwait(false); } catch { }
-                }
-                else if (currentInstance is IDisposable disposable)
-                {
-                    try { disposable.Dispose(); } catch { }
-                }
-            }
 
             if (!attemptAggregator.HasExceptions)
             {
@@ -140,6 +119,22 @@ public class ScenarioTestRunnerV3 : XunitTestRunner
         Action<string, string> onArtifact)
     {
         IScenarioLifecycle? lifecycle = instance as IScenarioLifecycle;
+        bool hasNativeAsyncLifetime = instance is Xunit.IAsyncLifetime;
+        bool initialized = false;
+        if (lifecycle != null && !hasNativeAsyncLifetime)
+        {
+            try
+            {
+                await lifecycle.InitializeAsync().ConfigureAwait(false);
+                initialized = true;
+            }
+            catch (Exception ex)
+            {
+                ctxt.Aggregator.Add(ex);
+                return TimeSpan.Zero;
+            }
+        }
+
         ScenarioRandomSeed? randomSeed = ScenarioRandomSeed.Resolve(method.DeclaringType!, method, ctxt.TestMethodArguments);
         ScenarioTestInfo info = new(ctxt.Test.TestDisplayName, method.DeclaringType!, method.Name, method)
         {
@@ -180,6 +175,10 @@ public class ScenarioTestRunnerV3 : XunitTestRunner
         }
         finally
         {
+            if (initialized && lifecycle != null)
+            {
+                try { await lifecycle.DisposeAsync().ConfigureAwait(false); } catch { }
+            }
             ScenarioTestInfo.Current = previousInfo;
             ScenarioAttemptState.Current = previousState;
             IsolationLog.Current = previousNotes;
