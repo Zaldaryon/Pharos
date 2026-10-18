@@ -387,6 +387,12 @@ internal sealed class LinkedUdpNetClient : DummyUdpNetClient
     public override IEnumerable<Packet_UdpPacket> ReadMessage()
     {
         List<Packet_UdpPacket> due = _link.ServerSentUdp(base.ReadMessage());
+        if (_link.IsSevered || _link.HoldServerTraffic)
+        {
+            _overTcp.Clear();
+            return due.Count == 0 ? null! : due;
+        }
+
         while (_overTcp.TryDequeue(out Packet_UdpPacket? packet)) due.Add(packet);
         return due.Count == 0 ? null! : due;
     }
@@ -395,7 +401,11 @@ internal sealed class LinkedUdpNetClient : DummyUdpNetClient
     // over the link already, as TCP. The game's dummy socket does not take them.
     private readonly System.Collections.Concurrent.ConcurrentQueue<Packet_UdpPacket> _overTcp = new();
 
-    public override void EnqueuePacket(Packet_UdpPacket udpPacket) => _overTcp.Enqueue(udpPacket);
+    public override void EnqueuePacket(Packet_UdpPacket udpPacket)
+    {
+        if (_link.IsSevered || _link.HoldServerTraffic) return;
+        _overTcp.Enqueue(udpPacket);
+    }
 
     /// <summary>Puts a delayed datagram on the wire to the server.</summary>
     internal void Deliver(Packet_UdpPacket packet) => base.Send(packet);
