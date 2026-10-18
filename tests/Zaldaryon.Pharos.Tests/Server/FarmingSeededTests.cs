@@ -18,8 +18,8 @@ public sealed class FarmingSeededTests : ServerScenarioBase
     [ServerScenario]
     public async Task FirstStageTime_IsTheSameForTheSameSeed()
     {
-        ServerTestPlayer player = await CreateTestPlayerAsync("SeededStage");
         Host!.Calendar.Freeze();
+        ServerTestPlayer player = await CreateTestPlayerAsync("SeededStage");
         double plantedAtHours = Host!.RunOnGameThread(() => Host.Calendar.TotalHours);
         Host!.Random.Seed(4242);
         Host.RunOnGameThread(() => player.Player!.WorldData.CurrentGameMode = EnumGameMode.Creative);
