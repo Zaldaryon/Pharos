@@ -9,10 +9,11 @@ pharos run tests/MyMod.Tests --filter "Category=Live" --parallel 4 --trx results
 pharos run tests/MyMod.Tests --list
 ```
 
-It lists the tests without running them, splits them into groups, and runs each group in a
-`dotnet vstest` process of its own, `--parallel` at a time. xUnit runs each group exactly as
-`dotnet test` would: fixtures, collections, Pharos's scenario runner, timeouts and skips all
-behave the same. The runner then merges every worker's results into one TRX and one summary.
+It lists the tests without running them, splits them into groups, and runs each group in an
+isolated worker process (`dotnet vstest` for xUnit v2 or Microsoft.Testing.Platform for xUnit v3),
+`--parallel` at a time. The test framework runs each group exactly as `dotnet test` would:
+fixtures, collections, Pharos's scenario runner, timeouts and skips all behave the same. The runner
+then merges every worker's results into one TRX and one summary.
 
 `run` needs no game install of its own. Its workers find the game the way your tests do, through
 `VINTAGE_STORY`, or the install `--game` names.

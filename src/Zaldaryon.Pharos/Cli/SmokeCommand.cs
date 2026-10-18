@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Runtime.InteropServices;
 using Zaldaryon.Pharos.Reporting;
+using Zaldaryon.Pharos.Scenarios;
 using Zaldaryon.Pharos.Server;
 using Zaldaryon.Pharos.XUnit;
 using Zaldaryon.Pharos.XUnit.Execution;
@@ -224,7 +225,7 @@ public static class SmokeCommand
         stdout.WriteLine($"Smoke testing {string.Join(", ", options.Mods.Select(Path.GetFileName))} for {options.Frames} frames{(options.Strict ? ", strict" : "")}...");
         if (!options.Verbose) stdout.WriteLine($"The game's output goes to {log}");
 
-        ScenarioRunner.Result result;
+        ScenarioExecutionResult result;
         TextWriter originalOut = Console.Out, originalError = Console.Error;
         StreamWriter? gameOutput = options.Verbose ? null : new StreamWriter(log, append: false) { AutoFlush = true };
         try
@@ -253,19 +254,22 @@ public static class SmokeCommand
             gameOutput?.Dispose();
         }
 
-        if (result.Succeeded)
+        if (result.Outcome == ScenarioOutcome.Passed)
         {
             stdout.WriteLine("Smoke test passed.");
             return ExitPassed;
         }
 
         stdout.WriteLine("Smoke test failed:");
-        foreach (string failure in result.Failures)
+        if (result.Exception != null)
         {
-            stdout.WriteLine(failure);
+            stdout.WriteLine(result.Exception.Message);
         }
-
-        if (result.Failures.Count == 0)
+        else if (!string.IsNullOrEmpty(result.Output))
+        {
+            stdout.WriteLine(result.Output);
+        }
+        else
         {
             stdout.WriteLine($"The smoke test reported no result. See {log} and the artifacts in {artifacts}.");
         }
@@ -310,27 +314,34 @@ public static class SmokeCommand
         return null;
     }
 
-    private static async Task<ScenarioRunner.Result> RunScenario(SmokeOptions options, string artifacts)
+    private static async Task<ScenarioExecutionResult> RunScenario(SmokeOptions options, string artifacts)
     {
         // The scenario reads the game install from VINTAGE_STORY, like every Pharos host.
         string? previousGame = Environment.GetEnvironmentVariable("VINTAGE_STORY");
         if (options.GamePath != null) Environment.SetEnvironmentVariable("VINTAGE_STORY", Path.GetFullPath(options.GamePath));
 
         FailureArtifactWriter.RootOverride = artifacts;
-        ScenarioTimeouts.Override = options.TimeoutSeconds is { } seconds
+        int timeoutMs = options.TimeoutSeconds is { } seconds
             ? (int)Math.Min(int.MaxValue, seconds * 1000L * ScenarioTimeouts.Scale)
-            : null;
+            : ModSmokeTestBase.SmokeTimeoutMs;
         BootCheck.Forget(typeof(CliModSmokeTest));
 
         try
         {
-            return await ScenarioRunner.RunAsync(typeof(CliModSmokeTest), nameof(ModSmokeTest.ModBootsJoinsAndPlays), options).ConfigureAwait(false);
+            ScenarioExecutionRequest request = new()
+            {
+                DisplayName = "pharos smoke",
+                TestClass = typeof(CliModSmokeTest),
+                Method = typeof(CliModSmokeTest).GetMethod(nameof(ModSmokeTestBase.ModBootsJoinsAndPlays))!,
+                ConstructorArguments = [options],
+                TimeoutMs = timeoutMs,
+            };
+            return await ScenarioEngine.ExecuteAsync(request).ConfigureAwait(false);
         }
         finally
         {
             BootCheck.Forget(typeof(CliModSmokeTest));
             FailureArtifactWriter.RootOverride = null;
-            ScenarioTimeouts.Override = null;
             Environment.SetEnvironmentVariable("VINTAGE_STORY", previousGame);
         }
     }
@@ -363,8 +374,8 @@ public static class SmokeCommand
         }
     }
 
-    /// <summary>The smoke test the command runs: a <see cref="ModSmokeTest"/> configured by the options.</summary>
-    internal sealed class CliModSmokeTest(SmokeOptions options) : ModSmokeTest
+    /// <summary>The smoke test the command runs: a <see cref="ModSmokeTestBase"/> configured by the options.</summary>
+    internal sealed class CliModSmokeTest(SmokeOptions options) : ModSmokeTestBase
     {
         protected override IReadOnlyList<string> ServerModPaths => [.. options.Mods.Select(Path.GetFullPath)];
 

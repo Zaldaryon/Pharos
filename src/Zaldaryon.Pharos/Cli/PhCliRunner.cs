@@ -1,7 +1,6 @@
 using System.Diagnostics;
 using System.Globalization;
 using System.Reflection;
-using Xunit;
 using Zaldaryon.Pharos.Benchmarks;
 using Zaldaryon.Pharos.Reporting;
 

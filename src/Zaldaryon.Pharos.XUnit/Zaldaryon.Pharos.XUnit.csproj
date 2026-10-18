@@ -28,6 +28,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="Zaldaryon.Pharos.Tests" />
+    <InternalsVisibleTo Include="Zaldaryon.Pharos.Docs.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\Zaldaryon.Pharos\Zaldaryon.Pharos.csproj" />
     <ProjectReference Include="..\Zaldaryon.Pharos.Analyzers\Zaldaryon.Pharos.Analyzers.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
   </ItemGroup>

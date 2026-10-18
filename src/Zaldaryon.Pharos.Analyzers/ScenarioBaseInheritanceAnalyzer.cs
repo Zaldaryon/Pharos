@@ -109,6 +109,12 @@ public sealed class ScenarioBaseInheritanceAnalyzer : DiagnosticAnalyzer
             {
                 return true;
             }
+
+            // ModSmokeTest and ModSmokeTestBase derive from ClientServerScenarioBase
+            if (name is "ModSmokeTest" or "ModSmokeTestBase")
+            {
+                return true;
+            }
         }
 
         return false;

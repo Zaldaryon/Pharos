@@ -1,3 +1,4 @@
+using Zaldaryon.Pharos.Scenarios;
 using Zaldaryon.Pharos.Server;
 
 namespace Zaldaryon.Pharos.XUnit.Execution;

@@ -32,7 +32,7 @@ internal static class ScenarioAttributes
     /// </summary>
     public static ServerWorldOptions WorldOptions(Type testClass)
     {
-        ServerWorldAttribute? world = Execution.ScenarioTestInfo.Current?.Method?.GetCustomAttribute<ServerWorldAttribute>(inherit: true)
+        ServerWorldAttribute? world = ScenarioTestInfo.Current?.Method?.GetCustomAttribute<ServerWorldAttribute>(inherit: true)
             ?? ServerWorld(testClass);
         ServerWorldOptions options = new() { WorldName = "Pharos-" + testClass.Name };
         if (world == null) return options;
@@ -62,7 +62,7 @@ internal static class ScenarioAttributes
             levels.Insert(0, type.GetCustomAttributes<DataFilesAttribute>(inherit: false));
         }
 
-        levels.Add(Execution.ScenarioTestInfo.Current?.Method?.GetCustomAttributes<DataFilesAttribute>(inherit: true) ?? []);
+        levels.Add(ScenarioTestInfo.Current?.Method?.GetCustomAttributes<DataFilesAttribute>(inherit: true) ?? []);
         return DataFileSet.Create(levels, sides);
     }
 

@@ -11,7 +11,7 @@ using Zaldaryon.Pharos.Bootstrap;
 using Zaldaryon.Pharos.Core;
 using Zaldaryon.Pharos.Server;
 using Zaldaryon.Pharos.Visual;
-using Zaldaryon.Pharos.XUnit.Execution;
+using Zaldaryon.Pharos.Scenarios;
 
 namespace Zaldaryon.Pharos.Reporting;
 

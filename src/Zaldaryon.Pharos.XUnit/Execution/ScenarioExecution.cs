@@ -6,34 +6,9 @@ using System.Collections;
 using Xunit;
 using Xunit.Abstractions;
 using Xunit.Sdk;
+using Zaldaryon.Pharos.Scenarios;
 
 namespace Zaldaryon.Pharos.XUnit.Execution;
-
-/// <summary>The test a scenario runs, as the failure capture names it.</summary>
-/// <param name="DisplayName">The display name, theory arguments included.</param>
-/// <param name="TestClass">The test class.</param>
-/// <param name="MethodName">The test method's name.</param>
-/// <param name="Method">The test method, when the scenario pipeline runs it.</param>
-internal sealed record ScenarioTestInfo(string DisplayName, Type TestClass, string MethodName, MethodInfo? Method = null)
-{
-    /// <summary>The seed the test runs with, from <see cref="SeededAttribute"/>, or null when it is not seeded.</summary>
-    public ScenarioRandomSeed? RandomSeed { get; init; }
-
-    /// <summary>Reason this running scenario requested a dynamic skip.</summary>
-    public string? DynamicSkipReason { get; set; }
-
-    private static readonly AsyncLocal<ScenarioTestInfo?> s_current = new();
-
-    /// <summary>The scenario test running on this flow, set before its class is created.</summary>
-    public static ScenarioTestInfo? Current
-    {
-        get => s_current.Value;
-        internal set => s_current.Value = value;
-    }
-}
-
-/// <summary>Internal signal used to turn a body-time skip into xUnit's skipped result message.</summary>
-internal sealed class ScenarioSkipException(string reason) : Exception(reason);
 
 internal static class ScenarioSkipDispatch
 {
@@ -53,31 +28,6 @@ internal sealed class ScenarioSkipTracker
     public void MarkSkipped(ITest test) => _skipped.TryAdd(test, 0);
 }
 
-/// <summary>Runs async setup continuations on the thread that owns a fixture-mode game client.</summary>
-internal sealed class ScenarioThreadPump : SynchronizationContext
-{
-    private readonly BlockingCollection<(SendOrPostCallback Callback, object? State)> _queue = new();
-
-    public override void Post(SendOrPostCallback callback, object? state) => _queue.Add((callback, state));
-
-    public bool Run(Task task, CancellationToken abort, TimeSpan grace)
-    {
-        while (!task.IsCompleted && !abort.IsCancellationRequested)
-        {
-            if (_queue.TryTake(out var work, 25)) work.Callback(work.State);
-        }
-        if (!task.IsCompleted && abort.IsCancellationRequested)
-        {
-            DateTime deadline = DateTime.UtcNow + grace;
-            while (!task.IsCompleted && DateTime.UtcNow < deadline)
-                if (_queue.TryTake(out var work, 25)) work.Callback(work.State);
-            return task.IsCompleted;
-        }
-        while (_queue.TryTake(out var work)) work.Callback(work.State);
-        task.GetAwaiter().GetResult();
-        return true;
-    }
-}
 
 internal sealed class ScenarioSkipMessageBus(IMessageBus inner, ScenarioSkipTracker tracker) : IMessageBus
 {
@@ -98,64 +48,16 @@ internal sealed class ScenarioSkipMessageBus(IMessageBus inner, ScenarioSkipTrac
     public void Dispose() { }
 }
 
-/// <summary>
-/// What the scenario pipeline asks of a scenario class: implemented by the scenario base classes.
-/// </summary>
-internal interface IScenarioLifecycle
-{
-    /// <summary>Called just before the test body runs, after the class is initialized.</summary>
-    void BeforeBody();
-
-    /// <summary>Applies per-test environments under the scenario watchdog.</summary>
-    Task ApplyEnvironmentsAsync(CancellationToken cancellationToken);
-
-    /// <summary>Runs registered environment cleanup on the scenario's owning thread.</summary>
-    Task CleanupEnvironmentsAsync(CancellationToken cancellationToken);
-
-    /// <summary>Throws when the scenario logged errors it does not allow; called when the body passed.</summary>
-    void CheckLoggedErrors();
-
-    /// <summary>
-    /// Called when the body ran out of time. <paramref name="stillRunning"/> when it did not stop
-    /// after it was aborted: its host must be abandoned, never disposed or reused.
-    /// </summary>
-    void BodyTimedOut(bool stillRunning);
-
-    /// <summary>
-    /// Saves the failure artifacts while the client and server are still up. Returns the text to
-    /// add to the failure message, or null to leave the failure as it is.
-    /// </summary>
-    string? CaptureFailure(ScenarioTestInfo test, Exception exception, bool timedOut);
-
-    /// <summary>The scenario's embedded server, which <c>pharos fixture</c> saves the world of, or null.</summary>
-    Server.EmbeddedServerHost? FixtureServer { get; }
-}
-
 /// <summary>The watchdog timeouts of scenario attributes.</summary>
-internal static class ScenarioTimeouts
+internal static class XunitScenarioTimeouts
 {
-    /// <summary>Multiplies every scenario timeout, for slow machines: <c>PHAROS_TIMEOUT_SCALE=2</c>.</summary>
-    public const string ScaleVariable = "PHAROS_TIMEOUT_SCALE";
-
-    /// <summary>How long an aborted body gets to stop before its host is given up.</summary>
-    internal static TimeSpan Grace { get; set; } = TimeSpan.FromSeconds(15);
-
-    private static readonly AsyncLocal<int?> s_override = new();
-
-    /// <summary>Replaces the attribute's timeout on this flow, in milliseconds: the smoke runner's <c>--timeout</c>.</summary>
-    internal static int? Override
-    {
-        get => s_override.Value;
-        set => s_override.Value = value;
-    }
-
     /// <summary>
     /// The timeout of a scenario test in milliseconds, 0 for none: the attribute's xUnit
     /// <c>Timeout</c> when set, else its <c>TimeoutMs</c>, scaled by <c>PHAROS_TIMEOUT_SCALE</c>.
     /// </summary>
     public static int Of(ITestMethod testMethod)
     {
-        if (Override is { } overridden) return overridden;
+        if (ScenarioTimeouts.Override is { } overridden) return overridden;
 
         IAttributeInfo? attribute = testMethod.Method.GetCustomAttributes(typeof(FactAttribute)).FirstOrDefault();
         if (attribute == null) return 0;
@@ -164,14 +66,8 @@ internal static class ScenarioTimeouts
         if (timeout <= 0) timeout = Named(attribute, "TimeoutMs");
         if (timeout <= 0) return 0;
 
-        return (int)Math.Clamp(timeout * Scale, 1, int.MaxValue);
+        return (int)Math.Clamp(timeout * ScenarioTimeouts.Scale, 1, int.MaxValue);
     }
-
-    /// <summary>The factor <c>PHAROS_TIMEOUT_SCALE</c> sets, 1 when unset.</summary>
-    internal static double Scale =>
-        double.TryParse(Environment.GetEnvironmentVariable(ScaleVariable), NumberStyles.Float, CultureInfo.InvariantCulture, out double scale) && scale > 0
-            ? scale
-            : 1;
 
     private static int Named(IAttributeInfo attribute, string name)
     {
@@ -191,7 +87,7 @@ internal static class ScenarioTimeouts
 public sealed class ScenarioFactDiscoverer(IMessageSink diagnosticMessageSink) : FactDiscoverer(diagnosticMessageSink)
 {
     internal const string TypeName = "Zaldaryon.Pharos.XUnit.Execution.ScenarioFactDiscoverer";
-    internal const string AssemblyName = "Zaldaryon.Pharos";
+    internal const string AssemblyName = "Zaldaryon.Pharos.XUnit";
 
     /// <inheritdoc />
     protected override IXunitTestCase CreateTestCase(ITestFrameworkDiscoveryOptions discoveryOptions, ITestMethod testMethod, IAttributeInfo factAttribute) =>
@@ -202,7 +98,7 @@ public sealed class ScenarioFactDiscoverer(IMessageSink diagnosticMessageSink) :
 public sealed class ScenarioTheoryDiscoverer(IMessageSink diagnosticMessageSink) : TheoryDiscoverer(diagnosticMessageSink)
 {
     internal const string TypeName = "Zaldaryon.Pharos.XUnit.Execution.ScenarioTheoryDiscoverer";
-    internal const string AssemblyName = "Zaldaryon.Pharos";
+    internal const string AssemblyName = "Zaldaryon.Pharos.XUnit";
 
     /// <inheritdoc />
     protected override IEnumerable<IXunitTestCase> CreateTestCasesForDataRow(ITestFrameworkDiscoveryOptions discoveryOptions, ITestMethod testMethod, IAttributeInfo theoryAttribute, object[] dataRow) =>
@@ -242,7 +138,7 @@ public sealed class ScenarioTestCase : XunitTestCase
 
     /// <inheritdoc />
     public override Task<RunSummary> RunAsync(IMessageSink diagnosticMessageSink, IMessageBus messageBus, object[] constructorArguments, ExceptionAggregator aggregator, CancellationTokenSource cancellationTokenSource) =>
-        new ScenarioTestCaseRunner(this, DisplayName, SkipReason, constructorArguments, TestMethodArguments, messageBus, aggregator, cancellationTokenSource, ScenarioTimeouts.Of(TestMethod), new ScenarioSkipTracker()).RunAsync();
+        new ScenarioTestCaseRunner(this, DisplayName, SkipReason, constructorArguments, TestMethodArguments, messageBus, aggregator, cancellationTokenSource, XunitScenarioTimeouts.Of(TestMethod), new ScenarioSkipTracker()).RunAsync();
 }
 
 /// <summary>A scenario theory whose data is enumerated when it runs.</summary>
@@ -271,12 +167,12 @@ public sealed class ScenarioTheoryTestCase : XunitTheoryTestCase
 
     /// <inheritdoc />
     public override Task<RunSummary> RunAsync(IMessageSink diagnosticMessageSink, IMessageBus messageBus, object[] constructorArguments, ExceptionAggregator aggregator, CancellationTokenSource cancellationTokenSource) =>
-        new ScenarioTheoryTestCaseRunner(this, DisplayName, SkipReason, constructorArguments, diagnosticMessageSink, messageBus, aggregator, cancellationTokenSource, ScenarioTimeouts.Of(TestMethod), new ScenarioSkipTracker()).RunAsync();
+        new ScenarioTheoryTestCaseRunner(this, DisplayName, SkipReason, constructorArguments, diagnosticMessageSink, messageBus, aggregator, cancellationTokenSource, XunitScenarioTimeouts.Of(TestMethod), new ScenarioSkipTracker()).RunAsync();
 }
 
 internal static class ScenarioExplicitSkip
 {
-    public const string RunExplicitVariable = "PHAROS_RUN_EXPLICIT";
+    public const string RunExplicitVariable = ScenarioGate.RunExplicitVariable;
 
     public static string? Of(ITestMethod testMethod)
     {
@@ -388,7 +284,7 @@ internal sealed class ScenarioTestRunner(
                 Exception? failure = aggregator.ToException();
                 ClassifyTerminalFailure(state, failure);
                 string outcome = state.Skipped && failure == null ? "Skipped" : failure == null ? "Passed" : "Failed";
-                ScenarioAttemptManifestWriter.Write(Test, policy,
+                ScenarioAttemptManifestWriterAdapter.Write(Test, policy,
                     [new ScenarioAttemptEntry(1, state.Phase, outcome, (double)result.Item1, failure?.ToString(), state.ArtifactDirectories.ToArray())],
                     outcome, false);
                 return Tuple.Create(result.Item1, s_versions + _randomSeed?.OutputLine + result.Item2 + notes.Text);
@@ -468,7 +364,7 @@ internal sealed class ScenarioTestRunner(
         string historyText = $"Pharos attempts: {history.Count}/{policy.Attempts}; required successes: {policy.RequiredSuccesses}; successes: {successes}; flaky={flaky.ToString().ToLowerInvariant()}.";
         if (history.Count > 1)
             historyText += Environment.NewLine + string.Join(Environment.NewLine, history.Select(a => $"  attempt {a.Number}: {a.Outcome}{(string.IsNullOrWhiteSpace(a.Failure) ? "" : ": " + FirstLine(a.Failure))}"));
-        ScenarioAttemptManifestWriter.Write(Test, policy, history, finalOutcome, flaky);
+        ScenarioAttemptManifestWriterAdapter.Write(Test, policy, history, finalOutcome, flaky);
 
         if (!passed && !skipped)
         {

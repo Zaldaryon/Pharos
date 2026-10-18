@@ -131,6 +131,10 @@ jobs:
         if: matrix.shard == 1
         run: dotnet test tests/Zaldaryon.Pharos.Docs.Tests -c Release --no-build
 
+      - name: Test xUnit v3 scenario package
+        if: matrix.shard == 1
+        run: dotnet test tests/Zaldaryon.Pharos.XUnit.V3.Tests -c Release --no-build
+
       - name: Test
         env:
           VINTAGE_STORY: ${{ steps.vs.outputs.path }}
@@ -365,6 +369,11 @@ jobs:
         run: |
           pharos fixture --preset survival-flat --game "$VINTAGE_STORY"
           pharos fixture --preset survival-standard-small --game "$VINTAGE_STORY"
+
+      - name: Test xUnit v3 scenario package
+        if: matrix.shard == 1
+        shell: bash
+        run: dotnet test tests/Zaldaryon.Pharos.XUnit.V3.Tests -c Release --no-build
 
       - name: Test
         shell: bash

@@ -1,0 +1,41 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>Zaldaryon.Pharos.XUnit.V3</RootNamespace>
+    <AssemblyName>Zaldaryon.Pharos.XUnit.V3</AssemblyName>
+
+    <!-- NuGet packaging -->
+    <IsPackable>true</IsPackable>
+    <IsTestProject>false</IsTestProject>
+    <PackageId>Zaldaryon.Pharos.XUnit.V3</PackageId>
+    <Version>0.7.0-preview</Version>
+    <Authors>Zaldaryon</Authors>
+    <Description>xUnit v3 integration preview package for Pharos headless client test harness.</Description>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <RepositoryUrl>https://github.com/Zaldaryon/Pharos</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageTags>vintagestory;testing;headless;xunit;xunit-v3;game-testing</PackageTags>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="..\..\README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Zaldaryon.Pharos.XUnit.V3.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Zaldaryon.Pharos\Zaldaryon.Pharos.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="xunit.v3.extensibility.core" Version="3.2.2" />
+  </ItemGroup>
+</Project>

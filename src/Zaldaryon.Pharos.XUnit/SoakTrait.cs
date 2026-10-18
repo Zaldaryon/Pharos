@@ -24,7 +24,7 @@ public sealed class SoakTraitDiscoverer : ITraitDiscoverer
     internal const string TypeName = "Zaldaryon.Pharos.XUnit.SoakTraitDiscoverer";
 
     /// <summary>The discoverer's assembly name, for <see cref="TraitDiscovererAttribute"/>.</summary>
-    internal const string AssemblyName = "Zaldaryon.Pharos";
+    internal const string AssemblyName = "Zaldaryon.Pharos.XUnit";
 
     /// <inheritdoc />
     public IEnumerable<KeyValuePair<string, string>> GetTraits(IAttributeInfo traitAttribute)

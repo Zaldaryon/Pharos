@@ -14,20 +14,6 @@ namespace Zaldaryon.Pharos.XUnit;
 /// leaves those out with <c>dotnet test --filter "Category!=Live"</c>. A test that boots a host
 /// without a scenario attribute can say so with <c>[Trait(PharosTraits.Category, PharosTraits.Live)]</c>.
 /// </remarks>
-public static class PharosTraits
-{
-    /// <summary>The trait name Pharos uses.</summary>
-    public const string Category = "Category";
-
-    /// <summary>Tests that boot a real client or server.</summary>
-    public const string Live = "Live";
-
-    /// <summary>Tests that measure throughput and take long to run.</summary>
-    public const string Benchmark = "Benchmark";
-
-    /// <summary>Tests that run game days of a real server, and run only in the nightly full lane.</summary>
-    public const string Soak = "Soak";
-}
 
 /// <summary>
 /// Gives the tests a scenario attribute marks the <c>Category=Live</c> trait.
@@ -38,7 +24,7 @@ public sealed class LiveTraitDiscoverer : ITraitDiscoverer
     internal const string TypeName = "Zaldaryon.Pharos.XUnit.LiveTraitDiscoverer";
 
     /// <summary>The discoverer's assembly name, for <see cref="TraitDiscovererAttribute"/>.</summary>
-    internal const string AssemblyName = "Zaldaryon.Pharos";
+    internal const string AssemblyName = "Zaldaryon.Pharos.XUnit";
 
     /// <inheritdoc />
     public IEnumerable<KeyValuePair<string, string>> GetTraits(IAttributeInfo traitAttribute)
