@@ -9,8 +9,9 @@ the server are still up. It also stops a scenario body that hangs. This covers t
 ## What is saved
 
 Each failed or timed-out test gets its own folder, `<root>/<TestClass>/<TestMethod>`. A theory
-row adds a short hash of its arguments to the method name, and a folder that already exists gets
-`-2`, `-3` and so on, so an earlier run is never overwritten.
+row adds a short hash of its arguments to the method name. A passing run leaves `result.json`
+there; a later failure reuses that folder when it holds only the result, and a folder that already
+has failure files gets `-2`, `-3` and so on. See [Metrics](metrics.md).
 
 | File | What it holds | Saved when |
 |------|---------------|------------|
@@ -20,6 +21,7 @@ row adds a short hash of its arguments to the method name, and a folder that alr
 | `packets.json` | The client-server traffic of the test, in the `PacketRecorder` format. | `Packets`, which is off by default |
 | `soak.csv` | The readings of a soak run the test made: ticks, game time, tick times, heap, entities, chunks and listeners, one row a sample. | The test made a soak run with `DaysAsync`. |
 | `run.json` | The test, the outcome (`failed` or `timedOut`), the exception, the game and Pharos versions, the game install, the Optimum build (`optimum`, null on vanilla), the world's seed, world type and play style, the random seed and where it came from (`randomSeed` and `randomSeedSource`, null when the test is not seeded), the isolation and the isolation report (how the hosts were made ready, and what a rollback put back: chunks, players, mod data keys, map regions, data files, listeners removed), the client's boot mode, the frames and server ticks the test stepped, the server's clock (`serverClock`: `real`, or `virtual` with its tick, whether the calendar followed it and the simulated time), the run id, the time, the OS and the files written. | `RunInfo` |
+| `result.json` | The metrics of the test, pass or fail: custom readings and the automatic collectors, with samples and statistics. | Every test |
 
 The failure message itself starts with the original exception's type and message. It then says
 where the artifacts went and lists the first 20 errors the client and the server logged. On a

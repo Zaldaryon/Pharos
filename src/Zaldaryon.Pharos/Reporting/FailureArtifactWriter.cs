@@ -290,19 +290,18 @@ internal static class FailureArtifactWriter
     internal static string CreateDirectory(ScenarioFailure failure)
     {
         string classFolder = Sanitize(failure.TestClass.Name);
-        string testFolder = Sanitize(failure.MethodName);
-
-        // A theory row's display name carries its arguments; the hash tells the rows apart.
-        if (!failure.DisplayName.EndsWith("." + failure.MethodName, StringComparison.Ordinal) && failure.DisplayName != failure.MethodName)
-        {
-            string hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(failure.DisplayName)))[..8].ToLowerInvariant();
-            testFolder = testFolder[..Math.Min(testFolder.Length, MaxNameLength - 9)] + "-" + hash;
-        }
+        string testFolder = TestFolder(failure.DisplayName, failure.MethodName);
 
         lock (s_directoryLock)
         {
+            if (ScenarioAttemptState.Current?.MetricsDirectory is { } metricsDirectory &&
+                Directory.Exists(metricsDirectory) && HoldsOnlyMetrics(metricsDirectory))
+            {
+                return metricsDirectory;
+            }
+
             string path = Path.Combine(Root, classFolder, testFolder);
-            for (int n = 2; Directory.Exists(path); n++)
+            for (int n = 2; Directory.Exists(path) && !HoldsOnlyMetrics(path); n++)
             {
                 path = Path.Combine(Root, classFolder, testFolder + "-" + n.ToString(CultureInfo.InvariantCulture));
             }
@@ -310,6 +309,49 @@ internal static class FailureArtifactWriter
             Directory.CreateDirectory(path);
             return path;
         }
+    }
+
+    /// <summary>The folder a test's <c>result.json</c> is written to: <c>Root/Class/Method</c>.</summary>
+    internal static string CreateResultDirectory(ScenarioTestInfo test)
+    {
+        ArgumentNullException.ThrowIfNull(test);
+        string classFolder = Sanitize(test.TestClass.Name);
+        string testFolder = TestFolder(test.DisplayName, test.MethodName);
+        lock (s_directoryLock)
+        {
+            string path = Path.Combine(Root, classFolder, testFolder);
+            Directory.CreateDirectory(path);
+            return path;
+        }
+    }
+
+    private static string TestFolder(string displayName, string methodName)
+    {
+        string testFolder = Sanitize(methodName);
+
+        // A theory row's display name carries its arguments; the hash tells the rows apart.
+        if (!displayName.EndsWith("." + methodName, StringComparison.Ordinal) && displayName != methodName)
+        {
+            string hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(displayName)))[..8].ToLowerInvariant();
+            testFolder = testFolder[..Math.Min(testFolder.Length, MaxNameLength - 9)] + "-" + hash;
+        }
+
+        return testFolder;
+    }
+
+    // A folder that holds a passed test's result.json has room for its failure artifacts too;
+    // a folder that already has a failed attempt's files gets a new one.
+    private static bool HoldsOnlyMetrics(string directory)
+    {
+        foreach (string file in Directory.EnumerateFiles(directory, "*", SearchOption.TopDirectoryOnly))
+        {
+            string name = Path.GetFileName(file);
+            if (name is not "result.json") return false;
+        }
+
+        if (Directory.EnumerateDirectories(directory, "*", SearchOption.TopDirectoryOnly).Any()) return false;
+
+        return true;
     }
 
     internal static string Sanitize(string name)
@@ -519,6 +561,10 @@ internal static class FailureArtifactWriter
                 }).ToArray(),
             } : null,
             ["stateHashes"] = failure.Server?.LastStateHashes is { } hashes ? JsonNode.Parse(hashes.ToJson()) : null,
+            ["metrics"] = ScenarioAttemptState.Current?.Metrics,
+            ["metricsResult"] = ScenarioAttemptState.Current?.MetricsDirectory is { } metricsDirectory
+                ? Path.Combine(metricsDirectory, "result.json")
+                : null,
             ["runId"] = RunId,
             ["timeUtc"] = DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture),
             ["os"] = RuntimeInformation.OSDescription,
@@ -528,7 +574,12 @@ internal static class FailureArtifactWriter
             ["kept"] = kept.ToArray(),
         };
 
-        File.WriteAllText(path, JsonSerializer.Serialize(info, new JsonSerializerOptions { WriteIndented = true, Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping }), new UTF8Encoding(false));
+        File.WriteAllText(path, JsonSerializer.Serialize(info, new JsonSerializerOptions
+        {
+            WriteIndented = true,
+            Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        }), new UTF8Encoding(false));
     }
 
     /// <summary>The version of the game that is loaded, which can differ from the one Pharos was built against.</summary>

@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Reflection;
 using System.Collections.Concurrent;
 using System.Collections;
+using System.Diagnostics;
 using Xunit;
 using Xunit.Abstractions;
 using Xunit.Sdk;
@@ -286,7 +287,7 @@ internal sealed class ScenarioTestRunner(
                 string outcome = state.Skipped && failure == null ? "Skipped" : failure == null ? "Passed" : "Failed";
                 ScenarioAttemptManifestWriterAdapter.Write(Test, policy,
                     [new ScenarioAttemptEntry(1, state.Phase, outcome, (double)result.Item1, failure?.ToString(), state.ArtifactDirectories.ToArray())],
-                    outcome, false);
+                    outcome, false, state.Metrics);
                 return Tuple.Create(result.Item1, s_versions + _randomSeed?.OutputLine + result.Item2 + notes.Text);
             }
             finally
@@ -303,6 +304,7 @@ internal sealed class ScenarioTestRunner(
         List<string> attemptOutputs = [];
         bool skipped = false;
         CapturingMessageBus? finalMessages = null;
+        IReadOnlyDictionary<string, Zaldaryon.Pharos.Metrics.MetricSummary>? lastMetrics = null;
         for (int number = 1; number <= policy.Attempts; number++)
         {
             if (CancellationTokenSource.IsCancellationRequested) break;
@@ -336,6 +338,7 @@ internal sealed class ScenarioTestRunner(
 
             Exception? failure = attemptAggregator.ToException();
             ClassifyTerminalFailure(state, failure);
+            lastMetrics = state.Metrics;
             lastFailure = failure;
             totalTime += result.Item1;
             attemptOutputs.Add(result.Item2 + notes.Text);
@@ -364,7 +367,7 @@ internal sealed class ScenarioTestRunner(
         string historyText = $"Pharos attempts: {history.Count}/{policy.Attempts}; required successes: {policy.RequiredSuccesses}; successes: {successes}; flaky={flaky.ToString().ToLowerInvariant()}.";
         if (history.Count > 1)
             historyText += Environment.NewLine + string.Join(Environment.NewLine, history.Select(a => $"  attempt {a.Number}: {a.Outcome}{(string.IsNullOrWhiteSpace(a.Failure) ? "" : ": " + FirstLine(a.Failure))}"));
-        ScenarioAttemptManifestWriterAdapter.Write(Test, policy, history, finalOutcome, flaky);
+        ScenarioAttemptManifestWriterAdapter.Write(Test, policy, history, finalOutcome, flaky, lastMetrics);
 
         if (!passed && !skipped)
         {
@@ -448,10 +451,15 @@ internal sealed class ScenarioTestInvoker(
 
         if (lifecycle != null && !Aggregator.HasExceptions)
         {
-            Aggregator.Run(lifecycle.BeforeBody);
-            if (Aggregator.HasExceptions)
+            try
             {
+                lifecycle.BeforeBody();
+            }
+            catch (Exception ex)
+            {
+                Aggregator.Add(ex);
                 ScenarioAttemptState.Current?.MarkNonRetryable();
+                ReleaseHostOnSetupFailure(lifecycle);
                 return 0m;
             }
         }
@@ -733,6 +741,23 @@ internal sealed class ScenarioTestInvoker(
         AggregateException aggregate => aggregate.InnerExceptions.Any(WasAborted),
         _ => exception.InnerException is { } inner && WasAborted(inner),
     };
+
+    /// <summary>
+    /// Releases the host when <see cref="IScenarioLifecycle.BeforeBody"/> failed, before this
+    /// invoker returns without reaching the class's disposal. The release must never replace the
+    /// setup's own failure as the reason the test failed.
+    /// </summary>
+    private static void ReleaseHostOnSetupFailure(IScenarioLifecycle lifecycle)
+    {
+        try
+        {
+            lifecycle.ReleaseHostOnSetupFailure();
+        }
+        catch (Exception ex)
+        {
+            Trace.TraceWarning($"Pharos could not release the scenario host after a setup failure: {ex.GetType().Name}: {ex.Message}");
+        }
+    }
 
     /// <summary>Gives the pipeline the stock invocation of the test method.</summary>
     private sealed class BodyInvoker(

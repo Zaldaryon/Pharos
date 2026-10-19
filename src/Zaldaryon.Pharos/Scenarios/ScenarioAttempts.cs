@@ -53,6 +53,26 @@ public sealed class ScenarioAttemptState
     /// <summary>All artifact directories captured during this attempt.</summary>
     public IReadOnlyList<string> ArtifactDirectories => _artifactDirectories;
 
+    /// <summary>The folder the test's metrics were written to, when they were.</summary>
+    public string? MetricsDirectory { get; private set; }
+
+    /// <summary>The metrics this attempt collected, for its <c>pharos-run.json</c> record.</summary>
+    public IReadOnlyDictionary<string, Zaldaryon.Pharos.Metrics.MetricSummary>? Metrics { get; private set; }
+
+    /// <summary>Records where the attempt's <c>result.json</c> was written.</summary>
+    public void SetMetricsDirectory(string directory)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(directory);
+        MetricsDirectory = directory;
+    }
+
+    /// <summary>Records the attempt's metrics summary.</summary>
+    public void SetMetrics(IReadOnlyDictionary<string, Zaldaryon.Pharos.Metrics.MetricSummary> metrics)
+    {
+        ArgumentNullException.ThrowIfNull(metrics);
+        Metrics = metrics;
+    }
+
     /// <summary>Marks this attempt as non-retryable.</summary>
     public void MarkNonRetryable(string phase = "setup")
     {
@@ -86,7 +106,8 @@ public sealed record ScenarioAttemptFragment(
     string RawOutcome,
     string FinalOutcome,
     bool Flaky,
-    IReadOnlyList<ScenarioAttemptEntry> AttemptHistory);
+    IReadOnlyList<ScenarioAttemptEntry> AttemptHistory,
+    IReadOnlyDictionary<string, Zaldaryon.Pharos.Metrics.MetricSummary>? Metrics = null);
 
 /// <summary>Writes attempt manifests to disk for worker coordination and flaky test analysis.</summary>
 public static class ScenarioAttemptManifestWriter
@@ -109,14 +130,15 @@ public static class ScenarioAttemptManifestWriter
         ScenarioAttemptPolicy policy,
         IReadOnlyList<ScenarioAttemptEntry> attempts,
         string outcome,
-        bool flaky)
+        bool flaky,
+        IReadOnlyDictionary<string, Zaldaryon.Pharos.Metrics.MetricSummary>? metrics = null)
     {
         string? directory = Environment.GetEnvironmentVariable(DirectoryVariable);
         if (string.IsNullOrWhiteSpace(directory)) return;
 
         try
         {
-            WriteCore(assembly, fullyQualifiedName, displayName, policy, attempts, outcome, flaky, directory);
+            WriteCore(assembly, fullyQualifiedName, displayName, policy, attempts, outcome, flaky, directory, metrics);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException or
                                    JsonException or ArgumentException or NotSupportedException)
@@ -133,7 +155,8 @@ public static class ScenarioAttemptManifestWriter
         IReadOnlyList<ScenarioAttemptEntry> attempts,
         string outcome,
         bool flaky,
-        string directory)
+        string directory,
+        IReadOnlyDictionary<string, Zaldaryon.Pharos.Metrics.MetricSummary>? metrics)
     {
         Directory.CreateDirectory(directory);
         string identity = fullyQualifiedName + "\0" + displayName;
@@ -141,7 +164,7 @@ public static class ScenarioAttemptManifestWriter
         ScenarioAttemptFragment record = new(1, Environment.GetEnvironmentVariable("PHAROS_RUN_ID") ?? "",
             assembly,
             fullyQualifiedName, displayName,
-            policy.Attempts, policy.RequiredSuccesses, outcome, outcome, flaky, attempts);
+            policy.Attempts, policy.RequiredSuccesses, outcome, outcome, flaky, attempts, metrics);
         string path = Path.Combine(directory, $"{stem}-{Guid.NewGuid():N}.json");
         string temporary = path + ".tmp";
         try

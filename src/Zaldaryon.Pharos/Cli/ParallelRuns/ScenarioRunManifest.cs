@@ -22,7 +22,8 @@ internal sealed record ScenarioRunWorker(int Index, string Group, int? ExitCode,
 
 internal sealed record ScenarioRunTest(string FullyQualifiedName, string DisplayName, string RawOutcome,
     string FinalOutcome, bool? Flaky, bool Quarantined, string? QuarantineOwner, string? QuarantineExpiresOn,
-    string? FailurePhase, IReadOnlyList<ScenarioAttemptEntry>? Attempts);
+    string? FailurePhase, IReadOnlyList<ScenarioAttemptEntry>? Attempts,
+    IReadOnlyDictionary<string, Zaldaryon.Pharos.Metrics.MetricSummary>? Metrics = null);
 
 internal static class ScenarioRunManifestWriter
 {
@@ -88,7 +89,7 @@ internal static class ScenarioRunManifestWriter
             return new ScenarioRunTest(result.FullyQualifiedName, result.TestName, result.Outcome,
                 quarantine == null ? result.Outcome : "Quarantined", fragment?.Flaky, quarantine != null,
                 quarantine?.Owner, quarantine?.ExpiresOn.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
-                phase, fragment?.AttemptHistory);
+                phase, fragment?.AttemptHistory, fragment?.Metrics);
         }).ToList();
         ScenarioRunManifest manifest = new(1, runId, started.ToUniversalTime(), finished.ToUniversalTime(), assembly,
             Path.GetFullPath(trxPath), outcomes.Select(o => new ScenarioRunWorker(o.Index, o.Group.Name, o.ExitCode,

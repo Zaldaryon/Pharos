@@ -268,6 +268,7 @@ See the [inspection API reference](docs/inspection-api.md) for method signatures
 - [Parallel Runs](docs/parallel-runs.md): `pharos run --parallel`, which runs test classes in worker processes and merges their results
 - [Test Worlds](docs/test-worlds.md): Schematics, saved worlds with `[ServerWorld(SaveFile = ...)]`, and `pharos fixture`
 - [Failure Artifacts and the Watchdog](docs/failure-artifacts.md): The screenshot, logs, traffic and run details a failing scenario saves, and the timeout that stops a hung one
+- [Metrics](docs/metrics.md): Named per-test metrics, automatic frame/tick/memory/GL/network/world collectors, and the `result.json` schema
 - [CI and Cloud Environments](docs/ci-and-cloud.md): Running the suite in CI and cloud environments, offline or online auth, and a dedicated server in Docker
 - [Client-Server Testing](docs/writing-client-server-scenarios.md): `[ClientServerScenario]`, lockstep stepping, and packet assertions
 - [Inspection API Reference](docs/inspection-api.md): Detailed API for all inspector classes

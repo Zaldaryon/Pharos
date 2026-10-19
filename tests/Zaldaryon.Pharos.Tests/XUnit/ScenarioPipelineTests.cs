@@ -42,6 +42,20 @@ public class ScenarioPipelineTests
     }
 
     [Fact]
+    public async Task BodyThatFailsBeforeItStarts_ReleasesTheHostAndReportsTheSetupFailure()
+    {
+        Recorder.Reset();
+        Recorder.FailBeforeBody = true;
+
+        ScenarioRunnerHarness.RunResult result = await ScenarioRunnerHarness.RunAsync(typeof(Sample), nameof(Sample.Passes));
+
+        Assert.Equal(typeof(InvalidOperationException).FullName, result.FailureType);
+        Assert.Contains("before failed", result.FailureMessage);
+        Assert.Contains("release-on-setup-failure", Recorder.Events);
+        Assert.DoesNotContain("body", Recorder.Events);
+    }
+
+    [Fact]
     public async Task Retry_StopsWhenRequiredSuccessesAreSatisfied()
     {
         Recorder.Reset();
@@ -582,6 +596,7 @@ public class ScenarioPipelineTests
 
         public static IReadOnlyList<string> Events => [.. s_events];
         public static bool FailCheck { get; set; }
+        public static bool FailBeforeBody { get; set; }
         public static bool CaptureArtifacts { get; set; }
         public static int AttemptBodies;
         public static int InstanceCount;
@@ -596,6 +611,7 @@ public class ScenarioPipelineTests
         {
             s_events.Clear();
             FailCheck = false;
+            FailBeforeBody = false;
             CaptureArtifacts = false;
             AttemptBodies = 0;
             InstanceCount = 0;
@@ -631,7 +647,13 @@ public class ScenarioPipelineTests
             Recorder.Add("dispose");
         }
 
-        void IScenarioLifecycle.BeforeBody() => Recorder.Add("before");
+        void IScenarioLifecycle.BeforeBody()
+        {
+            Recorder.Add("before");
+            if (Recorder.FailBeforeBody) throw new InvalidOperationException("before failed");
+        }
+
+        void IScenarioLifecycle.ReleaseHostOnSetupFailure() => Recorder.Add("release-on-setup-failure");
 
         Task IScenarioLifecycle.ApplyEnvironmentsAsync(CancellationToken cancellationToken)
         {

@@ -175,11 +175,16 @@ internal sealed class ServerTickCollector
     private static bool t_pending;
 
     private readonly List<long> _ticks;
+    private readonly Dictionary<string, List<double>> _systems = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, List<double>> _listeners = new(StringComparer.Ordinal);
 
     public ServerTickCollector(int expectedTicks)
     {
         _ticks = new List<long>(expectedTicks);
     }
+
+    /// <summary>The collector measuring this thread, when a measurement is open.</summary>
+    internal static ServerTickCollector? Active => t_active;
 
     /// <summary>Bytes the server thread allocated in the measured ticks.</summary>
     public long AllocatedBytes { get; private set; }
@@ -200,6 +205,26 @@ internal sealed class ServerTickCollector
     }
 
     public TimingStats Ticks() => TimingStats.FromTicks([.. _ticks], _ticks.Count);
+
+    /// <summary>Milliseconds each server system spent in its measured ticks, by system type.</summary>
+    internal IReadOnlyDictionary<string, IReadOnlyList<double>> SystemTimes() =>
+        _systems.ToDictionary(pair => pair.Key, pair => (IReadOnlyList<double>)pair.Value, StringComparer.Ordinal);
+
+    /// <summary>Milliseconds each game-tick listener spent in its measured ticks, by target type.</summary>
+    internal IReadOnlyDictionary<string, IReadOnlyList<double>> ListenerTimes() =>
+        _listeners.ToDictionary(pair => pair.Key, pair => (IReadOnlyList<double>)pair.Value, StringComparer.Ordinal);
+
+    internal void RecordSystemTick(string name, double milliseconds)
+    {
+        if (!_systems.TryGetValue(name, out List<double>? samples)) _systems[name] = samples = [];
+        samples.Add(milliseconds);
+    }
+
+    internal void RecordListenerTick(string name, double milliseconds)
+    {
+        if (!_listeners.TryGetValue(name, out List<double>? samples)) _listeners[name] = samples = [];
+        samples.Add(milliseconds);
+    }
 
     // ServerMain.Process starts. A suspended server only sleeps: no tick to count.
     internal static void TickStarting(bool suspended)

@@ -165,6 +165,7 @@ public static class ScenarioEngine
         bool skipped = false;
         string? skipReason = null;
         List<string> allArtifactDirs = [];
+        IReadOnlyDictionary<string, Metrics.MetricSummary>? lastMetrics = null;
 
         for (int number = 1; number <= policy.Attempts; number++)
         {
@@ -242,6 +243,7 @@ public static class ScenarioEngine
             allArtifactDirs.AddRange(state.ArtifactDirectories);
 
             ClassifyTerminalFailure(state, attemptException);
+            lastMetrics = state.Metrics;
             lastFailure = attemptException;
             attemptOutputs.Add(notes.Text);
 
@@ -272,7 +274,8 @@ public static class ScenarioEngine
             policy,
             history,
             finalOutcome,
-            flaky);
+            flaky,
+            lastMetrics);
 
         // 6. Build combined output
         string outputBody = policy.Attempts == 1
@@ -315,6 +318,7 @@ public static class ScenarioEngine
             catch (Exception ex)
             {
                 ScenarioAttemptState.Current?.MarkNonRetryable();
+                ReleaseHostOnSetupFailure(lifecycle);
                 reportException(ex);
                 return 0m;
             }
@@ -541,6 +545,22 @@ public static class ScenarioEngine
         }
 
         return elapsedSeconds;
+    }
+
+    /// <summary>
+    /// Releases the host when <see cref="IScenarioLifecycle.BeforeBody"/> failed. The release
+    /// itself must never replace the setup's own failure as the reason the test failed.
+    /// </summary>
+    private static void ReleaseHostOnSetupFailure(IScenarioLifecycle lifecycle)
+    {
+        try
+        {
+            lifecycle.ReleaseHostOnSetupFailure();
+        }
+        catch (Exception ex)
+        {
+            Trace.TraceWarning($"Pharos could not release the scenario host after a setup failure: {ex.GetType().Name}: {ex.Message}");
+        }
     }
 
     private static async Task InvokeMethodAsync(MethodInfo method, object instance, object?[]? arguments)

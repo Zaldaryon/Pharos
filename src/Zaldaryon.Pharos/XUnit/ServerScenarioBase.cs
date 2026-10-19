@@ -4,6 +4,7 @@ using Vintagestory.API.Config;
 using Vintagestory.API.MathTools;
 using Vintagestory.API.Server;
 using Vintagestory.Server;
+using Zaldaryon.Pharos.Metrics;
 using Zaldaryon.Pharos.Reporting;
 using Zaldaryon.Pharos.Scenarios;
 using Zaldaryon.Pharos.Server;
@@ -40,6 +41,7 @@ namespace Zaldaryon.Pharos.XUnit;
 public abstract class ServerScenarioBase : IScenarioLifecycle, IAsyncDisposable
 {
     private readonly ScenarioRun _run = new();
+    private ScenarioMetricsSession? _metrics;
     private EmbeddedServerHost? _host;
     private IDisposable? _gate;
     private PooledServer? _pooled;
@@ -312,6 +314,33 @@ public abstract class ServerScenarioBase : IScenarioLifecycle, IAsyncDisposable
     {
         _run.BodyStarting(frames: null, ticks: _host?.TickCount);
         ScenarioRun.SeedRandom(this, _host?.Random, client: null);
+        _metrics = ScenarioMetricsSession.Start(
+            ScenarioTestInfo.Current ?? throw new InvalidOperationException("Scenario test information is not available."),
+            client: null, server: _host, isolation: IsolationReport);
+    }
+
+    void IScenarioLifecycle.ReleaseHostOnSetupFailure()
+    {
+        _capturing = null;
+        if (_pooled != null)
+        {
+            try
+            {
+                _pooled.Dispose();
+            }
+            catch
+            {
+                // A server that fails to shut down must not hide why it failed to start.
+            }
+
+            _pooled = null;
+            ScenarioHostPool.HostDisposed();
+            IsolationLog.Left(GetType(), null, "the previous test failed to start");
+        }
+
+        _host = null;
+        _gate?.Dispose();
+        _gate = null;
     }
 
     Task IScenarioLifecycle.ApplyEnvironmentsAsync(CancellationToken cancellationToken)
@@ -325,6 +354,9 @@ public abstract class ServerScenarioBase : IScenarioLifecycle, IAsyncDisposable
 
     private async Task CleanupEnvironmentsAsync(CancellationToken cancellationToken)
     {
+        _metrics?.Complete();
+        _metrics = null;
+
         ScenarioContext? context = _environmentContext;
         if (context != null)
         {
@@ -347,8 +379,13 @@ public abstract class ServerScenarioBase : IScenarioLifecycle, IAsyncDisposable
     protected Task<World.SchematicPlacement> PlaceSchematicAsync(string path, Vintagestory.API.MathTools.BlockPos origin, World.SchematicOptions? options = null, CancellationToken ct = default) =>
         (Host ?? throw new InvalidOperationException("The server is not running.")).PlaceSchematicAsync(path, origin, options, ct);
 
-    string? IScenarioLifecycle.CaptureFailure(ScenarioTestInfo test, Exception exception, bool timedOut) =>
-        FailureArtifactWriter.Write(Describe(test, exception, timedOut, _host, _pooled?.Sandbox)).Summary();
+    string? IScenarioLifecycle.CaptureFailure(ScenarioTestInfo test, Exception exception, bool timedOut)
+    {
+        ScenarioFailure failure = Describe(test, exception, timedOut, _host, _pooled?.Sandbox);
+        _metrics?.Complete(timedOut, FailureArtifactWriter.CreateDirectory(failure));
+        _metrics = null;
+        return FailureArtifactWriter.Write(failure).Summary();
+    }
 
     private ScenarioFailure Describe(ScenarioTestInfo test, Exception exception, bool timedOut, EmbeddedServerHost? server, ServerSandbox? sandbox) => new()
     {
