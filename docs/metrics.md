@@ -165,10 +165,13 @@ compact summaries, so `pharos run`, `pharos diff` and `pharos compare` read one 
 - The automatic frame collector records frame duration and frame count. Render-stage and
   per-renderer breakdowns are available from `Session.MeasureFramesAsync`, which remains the tool
   for a dedicated measured window.
-- Network metrics read the client's mod-channel log. Vanilla packet ids and server-side mod
-  messages are not broken out by the automatic collector.
+- Network metrics read the client's mod-channel log, on an engine-mode client. Fixture-mode
+  clients have no mod network log and record no network metrics. Vanilla packet ids and
+  server-side mod messages are not broken out by the automatic collector.
 - The GL collector reports command and resource counts; VRAM and texture-atlas pages are not part
   of this schema yet.
 - Per-system and per-listener tick times cover calls that happen while the scenario's tick
   collector is open. A scenario that also opens `MeasureFramesAsync` yields its tick collector to
   that measurement and records only custom metrics for that window.
+- Metrics never fail the test they measure. A session whose collectors cannot start, or a
+  collector that fails while completing, is skipped and the test still reports its own outcome.
