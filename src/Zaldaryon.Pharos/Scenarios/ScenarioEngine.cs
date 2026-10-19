@@ -165,6 +165,7 @@ public static class ScenarioEngine
         bool skipped = false;
         string? skipReason = null;
         List<string> allArtifactDirs = [];
+        IReadOnlyDictionary<string, Metrics.MetricSummary>? lastMetrics = null;
 
         for (int number = 1; number <= policy.Attempts; number++)
         {
@@ -242,6 +243,7 @@ public static class ScenarioEngine
             allArtifactDirs.AddRange(state.ArtifactDirectories);
 
             ClassifyTerminalFailure(state, attemptException);
+            lastMetrics = state.Metrics;
             lastFailure = attemptException;
             attemptOutputs.Add(notes.Text);
 
@@ -272,7 +274,8 @@ public static class ScenarioEngine
             policy,
             history,
             finalOutcome,
-            flaky);
+            flaky,
+            lastMetrics);
 
         // 6. Build combined output
         string outputBody = policy.Attempts == 1

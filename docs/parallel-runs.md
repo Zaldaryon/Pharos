@@ -110,9 +110,9 @@ failure is retried; setup, cleanup, teardown, timeout, cancellation, skip and wo
 remain failures or skips. xUnit and TRX still receive one final result for each theory row.
 
 Each `pharos run` writes a versioned `pharos-run.json` beside the merged TRX, with raw/final
-outcomes, attempt history, flaky status, worker state and lost tests. Worker attempt fragments
-are diagnostic metadata; if a fragment cannot be written or read, flaky status is unknown and
-the test result is unchanged.
+outcomes, attempt history, flaky status, worker state, lost tests and each test's metric summaries.
+Worker attempt fragments are diagnostic metadata; if a fragment cannot be written or read, flaky
+status is unknown and the test result is unchanged.
 
 ```bash
 pharos run tests/MyMod.Tests --filter "Category=Live" --repeat 5

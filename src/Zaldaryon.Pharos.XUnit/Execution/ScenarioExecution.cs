@@ -286,7 +286,7 @@ internal sealed class ScenarioTestRunner(
                 string outcome = state.Skipped && failure == null ? "Skipped" : failure == null ? "Passed" : "Failed";
                 ScenarioAttemptManifestWriterAdapter.Write(Test, policy,
                     [new ScenarioAttemptEntry(1, state.Phase, outcome, (double)result.Item1, failure?.ToString(), state.ArtifactDirectories.ToArray())],
-                    outcome, false);
+                    outcome, false, state.Metrics);
                 return Tuple.Create(result.Item1, s_versions + _randomSeed?.OutputLine + result.Item2 + notes.Text);
             }
             finally
@@ -303,6 +303,7 @@ internal sealed class ScenarioTestRunner(
         List<string> attemptOutputs = [];
         bool skipped = false;
         CapturingMessageBus? finalMessages = null;
+        IReadOnlyDictionary<string, Zaldaryon.Pharos.Metrics.MetricSummary>? lastMetrics = null;
         for (int number = 1; number <= policy.Attempts; number++)
         {
             if (CancellationTokenSource.IsCancellationRequested) break;
@@ -336,6 +337,7 @@ internal sealed class ScenarioTestRunner(
 
             Exception? failure = attemptAggregator.ToException();
             ClassifyTerminalFailure(state, failure);
+            lastMetrics = state.Metrics;
             lastFailure = failure;
             totalTime += result.Item1;
             attemptOutputs.Add(result.Item2 + notes.Text);
@@ -364,7 +366,7 @@ internal sealed class ScenarioTestRunner(
         string historyText = $"Pharos attempts: {history.Count}/{policy.Attempts}; required successes: {policy.RequiredSuccesses}; successes: {successes}; flaky={flaky.ToString().ToLowerInvariant()}.";
         if (history.Count > 1)
             historyText += Environment.NewLine + string.Join(Environment.NewLine, history.Select(a => $"  attempt {a.Number}: {a.Outcome}{(string.IsNullOrWhiteSpace(a.Failure) ? "" : ": " + FirstLine(a.Failure))}"));
-        ScenarioAttemptManifestWriterAdapter.Write(Test, policy, history, finalOutcome, flaky);
+        ScenarioAttemptManifestWriterAdapter.Write(Test, policy, history, finalOutcome, flaky, lastMetrics);
 
         if (!passed && !skipped)
         {

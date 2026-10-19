@@ -6,6 +6,7 @@ using Vintagestory.API.Server;
 using Vintagestory.Server;
 using Zaldaryon.Pharos.Bootstrap;
 using Zaldaryon.Pharos.Core;
+using Zaldaryon.Pharos.Metrics;
 using Zaldaryon.Pharos.Player;
 using Zaldaryon.Pharos.Reporting;
 using Zaldaryon.Pharos.Scenarios;
@@ -50,6 +51,7 @@ namespace Zaldaryon.Pharos.XUnit;
 public abstract class ClientServerScenarioBase : IScenarioLifecycle, IAsyncDisposable
 {
     private readonly ScenarioRun _run = new();
+    private ScenarioMetricsSession? _metrics;
     private ServerSandbox? _sandbox;
     private EmbeddedServerHost? _serverHost;
     private HeadlessClient? _client;
@@ -580,6 +582,9 @@ public abstract class ClientServerScenarioBase : IScenarioLifecycle, IAsyncDispo
         }
 
         ScenarioRun.SeedRandom(this, _serverHost?.Random, _client?.Random);
+        _metrics = ScenarioMetricsSession.Start(
+            ScenarioTestInfo.Current ?? throw new InvalidOperationException("Scenario test information is not available."),
+            client: _client, server: _serverHost, isolation: IsolationReport);
     }
 
     Task IScenarioLifecycle.ApplyEnvironmentsAsync(CancellationToken cancellationToken)
@@ -593,6 +598,9 @@ public abstract class ClientServerScenarioBase : IScenarioLifecycle, IAsyncDispo
 
     private async Task CleanupEnvironmentsAsync(CancellationToken cancellationToken)
     {
+        _metrics?.Complete();
+        _metrics = null;
+
         ScenarioContext? context = _environmentContext;
         if (context != null)
         {
@@ -629,8 +637,13 @@ public abstract class ClientServerScenarioBase : IScenarioLifecycle, IAsyncDispo
     protected Task<World.SchematicPlacement> PlaceSchematicAsync(string path, Vintagestory.API.MathTools.BlockPos origin, World.SchematicOptions? options = null, int maxFrames = 600, CancellationToken ct = default) =>
         (Session ?? throw new InvalidOperationException("The session is not running.")).PlaceSchematicAsync(path, origin, options, maxFrames, ct);
 
-    string? IScenarioLifecycle.CaptureFailure(ScenarioTestInfo test, Exception exception, bool timedOut) =>
-        FailureArtifactWriter.Write(Describe(test, exception, timedOut)).Summary();
+    string? IScenarioLifecycle.CaptureFailure(ScenarioTestInfo test, Exception exception, bool timedOut)
+    {
+        ScenarioFailure failure = Describe(test, exception, timedOut);
+        _metrics?.Complete(timedOut, FailureArtifactWriter.CreateDirectory(failure));
+        _metrics = null;
+        return FailureArtifactWriter.Write(failure).Summary();
+    }
 
     private ScenarioFailure Describe(ScenarioTestInfo test, Exception exception, bool timedOut) => new()
     {

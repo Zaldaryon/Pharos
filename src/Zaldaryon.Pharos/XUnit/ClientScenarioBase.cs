@@ -1,5 +1,6 @@
 using Zaldaryon.Pharos.Bootstrap;
 using Zaldaryon.Pharos.Core;
+using Zaldaryon.Pharos.Metrics;
 using Zaldaryon.Pharos.Player;
 using Zaldaryon.Pharos.Reporting;
 using Zaldaryon.Pharos.Scenarios;
@@ -34,6 +35,7 @@ namespace Zaldaryon.Pharos.XUnit;
 public abstract class ClientScenarioBase : IScenarioLifecycle, IAsyncDisposable
 {
     private readonly ScenarioRun _run = new();
+    private ScenarioMetricsSession? _metrics;
     private bool _recordingForArtifacts;
     private IDisposable? _classSettings;
     private ClientIsolationManager? _isolationManager;
@@ -261,6 +263,9 @@ public abstract class ClientScenarioBase : IScenarioLifecycle, IAsyncDisposable
         }
 
         ScenarioRun.SeedRandom(this, server: null, Client?.Random);
+        _metrics = ScenarioMetricsSession.Start(
+            ScenarioTestInfo.Current ?? throw new InvalidOperationException("Scenario test information is not available."),
+            client: Client, server: null);
     }
 
     Task IScenarioLifecycle.ApplyEnvironmentsAsync(CancellationToken cancellationToken)
@@ -274,6 +279,9 @@ public abstract class ClientScenarioBase : IScenarioLifecycle, IAsyncDisposable
 
     private async Task CleanupEnvironmentsAsync(CancellationToken cancellationToken)
     {
+        _metrics?.Complete();
+        _metrics = null;
+
         ScenarioContext? context = _environmentContext;
         if (context != null)
         {
@@ -289,8 +297,13 @@ public abstract class ClientScenarioBase : IScenarioLifecycle, IAsyncDisposable
 
     EmbeddedServerHost? IScenarioLifecycle.FixtureServer => null;
 
-    string? IScenarioLifecycle.CaptureFailure(ScenarioTestInfo test, Exception exception, bool timedOut) =>
-        FailureArtifactWriter.Write(Describe(test, exception, timedOut, Client)).Summary();
+    string? IScenarioLifecycle.CaptureFailure(ScenarioTestInfo test, Exception exception, bool timedOut)
+    {
+        ScenarioFailure failure = Describe(test, exception, timedOut, Client);
+        _metrics?.Complete(timedOut, FailureArtifactWriter.CreateDirectory(failure));
+        _metrics = null;
+        return FailureArtifactWriter.Write(failure).Summary();
+    }
 
     private ScenarioFailure Describe(ScenarioTestInfo test, Exception exception, bool timedOut, HeadlessClient? client) => new()
     {

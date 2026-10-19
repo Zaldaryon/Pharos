@@ -5,7 +5,8 @@ namespace Zaldaryon.Pharos.XUnit.Execution;
 
 internal static class ScenarioAttemptManifestWriterAdapter
 {
-    public static void Write(ITest test, ScenarioAttemptPolicy policy, IReadOnlyList<ScenarioAttemptEntry> attempts, string outcome, bool flaky)
+    public static void Write(ITest test, ScenarioAttemptPolicy policy, IReadOnlyList<ScenarioAttemptEntry> attempts,
+        string outcome, bool flaky, IReadOnlyDictionary<string, Zaldaryon.Pharos.Metrics.MetricSummary>? metrics = null)
     {
         string fqn = $"{test.TestCase.TestMethod.TestClass.Class.Name}.{test.TestCase.TestMethod.Method.Name}";
         ScenarioAttemptManifestWriter.Write(
@@ -15,6 +16,7 @@ internal static class ScenarioAttemptManifestWriterAdapter
             policy,
             attempts,
             outcome,
-            flaky);
+            flaky,
+            metrics);
     }
 }

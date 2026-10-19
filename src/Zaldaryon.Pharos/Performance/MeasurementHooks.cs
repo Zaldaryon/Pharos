@@ -4,6 +4,7 @@ using System.Reflection.Emit;
 using HarmonyLib;
 using Vintagestory.API.Client;
 using Vintagestory.API.Common;
+using Vintagestory.API.MathTools;
 using Vintagestory.Client.NoObf;
 using Vintagestory.Common;
 using Vintagestory.Server;
@@ -25,6 +26,12 @@ internal static class MeasurementHooks
     private static readonly MethodInfo s_timedRender = AccessTools.Method(typeof(MeasurementHooks), nameof(TimedRender));
     private static readonly MethodInfo s_sleep = AccessTools.Method(typeof(Thread), nameof(Thread.Sleep), [typeof(int)]);
     private static readonly MethodInfo s_timedSleep = AccessTools.Method(typeof(MeasurementHooks), nameof(TimedSleep));
+    private static readonly MethodInfo s_onServerTick = AccessTools.Method(typeof(ServerSystem), nameof(ServerSystem.OnServerTick));
+    private static readonly MethodInfo s_timedServerSystemTick = AccessTools.Method(typeof(MeasurementHooks), nameof(TimedServerSystemTick));
+    private static readonly MethodInfo s_tickListenerTriggered = AccessTools.Method(typeof(GameTickListener), nameof(GameTickListener.OnTriggered));
+    private static readonly MethodInfo s_timedTickListener = AccessTools.Method(typeof(MeasurementHooks), nameof(TimedTickListener));
+    private static readonly MethodInfo s_blockListenerTriggered = AccessTools.Method(typeof(GameTickListenerBlock), nameof(GameTickListenerBlock.OnTriggered));
+    private static readonly MethodInfo s_timedBlockListener = AccessTools.Method(typeof(MeasurementHooks), nameof(TimedTickListenerBlock));
 
     /// <summary>Installs the client hooks; called when an engine-mode client boots, before its first frame.</summary>
     public static void InstallClient()
@@ -60,7 +67,16 @@ internal static class MeasurementHooks
             s_harmony.Patch(AccessTools.Method(typeof(ServerMain), nameof(ServerMain.Process)),
                 prefix: new HarmonyMethod(typeof(MeasurementHooks), nameof(ServerTickStarting)),
                 postfix: new HarmonyMethod(typeof(MeasurementHooks), nameof(ServerTickDone)),
-                transpiler: new HarmonyMethod(typeof(MeasurementHooks), nameof(TimeUntilSleep)));
+                transpiler: new HarmonyMethod(typeof(MeasurementHooks), nameof(TimeServerProcess)));
+            foreach (string name in new[] { nameof(EventManager.TriggerGameTick), nameof(EventManager.TriggerGameTickDebug) })
+            {
+                if (AccessTools.Method(typeof(EventManager), name) is { } trigger)
+                {
+                    s_harmony.Patch(trigger,
+                        transpiler: new HarmonyMethod(typeof(MeasurementHooks), nameof(TimeEachTickListener)));
+                }
+            }
+
             s_serverInstalled = true;
         }
     }
@@ -120,7 +136,8 @@ internal static class MeasurementHooks
     }
 
     // The server sleeps out the rest of its tick inside Process: its work ends where it sleeps.
-    private static IEnumerable<CodeInstruction> TimeUntilSleep(IEnumerable<CodeInstruction> instructions)
+    // Each system's tick is wrapped so a measurement can break the tick down by system.
+    private static IEnumerable<CodeInstruction> TimeServerProcess(IEnumerable<CodeInstruction> instructions)
     {
         foreach (CodeInstruction instruction in instructions)
         {
@@ -128,10 +145,92 @@ internal static class MeasurementHooks
             {
                 yield return new CodeInstruction(OpCodes.Call, s_timedSleep).MoveLabelsFrom(instruction).MoveBlocksFrom(instruction);
             }
+            else if (instruction.Calls(s_onServerTick))
+            {
+                yield return new CodeInstruction(OpCodes.Call, s_timedServerSystemTick).MoveLabelsFrom(instruction).MoveBlocksFrom(instruction);
+            }
             else
             {
                 yield return instruction;
             }
+        }
+    }
+
+    // Each game-tick listener's callback is wrapped so a measurement can break the tick down by mod.
+    private static IEnumerable<CodeInstruction> TimeEachTickListener(IEnumerable<CodeInstruction> instructions)
+    {
+        foreach (CodeInstruction instruction in instructions)
+        {
+            if (instruction.Calls(s_tickListenerTriggered))
+            {
+                yield return new CodeInstruction(OpCodes.Call, s_timedTickListener).MoveLabelsFrom(instruction).MoveBlocksFrom(instruction);
+            }
+            else if (instruction.Calls(s_blockListenerTriggered))
+            {
+                yield return new CodeInstruction(OpCodes.Call, s_timedBlockListener).MoveLabelsFrom(instruction).MoveBlocksFrom(instruction);
+            }
+            else
+            {
+                yield return instruction;
+            }
+        }
+    }
+
+    private static void TimedServerSystemTick(ServerSystem system, float deltaTime)
+    {
+        if (ServerTickCollector.Active is not { } collector)
+        {
+            system.OnServerTick(deltaTime);
+            return;
+        }
+
+        long start = Stopwatch.GetTimestamp();
+        try
+        {
+            system.OnServerTick(deltaTime);
+        }
+        finally
+        {
+            collector.RecordSystemTick(system.GetType().Name, Stopwatch.GetElapsedTime(start).TotalMilliseconds);
+        }
+    }
+
+    private static void TimedTickListener(GameTickListener listener, long elapsedMilliseconds)
+    {
+        if (ServerTickCollector.Active is not { } collector)
+        {
+            listener.OnTriggered(elapsedMilliseconds);
+            return;
+        }
+
+        long start = Stopwatch.GetTimestamp();
+        try
+        {
+            listener.OnTriggered(elapsedMilliseconds);
+        }
+        finally
+        {
+            collector.RecordListenerTick(listener.ProfilerName ?? "unknown", Stopwatch.GetElapsedTime(start).TotalMilliseconds);
+        }
+    }
+
+    private static void TimedTickListenerBlock(GameTickListenerBlock listener, IWorldAccessor world, BlockPos pos,
+        long elapsedMilliseconds)
+    {
+        if (ServerTickCollector.Active is not { } collector)
+        {
+            listener.OnTriggered(world, pos, elapsedMilliseconds);
+            return;
+        }
+
+        long start = Stopwatch.GetTimestamp();
+        try
+        {
+            listener.OnTriggered(world, pos, elapsedMilliseconds);
+        }
+        finally
+        {
+            collector.RecordListenerTick(listener.ProfilerName ?? "unknown", Stopwatch.GetElapsedTime(start).TotalMilliseconds);
         }
     }
 

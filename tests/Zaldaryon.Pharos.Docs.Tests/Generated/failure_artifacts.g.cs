@@ -93,7 +93,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.failure_artifacts.Snippet_1
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-#line 37 "docs/failure-artifacts.md"
+#line 39 "docs/failure-artifacts.md"
 protected override FailureArtifacts Artifacts => FailureArtifacts.All;
 #line default
     }
@@ -141,7 +141,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.failure_artifacts.Snippet_2
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-#line 49 "docs/failure-artifacts.md"
+#line 51 "docs/failure-artifacts.md"
 protected override void OnFailure(string directory) =>
     File.WriteAllText(Path.Combine(directory, "inventory.txt"), DumpInventory());
 #line default

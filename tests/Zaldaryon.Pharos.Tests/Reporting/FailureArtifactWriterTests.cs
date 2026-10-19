@@ -2,6 +2,7 @@ using System.Text.Json;
 using Vintagestory.API.Common;
 using Xunit;
 using Zaldaryon.Pharos.Reporting;
+using Zaldaryon.Pharos.Scenarios;
 using Zaldaryon.Pharos.Server;
 using Zaldaryon.Pharos.Tests.XUnit;
 
@@ -93,6 +94,29 @@ public sealed class FailureArtifactWriterTests : IDisposable
 
         Assert.NotEqual(first, second);
         Assert.EndsWith("Again-2", second);
+    }
+
+    [Fact]
+    public void Write_ReusesTheMetricsFolder_WhenItHoldsOnlyResultJson()
+    {
+        const string display = "Zaldaryon.Pharos.Tests.Reporting.FailureArtifactWriterTests.Reused";
+        string metrics = FailureArtifactWriter.CreateResultDirectory(
+            new ScenarioTestInfo(display, typeof(FailureArtifactWriterTests), "Reused"));
+        File.WriteAllText(Path.Combine(metrics, "result.json"), "{}");
+
+        ScenarioAttemptState? previous = ScenarioAttemptState.Current;
+        ScenarioAttemptState state = new();
+        state.SetMetricsDirectory(metrics);
+        ScenarioAttemptState.Current = state;
+        try
+        {
+            string failure = FailureArtifactWriter.Write(Failure(display, "Reused")).Directory;
+            Assert.Equal(metrics, failure);
+        }
+        finally
+        {
+            ScenarioAttemptState.Current = previous;
+        }
     }
 
     [Fact]
