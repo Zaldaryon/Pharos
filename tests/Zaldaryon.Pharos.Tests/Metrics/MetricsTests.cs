@@ -191,7 +191,7 @@ public sealed class MetricsWriterTests : IDisposable
         try
         {
             ScenarioTestInfo test = new("MetricsTests.Metrics_Body", typeof(MetricsWriterTests), "Metrics_Body");
-            ScenarioMetricsSession session = ScenarioMetricsSession.Start(test, client: null, server: null);
+            ScenarioMetricsSession session = ScenarioMetricsSession.Start(test, client: null, server: null)!;
             MetricsApi.Record("custom.count", 7);
             using (MetricsApi.Time("custom.time")) { }
             session.Complete();

@@ -11,6 +11,15 @@ public interface IScenarioLifecycle
     /// <summary>Called just before the test body runs, after the class is initialized.</summary>
     void BeforeBody();
 
+    /// <summary>
+    /// Called when <see cref="BeforeBody"/> failed. Disposes the host and releases the pool gate:
+    /// xUnit does not reliably reach <see cref="DisposeAsync"/> after a setup failure, and a gate
+    /// held for a test that never ran blocks every later scenario in the process.
+    /// </summary>
+    void ReleaseHostOnSetupFailure()
+    {
+    }
+
     /// <summary>Applies per-test environments under the scenario watchdog.</summary>
     Task ApplyEnvironmentsAsync(CancellationToken cancellationToken);
 

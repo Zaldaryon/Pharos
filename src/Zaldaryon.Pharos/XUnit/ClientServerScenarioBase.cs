@@ -587,6 +587,20 @@ public abstract class ClientServerScenarioBase : IScenarioLifecycle, IAsyncDispo
             client: _client, server: _serverHost, isolation: IsolationReport);
     }
 
+    void IScenarioLifecycle.ReleaseHostOnSetupFailure()
+    {
+        _run.SetupFailing();
+        _setupFailed = true;
+        try
+        {
+            DisposeAsync().GetAwaiter().GetResult();
+        }
+        catch (Exception ex)
+        {
+            ServerMain.Logger?.Warning("Pharos could not tear down a scenario that failed to start: {0}", ex);
+        }
+    }
+
     Task IScenarioLifecycle.ApplyEnvironmentsAsync(CancellationToken cancellationToken)
     {
         ScenarioTestInfo test = ScenarioTestInfo.Current ?? throw new InvalidOperationException("Scenario test information is not available.");

@@ -268,6 +268,38 @@ public abstract class ClientScenarioBase : IScenarioLifecycle, IAsyncDisposable
             client: Client, server: null);
     }
 
+    void IScenarioLifecycle.ReleaseHostOnSetupFailure()
+    {
+        try
+        {
+            _classSettings?.Dispose();
+        }
+        catch
+        {
+            // The client is disposed below anyway.
+        }
+
+        _classSettings = null;
+        if (_pooled != null)
+        {
+            try
+            {
+                _pooled.Dispose();
+            }
+            catch
+            {
+                // A client that fails to shut down must not hide why it failed to start.
+            }
+
+            _pooled = null;
+            ScenarioHostPool.HostDisposed();
+        }
+
+        _client = null;
+        _gate?.Dispose();
+        _gate = null;
+    }
+
     Task IScenarioLifecycle.ApplyEnvironmentsAsync(CancellationToken cancellationToken)
     {
         ScenarioTestInfo test = ScenarioTestInfo.Current ?? throw new InvalidOperationException("Scenario test information is not available.");

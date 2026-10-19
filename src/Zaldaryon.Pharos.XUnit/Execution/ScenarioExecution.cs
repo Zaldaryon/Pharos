@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Reflection;
 using System.Collections.Concurrent;
 using System.Collections;
+using System.Diagnostics;
 using Xunit;
 using Xunit.Abstractions;
 using Xunit.Sdk;
@@ -450,10 +451,15 @@ internal sealed class ScenarioTestInvoker(
 
         if (lifecycle != null && !Aggregator.HasExceptions)
         {
-            Aggregator.Run(lifecycle.BeforeBody);
-            if (Aggregator.HasExceptions)
+            try
             {
+                lifecycle.BeforeBody();
+            }
+            catch (Exception ex)
+            {
+                Aggregator.Add(ex);
                 ScenarioAttemptState.Current?.MarkNonRetryable();
+                ReleaseHostOnSetupFailure(lifecycle);
                 return 0m;
             }
         }
@@ -735,6 +741,23 @@ internal sealed class ScenarioTestInvoker(
         AggregateException aggregate => aggregate.InnerExceptions.Any(WasAborted),
         _ => exception.InnerException is { } inner && WasAborted(inner),
     };
+
+    /// <summary>
+    /// Releases the host when <see cref="IScenarioLifecycle.BeforeBody"/> failed, before this
+    /// invoker returns without reaching the class's disposal. The release must never replace the
+    /// setup's own failure as the reason the test failed.
+    /// </summary>
+    private static void ReleaseHostOnSetupFailure(IScenarioLifecycle lifecycle)
+    {
+        try
+        {
+            lifecycle.ReleaseHostOnSetupFailure();
+        }
+        catch (Exception ex)
+        {
+            Trace.TraceWarning($"Pharos could not release the scenario host after a setup failure: {ex.GetType().Name}: {ex.Message}");
+        }
+    }
 
     /// <summary>Gives the pipeline the stock invocation of the test method.</summary>
     private sealed class BodyInvoker(

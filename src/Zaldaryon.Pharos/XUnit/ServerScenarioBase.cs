@@ -319,6 +319,30 @@ public abstract class ServerScenarioBase : IScenarioLifecycle, IAsyncDisposable
             client: null, server: _host, isolation: IsolationReport);
     }
 
+    void IScenarioLifecycle.ReleaseHostOnSetupFailure()
+    {
+        _capturing = null;
+        if (_pooled != null)
+        {
+            try
+            {
+                _pooled.Dispose();
+            }
+            catch
+            {
+                // A server that fails to shut down must not hide why it failed to start.
+            }
+
+            _pooled = null;
+            ScenarioHostPool.HostDisposed();
+            IsolationLog.Left(GetType(), null, "the previous test failed to start");
+        }
+
+        _host = null;
+        _gate?.Dispose();
+        _gate = null;
+    }
+
     Task IScenarioLifecycle.ApplyEnvironmentsAsync(CancellationToken cancellationToken)
     {
         ScenarioTestInfo test = ScenarioTestInfo.Current ?? throw new InvalidOperationException("Scenario test information is not available.");

@@ -52,66 +52,95 @@ internal sealed class ScenarioMetricsSession
         _client = client;
         _server = server;
         _scope = Metrics.BeginScope(_collector);
-        _bridge = BridgeMetricSubscription.Subscribe(_collector);
-
-        _allocatedAtStart = GC.GetTotalAllocatedBytes(precise: true);
-        _heapAtStart = GC.GetTotalMemory(forceFullCollection: false);
-        _collectionsAtStart = [GC.CollectionCount(0), GC.CollectionCount(1), GC.CollectionCount(2)];
-
-        if (client != null)
+        try
         {
-            _framesAtStart = client.FrameController.TotalFrames;
-            if (automatic.HasFlag(Metric.Frame))
-            {
-                client.FrameController.OnFrameCompleted += OnFrameCompleted;
-            }
-
-            _modMessageMark = client.ModNetwork.Mark();
-        }
-
-        if (automatic.HasFlag(Metric.Gl) && client?.GL.IsEnabled == true)
-        {
-            _glAtStart = client.GL.Snapshot();
-        }
-        else if (automatic.HasFlag(Metric.Gl) && client is { IsEngineMode: true } engineClient)
-        {
-            engineClient.GL.Enable();
-            _enabledGl = true;
-            _glAtStart = engineClient.GL.Snapshot();
-        }
-
-        if (automatic.HasFlag(Metric.Tick) && server is { IsRunning: true })
-        {
+            _bridge = BridgeMetricSubscription.Subscribe(_collector);
             try
             {
-                server.RunOnGameThread(() =>
+                _allocatedAtStart = GC.GetTotalAllocatedBytes(precise: true);
+                _heapAtStart = GC.GetTotalMemory(forceFullCollection: false);
+                _collectionsAtStart = [GC.CollectionCount(0), GC.CollectionCount(1), GC.CollectionCount(2)];
+
+                if (client != null)
                 {
-                    _ticks = new ServerTickCollector(1024);
-                    _ticks.Open();
-                    _tickCollectorStarted = true;
-                });
+                    _framesAtStart = client.FrameController.TotalFrames;
+                    if (automatic.HasFlag(Metric.Frame))
+                    {
+                        client.FrameController.OnFrameCompleted += OnFrameCompleted;
+                    }
+
+                    if (client.IsEngineMode)
+                    {
+                        _modMessageMark = client.ModNetwork.Mark();
+                    }
+                }
+
+                if (automatic.HasFlag(Metric.Gl) && client?.GL.IsEnabled == true)
+                {
+                    _glAtStart = client.GL.Snapshot();
+                }
+                else if (automatic.HasFlag(Metric.Gl) && client is { IsEngineMode: true } engineClient)
+                {
+                    engineClient.GL.Enable();
+                    _enabledGl = true;
+                    _glAtStart = engineClient.GL.Snapshot();
+                }
+
+                if (automatic.HasFlag(Metric.Tick) && server is { IsRunning: true })
+                {
+                    try
+                    {
+                        server.RunOnGameThread(() =>
+                        {
+                            _ticks = new ServerTickCollector(1024);
+                            _ticks.Open();
+                            _tickCollectorStarted = true;
+                        });
+                    }
+                    catch (InvalidOperationException)
+                    {
+                        // Another measurement owns the tick hooks; the test still gets custom metrics.
+                    }
+                }
+
+                if (automatic.HasFlag(Metric.Boot) && isolation != null)
+                {
+                    _collector.Record("boot.isolation.ms", isolation.Duration.TotalMilliseconds,
+                        MetricUnit.Milliseconds, MetricDirection.LowerIsBetter, MetricClock.Stopwatch,
+                        Tags(("kind", isolation.Kind.ToString())));
+                }
             }
-            catch (InvalidOperationException)
+            catch
             {
-                // Another measurement owns the tick hooks; the test still gets custom metrics.
+                _bridge.Dispose();
+                throw;
             }
         }
-
-        if (automatic.HasFlag(Metric.Boot) && isolation != null)
+        catch
         {
-            _collector.Record("boot.isolation.ms", isolation.Duration.TotalMilliseconds,
-                MetricUnit.Milliseconds, MetricDirection.LowerIsBetter, MetricClock.Stopwatch,
-                Tags(("kind", isolation.Kind.ToString())));
+            _scope.Dispose();
+            throw;
         }
     }
 
-    /// <summary>Starts collecting for <paramref name="test"/>; call before the body runs.</summary>
-    internal static ScenarioMetricsSession Start(ScenarioTestInfo test, HeadlessClient? client,
+    /// <summary>
+    /// Starts collecting for <paramref name="test"/>; call before the body runs. Returns null when
+    /// collecting cannot start, because metrics must never fail the test they measure.
+    /// </summary>
+    internal static ScenarioMetricsSession? Start(ScenarioTestInfo test, HeadlessClient? client,
         EmbeddedServerHost? server, IsolationReport? isolation = null)
     {
         ArgumentNullException.ThrowIfNull(test);
-        Metric automatic = CollectMetricsAttribute.Resolve(test.TestClass, test.Method);
-        return new ScenarioMetricsSession(test, automatic, client, server, isolation);
+        try
+        {
+            Metric automatic = CollectMetricsAttribute.Resolve(test.TestClass, test.Method);
+            return new ScenarioMetricsSession(test, automatic, client, server, isolation);
+        }
+        catch (Exception ex)
+        {
+            Trace.TraceWarning($"Pharos could not start metrics for {test.DisplayName}: {ex.GetType().Name}: {ex.Message}");
+            return null;
+        }
     }
 
     /// <summary>The collector custom metrics are recorded into.</summary>
@@ -170,7 +199,7 @@ internal sealed class ScenarioMetricsSession
                 CollectGl();
             }
 
-            if (_automatic.HasFlag(Metric.Network) && _client != null)
+            if (_automatic.HasFlag(Metric.Network) && _client is { IsEngineMode: true })
             {
                 CollectNetwork();
             }
