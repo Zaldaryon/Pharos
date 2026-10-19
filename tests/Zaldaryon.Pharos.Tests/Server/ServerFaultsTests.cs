@@ -93,6 +93,38 @@ public class ServerFaultsTests : ServerScenarioBase
         Assert.True(player.IsConnected);
     }
 
+    [ServerScenario]
+    public async Task FailSaves_LaterSaveStoresChangedChunkWhenColumnWasPreviouslySaved()
+    {
+        ServerTestPlayer player = await CreateTestPlayerAsync(PlayerNames.Next());
+        BlockPos chest = player.Entity!.Pos.AsBlockPos.AddCopy(4, 0, 0);
+        await Host!.EnsureChunksLoadedAsync(chest, chest);
+
+        // Pre-save the world so all chunks in the column exist in the database.
+        await Host.SaveWorldAsync();
+        this.SetBlock(chest, "game:chest-east");
+
+        using (ServerFault fault = Host.Faults.FailSaves())
+        {
+            try
+            {
+                await Host.SaveWorldAsync();
+            }
+            catch (IOException error) when (error.Message == "disk full")
+            {
+            }
+
+            Assert.True(fault.Hits > 0);
+        }
+
+        // Modifying the block marks its chunk dirty again, allowing a later save to update the database.
+        this.SetBlock(chest, "game:rock-granite");
+        await Host.SaveWorldAsync();
+        await RestartWorldAsync(RestartMode.Crash);
+        await Host!.EnsureChunksLoadedAsync(chest, chest);
+        Assert.Equal("game:rock-granite", BlockCodeAt(chest));
+    }
+
     private string BlockCodeAt(BlockPos pos) => Host!.RunOnGameThread(() => Api!.World.BlockAccessor.GetBlock(pos).Code.ToString());
 
     [ServerScenario]

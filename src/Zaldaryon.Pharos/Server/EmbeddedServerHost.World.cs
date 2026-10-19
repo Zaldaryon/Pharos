@@ -287,6 +287,15 @@ public sealed partial class EmbeddedServerHost
     /// <summary>
     /// Spawns an entity at the specified position.
     /// </summary>
+    public Entity SpawnEntity(string entityCode, BlockPos pos)
+    {
+        ArgumentNullException.ThrowIfNull(pos);
+        return SpawnEntity(entityCode, pos.ToVec3d());
+    }
+
+    /// <summary>
+    /// Spawns an entity at the specified position.
+    /// </summary>
     public Entity SpawnEntity(string entityCode, Vec3d pos)
     {
         ArgumentNullException.ThrowIfNull(entityCode);
@@ -307,4 +316,16 @@ public sealed partial class EmbeddedServerHost
             return entity;
         });
     }
+
+    /// <summary>
+    /// Spawns an entity asynchronously at the specified position.
+    /// </summary>
+    public Task<Entity> SpawnEntityAsync(string entityCode, BlockPos pos) =>
+        Task.FromResult(SpawnEntity(entityCode, pos));
+
+    /// <summary>
+    /// Spawns an entity asynchronously at the specified position.
+    /// </summary>
+    public Task<Entity> SpawnEntityAsync(string entityCode, Vec3d pos) =>
+        Task.FromResult(SpawnEntity(entityCode, pos));
 }

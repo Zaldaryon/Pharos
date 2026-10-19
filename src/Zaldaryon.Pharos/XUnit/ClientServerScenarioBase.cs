@@ -4,12 +4,13 @@ using Vintagestory.API.Config;
 using Vintagestory.API.MathTools;
 using Vintagestory.API.Server;
 using Vintagestory.Server;
-using Xunit;
 using Zaldaryon.Pharos.Bootstrap;
 using Zaldaryon.Pharos.Core;
 using Zaldaryon.Pharos.Player;
 using Zaldaryon.Pharos.Reporting;
+using Zaldaryon.Pharos.Scenarios;
 using Zaldaryon.Pharos.Server;
+using Zaldaryon.Pharos.Timing;
 using Zaldaryon.Pharos.XUnit.Execution;
 
 namespace Zaldaryon.Pharos.XUnit;
@@ -21,7 +22,7 @@ namespace Zaldaryon.Pharos.XUnit;
 /// <remarks>
 /// <para>
 /// Test classes inheriting from this should be marked with <see cref="ClientServerScenarioAttribute"/>
-/// and use <see cref="IAsyncLifetime"/> for setup and teardown.
+/// and use <see cref="IScenarioLifecycle"/> for setup and teardown.
 /// </para>
 /// <para>
 /// The lifecycle sequence:
@@ -46,7 +47,7 @@ namespace Zaldaryon.Pharos.XUnit;
 /// client and server compete for shared resources.
 /// </para>
 /// </remarks>
-public abstract class ClientServerScenarioBase : IAsyncLifetime, IScenarioLifecycle
+public abstract class ClientServerScenarioBase : IScenarioLifecycle, IAsyncDisposable
 {
     private readonly ScenarioRun _run = new();
     private ServerSandbox? _sandbox;
@@ -91,6 +92,11 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime, IScenarioLifecy
     protected EmbeddedServerHost ServerHost => Server;
 
     /// <summary>
+    /// Gets the embedded server host managing the test server instance.
+    /// </summary>
+    protected EmbeddedServerHost Host => Server;
+
+    /// <summary>
     /// Gets the loopback session coordinating client and server.
     /// </summary>
     /// <exception cref="InvalidOperationException">The session is accessed before scenario initialization.</exception>
@@ -102,6 +108,11 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime, IScenarioLifecy
     /// </summary>
     /// <exception cref="InvalidOperationException">The player is accessed before the client is connected.</exception>
     protected IClientTestPlayer Player => Client.TestPlayer;
+
+    /// <summary>
+    /// Frame controller for deterministic frame stepping on the client.
+    /// </summary>
+    protected DeterministicFrameController FrameController => Client.FrameController;
 
     /// <summary>
     /// Gets the server-side API for game interactions.
@@ -123,6 +134,9 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime, IScenarioLifecy
 
     /// <summary>Gets the block entity of type <typeparamref name="T"/> at the specified position.</summary>
     protected T? GetBlockEntity<T>(BlockPos pos) where T : BlockEntity => Server.GetBlockEntity<T>(pos);
+
+    /// <summary>Spawns an entity at the specified position.</summary>
+    protected Entity SpawnEntity(string entityCode, BlockPos pos) => Server.SpawnEntity(entityCode, pos);
 
     /// <summary>Spawns an entity at the specified position.</summary>
     protected Entity SpawnEntity(string entityCode, Vec3d pos) => Server.SpawnEntity(entityCode, pos);
@@ -235,10 +249,10 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime, IScenarioLifecy
     }
 
     /// <summary>Polls an assertion once per deterministic client and server frame.</summary>
-    protected Task SucceedWhenAsync(Action assertion, int maxFrames = 600, CancellationToken ct = default)
+    protected Task SucceedWhenAsync(Action assertion, int maxFrames = 600, CancellationToken ct = default, int? maxTicks = null)
     {
         if (_session is null) throw new InvalidOperationException("Session is not initialized. Call InitializeAsync first.");
-        return ScenarioTickWait.SucceedWhenAsync(assertion, maxFrames, (count, token) =>
+        return ScenarioTickWait.SucceedWhenAsync(assertion, maxTicks ?? maxFrames, (count, token) =>
         {
             token.ThrowIfCancellationRequested();
             _session.StepFrames(count);
@@ -912,6 +926,8 @@ public abstract class ClientServerScenarioBase : IAsyncLifetime, IScenarioLifecy
             : isolationFailure ?? environmentFailure;
         ScenarioFailures.ThrowAll(finalFailure, () => LoggedErrorGate.ThrowIfAny(loggedErrors));
     }
+
+    ValueTask IAsyncDisposable.DisposeAsync() => new(DisposeAsync());
 
     private void AbandonRunningScenario()
     {

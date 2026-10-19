@@ -54,4 +54,11 @@ public interface IWorldSession : IDisposable, IAsyncDisposable
     /// Advances the server until the specified predicate returns true or the maximum tick count is reached.
     /// </summary>
     Task<bool> TickUntilAsync(Func<bool> predicate, int maxTicks = 600, CancellationToken ct = default);
+
+    /// <summary>
+    /// Creates and joins a test player to the world session.
+    /// </summary>
+    /// <param name="playerName">The player name.</param>
+    /// <returns>A test player adapter wrapping the joined player.</returns>
+    Task<ITestPlayer> CreateTestPlayer(string playerName = "TestPlayer");
 }

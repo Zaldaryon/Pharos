@@ -215,7 +215,7 @@ Control how world state is managed between test methods with `[ServerWorld(Isola
 | `Recycle` | The server keeps running for the next test of the same class. Tests share state, which suits read-only tests. |
 
 ```csharp
-[ServerWorld(seed: 42, Isolation = WorldIsolation.Recycle)]
+[ServerWorld(seed: 42, Isolation = Isolation.Recycle)]
 public class ReadOnlyTests : ServerScenarioBase { }
 ```
 
@@ -256,7 +256,7 @@ The counters that order packets always keep their live value: `positionVersionNu
 A key a class wants to keep from test to test, such as lifetime statistics, is opted out by overriding a hook. A refused key keeps its live value, whether or not the snapshot had it:
 
 ```csharp
-[ServerWorld(Isolation = WorldIsolation.Rollback)]
+[ServerWorld(Isolation = Isolation.Rollback)]
 public class EconomyTests : ClientServerScenarioBase
 {
     // Save-game, map region and player mod data keys.
@@ -546,6 +546,7 @@ public class ArmorTests : ServerScenarioBase
     public async Task AHit_GoesThroughTheModsArmor()
     {
         ServerTestPlayer player = await CreateTestPlayerAsync("Alice");
+        Entity wolf = await Host!.SpawnEntityAsync("wolf-male", player.Position);
 
         await player.DamageAsync(10, DamageInfo.FromEntity(wolf, EnumDamageType.PiercingAttack));
 
@@ -714,7 +715,7 @@ method the first time a fault names it, and the patch stays; an inlined method c
 through a delegate or a virtual call. `DelayChunkLoads` counts ticks, not time, and it is a lower bound: a load already under way
 can still finish. `FailSaves` affects saves the test makes on the game thread, not the chunk thread's off-thread saves, so a chunk
 those saves write is stored whatever the fault says. The game clears a chunk's dirty mark before it writes the chunk, so a chunk whose write
-failed may be left clean, and the game does not promise that a later save stores it.
+failed is left clean in memory. A later change marks that chunk dirty again, allowing a later save to write it to disk. However, if other chunks in the column were never previously saved, SQLite holds only a partial column; on restart, the engine discards any column with missing chunks and regenerates it from scratch. Scenarios that check later save recovery therefore save the world before the fault so all chunks in the column exist on disk.
 
 ## Calendar and Weather
 
@@ -844,13 +845,14 @@ Blocks also schedule callbacks of their own, such as liquid flow. Pass `includeC
 Almost all of the game's random numbers come from unseeded generators, such as `World.Rand`, the static generators behind drops and crop growth, and those that systems, blocks and entities hold. `[Seeded]` seeds them before each test it covers, so a test can assert exact outcomes and a failure can be replayed:
 
 ```csharp
-[ServerScenario, Seeded(1234)]          // a fixed seed
-public void Grass_DropsSeeds_Sometimes() { ... }
+[assembly: Seeded]                       // every scenario test in the assembly
 
 [Seeded]                                 // a stable hash of each test's name
-public class DropTests : ServerScenarioBase { ... }
-
-[assembly: Seeded]                       // every scenario test in the assembly
+public class DropTests : ServerScenarioBase
+{
+    [ServerScenario, Seeded(1234)]       // a fixed seed
+    public void Grass_DropsSeeds_Sometimes() { }
+}
 ```
 
 - Seeding is opt-in. A test that no `[Seeded]` covers keeps the game's own generators. `[assembly: Seeded]` gives every test the hash of its name by default.
@@ -940,10 +942,13 @@ A rollback puts changed data files back. See [Data files](data-files.md).
 
 ## Watchdog
 
-Tests that wedge or run too long fail automatically. The default watchdog is 120 seconds. Override per class:
+Tests that wedge or run too long fail automatically. The default watchdog is 120 seconds. Override per scenario:
 
 ```csharp
 [ServerWorld(seed: 1)]
-[ServerScenario(TimeoutMs = 30_000)]
-public class QuickTests : ServerScenarioBase { }
+public class QuickTests : ServerScenarioBase
+{
+    [ServerScenario(TimeoutMs = 30_000)]
+    public void FastTest() { }
+}
 ```

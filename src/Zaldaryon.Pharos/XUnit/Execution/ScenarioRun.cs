@@ -1,4 +1,5 @@
 using Zaldaryon.Pharos.Reporting;
+using Zaldaryon.Pharos.Scenarios;
 
 namespace Zaldaryon.Pharos.XUnit.Execution;
 

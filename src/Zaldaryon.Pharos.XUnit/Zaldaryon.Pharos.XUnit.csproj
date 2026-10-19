@@ -11,7 +11,7 @@
     <IsPackable>true</IsPackable>
     <IsTestProject>false</IsTestProject>
     <PackageId>Zaldaryon.Pharos.XUnit</PackageId>
-    <Version>0.6.0</Version>
+    <Version>0.7.0</Version>
     <Authors>Zaldaryon</Authors>
     <Description>xUnit integration metapackage for Pharos. Install this package to get Pharos headless client test harness with xUnit framework support.</Description>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
@@ -28,8 +28,26 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Zaldaryon.Pharos\Zaldaryon.Pharos.csproj" />
+    <InternalsVisibleTo Include="Zaldaryon.Pharos.Tests" />
+    <InternalsVisibleTo Include="Zaldaryon.Pharos.Docs.Tests" />
   </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Zaldaryon.Pharos\Zaldaryon.Pharos.csproj" />
+    <ProjectReference Include="..\Zaldaryon.Pharos.Analyzers\Zaldaryon.Pharos.Analyzers.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetsForTfmSpecificContentInPackage>$(TargetsForTfmSpecificContentInPackage);_AddAnalyzersToPackage</TargetsForTfmSpecificContentInPackage>
+  </PropertyGroup>
+
+  <Target Name="_AddAnalyzersToPackage">
+    <ItemGroup>
+      <TfmSpecificPackageFile Include="..\Zaldaryon.Pharos.Analyzers\bin\$(Configuration)\netstandard2.0\Zaldaryon.Pharos.Analyzers.dll">
+        <PackagePath>analyzers/dotnet/cs</PackagePath>
+      </TfmSpecificPackageFile>
+    </ItemGroup>
+  </Target>
 
   <ItemGroup>
     <PackageReference Include="xunit.core" Version="2.9.3" />

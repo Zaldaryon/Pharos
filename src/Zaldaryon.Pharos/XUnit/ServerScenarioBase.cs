@@ -4,8 +4,8 @@ using Vintagestory.API.Config;
 using Vintagestory.API.MathTools;
 using Vintagestory.API.Server;
 using Vintagestory.Server;
-using Xunit;
 using Zaldaryon.Pharos.Reporting;
+using Zaldaryon.Pharos.Scenarios;
 using Zaldaryon.Pharos.Server;
 using Zaldaryon.Pharos.XUnit.Execution;
 
@@ -37,7 +37,7 @@ namespace Zaldaryon.Pharos.XUnit;
 /// through their completion callback.
 /// </para>
 /// </remarks>
-public abstract class ServerScenarioBase : IAsyncLifetime, IScenarioLifecycle
+public abstract class ServerScenarioBase : IScenarioLifecycle, IAsyncDisposable
 {
     private readonly ScenarioRun _run = new();
     private EmbeddedServerHost? _host;
@@ -83,6 +83,9 @@ public abstract class ServerScenarioBase : IAsyncLifetime, IScenarioLifecycle
 
     /// <summary>Gets the block entity of type <typeparamref name="T"/> at the specified position.</summary>
     protected T? GetBlockEntity<T>(BlockPos pos) where T : BlockEntity => Server.GetBlockEntity<T>(pos);
+
+    /// <summary>Spawns an entity at the specified position.</summary>
+    protected Entity SpawnEntity(string entityCode, BlockPos pos) => Server.SpawnEntity(entityCode, pos);
 
     /// <summary>Spawns an entity at the specified position.</summary>
     protected Entity SpawnEntity(string entityCode, Vec3d pos) => Server.SpawnEntity(entityCode, pos);
@@ -475,6 +478,8 @@ public abstract class ServerScenarioBase : IAsyncLifetime, IScenarioLifecycle
             : isolationFailure ?? environmentFailure;
         ScenarioFailures.ThrowAll(teardownFailure, () => LoggedErrorGate.ThrowIfAny(loggedErrors));
     }
+
+    ValueTask IAsyncDisposable.DisposeAsync() => new(DisposeAsync());
 
     private void AbandonRunningScenario()
     {

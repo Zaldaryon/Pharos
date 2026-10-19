@@ -76,7 +76,7 @@ jobs:
           if [ "$full" = "true" ]; then
             echo "matrix=$(jq -c . scripts/ci-shards.json)" >> "$GITHUB_OUTPUT"
           else
-            echo 'matrix={"include":[{"shard":1,"filter":""}]}' >> "$GITHUB_OUTPUT"
+            echo 'matrix={"include":[{"shard":1,"total":1}]}' >> "$GITHUB_OUTPUT"
           fi
           echo "Lane: run=$run full=$full filter='$filter'"
 
@@ -85,9 +85,7 @@ jobs:
     needs: plan
     if: needs.plan.outputs.run == 'true'
     runs-on: ubuntu-latest
-    # The full lane grew past an hour: 46m on 11/10, 57m38s on main on 12/10, and the
-    # full-ci pull requests were killed at the 60 minute mark while still running tests.
-    timeout-minutes: 90
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
@@ -100,105 +98,77 @@ jobs:
         with:
           dotnet-version: "10.0.x"
 
-      - name: Install Mesa and Xvfb
-        run: |
-          # A fresh runner may still hold the dpkg lock for its own updates; wait for it, but not forever.
-          timeout 600 sudo apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Retries=3 update
-          timeout 600 sudo apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Retries=3 install -y mesa-utils libgl1-mesa-dri xvfb libopenal1 libglfw3 libglfw3-dev libcairo2 libcairo2-dev
-
-      # The same action mods use in their own CI, so a change to it is tested here.
       - name: Set up Vintage Story
         id: vs
         uses: ./.github/actions/setup-vintage-story
         with:
           version: ${{ env.VS_VERSION }}
-          mesa: "false"
-          xvfb: "false"
+          mesa: "true"
+          xvfb: "true"
 
       - name: Build
         env:
           VINTAGE_STORY: ${{ steps.vs.outputs.path }}
         run: dotnet build Pharos.sln -c Release
 
+      - name: Build and install Pharos CLI
+        run: |
+          dotnet pack src/Zaldaryon.Pharos.Cli/Zaldaryon.Pharos.Cli.csproj -c Release -o ./tool-nupkg -p:Version=0.0.0-ci.${{ github.run_id }}.${{ github.run_attempt }}
+          dotnet tool install Zaldaryon.Pharos.Cli --tool-path "$RUNNER_TEMP/bin" --add-source ./tool-nupkg --version "0.0.0-ci.${{ github.run_id }}.${{ github.run_attempt }}"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+
       - name: Warm cached survival world presets
         env:
           VINTAGE_STORY: ${{ steps.vs.outputs.path }}
         run: |
-          dotnet run --project src/Zaldaryon.Pharos.Cli -c Release --no-build -- fixture --preset survival-flat --game "$VINTAGE_STORY"
-          dotnet run --project src/Zaldaryon.Pharos.Cli -c Release --no-build -- fixture --preset survival-standard-small --game "$VINTAGE_STORY"
+          pharos fixture --preset survival-flat --game "$VINTAGE_STORY"
+          pharos fixture --preset survival-standard-small --game "$VINTAGE_STORY"
 
       - name: Stage assets
         run: ln -sfn ${{ steps.vs.outputs.path }}/assets ./assets
 
-      - name: Test with Mesa headless
+      - name: Test documentation code
+        if: matrix.shard == 1
+        run: dotnet test tests/Zaldaryon.Pharos.Docs.Tests -c Release --no-build
+
+      - name: Test xUnit v3 scenario package
+        if: matrix.shard == 1
+        run: dotnet test tests/Zaldaryon.Pharos.XUnit.V3.Tests -c Release --no-build
+
+      - name: Test
         env:
           VINTAGE_STORY: ${{ steps.vs.outputs.path }}
-          LD_LIBRARY_PATH: ${{ steps.vs.outputs.path }}/Lib:${{ steps.vs.outputs.path }}:/usr/lib/x86_64-linux-gnu
-          LIBGL_ALWAYS_SOFTWARE: 1
-          GALLIUM_DRIVER: llvmpipe
-          MESA_LOADER_DRIVER_OVERRIDE: llvmpipe
-          LIBGL_ALWAYS_INDIRECT: 0
-          MESA_GL_VERSION_OVERRIDE: "4.5"
-          MESA_GLSL_VERSION_OVERRIDE: "450"
-          ALSOFT_DRIVERS: null
-          # Optional: a Vintage Story account session runs the online auth tests; without
-          # these secrets (forks, or none configured) those tests are skipped.
           PHAROS_VS_PLAYERNAME: ${{ secrets.PHAROS_VS_PLAYERNAME }}
           PHAROS_VS_PLAYERUID: ${{ secrets.PHAROS_VS_PLAYERUID }}
           PHAROS_VS_SESSIONKEY: ${{ secrets.PHAROS_VS_SESSIONKEY }}
           PHAROS_VS_SESSIONSIGNATURE: ${{ secrets.PHAROS_VS_SESSIONSIGNATURE }}
           PHAROS_ARTIFACTS: ${{ github.workspace }}/artifacts/pharos
           TEST_FILTER: ${{ needs.plan.outputs.filter }}
-          SHARD_FILTER: ${{ matrix.filter }}
         run: |
-          if [ -n "$SHARD_FILTER" ]; then
-            if [ -n "$TEST_FILTER" ]; then
-              TEST_FILTER="($TEST_FILTER)&($SHARD_FILTER)"
-            else
-              TEST_FILTER="$SHARD_FILTER"
-            fi
-          fi
-          if [ -n "$TEST_FILTER" ]; then
-            xvfb-run -a -s "-screen 0 1280x720x24" dotnet test Pharos.sln -c Release --no-build --filter "$TEST_FILTER"
-          else
-            xvfb-run -a -s "-screen 0 1280x720x24" dotnet test Pharos.sln -c Release --no-build
-          fi
+          mkdir -p artifacts/pharos
+          filter_arg=""
+          if [ -n "$TEST_FILTER" ]; then filter_arg="--filter $TEST_FILTER"; fi
+          pharos run tests/Zaldaryon.Pharos.Tests --no-build --parallel 3 --shard ${{ matrix.shard }}/${{ matrix.total }} $filter_arg --json artifacts/pharos/run-${{ matrix.shard }}.json --trx artifacts/pharos/shard-${{ matrix.shard }}.trx
 
       - name: Check the pharos tool package
         if: matrix.shard == 1
         env:
           VINTAGE_STORY: ${{ steps.vs.outputs.path }}
-        run: |
-          # A version of its own, so the install below can only take this build, never a
-          # published package of the same version.
-          dotnet pack src/Zaldaryon.Pharos.Cli/Zaldaryon.Pharos.Cli.csproj -c Release -o ./tool-nupkg -p:Version=0.0.0-ci.${{ github.run_id }}.${{ github.run_attempt }}
-          scripts/check-tool-package.sh ./tool-nupkg/Zaldaryon.Pharos.Cli.*.nupkg "$VINTAGE_STORY"
+        run: scripts/check-tool-package.sh ./tool-nupkg/Zaldaryon.Pharos.Cli.*.nupkg "$VINTAGE_STORY"
 
       - name: Smoke-test mods with the installed pharos tool
         if: needs.plan.outputs.full == 'true' && matrix.shard == 1
         env:
           VINTAGE_STORY: ${{ steps.vs.outputs.path }}
-          LIBGL_ALWAYS_SOFTWARE: 1
-          GALLIUM_DRIVER: llvmpipe
-          MESA_LOADER_DRIVER_OVERRIDE: llvmpipe
-          MESA_GL_VERSION_OVERRIDE: "4.5"
-          MESA_GLSL_VERSION_OVERRIDE: "450"
-          ALSOFT_DRIVERS: null
           TEST_MODS: ${{ github.workspace }}/tests/Zaldaryon.Pharos.Tests/TestMods
         run: |
-          dotnet tool install Zaldaryon.Pharos.Cli --tool-path "$RUNNER_TEMP/pharos-tool" --add-source ./tool-nupkg \
-            --version "0.0.0-ci.${{ github.run_id }}.${{ github.run_attempt }}"
-          # From outside the repository, as a mod's own CI would run it.
           cd "$RUNNER_TEMP"
-          # During join, the server can send region weather before the client has loaded that map region.
-          # Allow only this dropped update; strict still rejects every other boot warning.
-          xvfb-run -a "$RUNNER_TEMP/pharos-tool/pharos" smoke --mod "$TEST_MODS/pharostestmod" --frames 300 \
+          pharos smoke --mod "$TEST_MODS/pharostestmod" --frames 300 \
             --command "/time set day" --strict \
             --allow '^weatherSim for region -?[0-9]+/-?[0-9]+ is null\. No idea what to do here$' \
             --preset survival --artifacts "$GITHUB_WORKSPACE/artifacts/pharos/tool-smoke"
           set +e
-          # Keep the auth file outside xvfb-run's auto-cleanup directory so cleanup preserves the CLI exit code.
-          xvfb-run -a -f "$RUNNER_TEMP/pharosbrokenmod.Xauthority" "$RUNNER_TEMP/pharos-tool/pharos" smoke --mod "$TEST_MODS/pharosbrokenmod" --strict \
+          pharos smoke --mod "$TEST_MODS/pharosbrokenmod" --strict \
             --artifacts "$RUNNER_TEMP/broken-smoke"
           code=$?
           set -e
@@ -207,6 +177,17 @@ jobs:
             exit 1
           fi
           test -n "$(find "$RUNNER_TEMP/broken-smoke" -name boot-diagnostics.txt)"
+
+      - name: Upload shard results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pharos-results-linux-${{ matrix.shard }}-${{ github.run_attempt }}
+          path: |
+            ${{ github.workspace }}/artifacts/pharos/run-${{ matrix.shard }}.json
+            ${{ github.workspace }}/artifacts/pharos/shard-${{ matrix.shard }}.trx
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Upload failure artifacts
         if: failure() || cancelled()
@@ -222,9 +203,7 @@ jobs:
     needs: plan
     if: needs.plan.outputs.run == 'true' && needs.plan.outputs.full == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-    env:
-      VS_CACHE_PATH: /home/runner/.vintagestory-cache
+    timeout-minutes: 20
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -239,34 +218,21 @@ jobs:
         with:
           dotnet-version: "10.0.x"
 
-      - name: Install Mesa and Xvfb
-        run: |
-          # A fresh runner may still hold the dpkg lock for its own updates; wait for it, but not forever.
-          timeout 600 sudo apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Retries=3 update
-          timeout 600 sudo apt-get -o DPkg::Lock::Timeout=300 -o Acquire::Retries=3 install -y mesa-utils libgl1-mesa-dri xvfb libopenal1 libglfw3 libglfw3-dev libcairo2 libcairo2-dev
-
-      - name: Cache Vintage Story
-        id: cache-vs
-        uses: actions/cache@v4
+      - name: Set up Vintage Story
+        id: vs
+        uses: ./.github/actions/setup-vintage-story
         with:
-          path: ${{ env.VS_CACHE_PATH }}/${{ env.VS_VERSION }}
-          key: vintagestory-linux-${{ env.VS_VERSION }}-v2
-
-      - name: Download Vintage Story
-        if: steps.cache-vs.outputs.cache-hit != 'true'
-        run: |
-          mkdir -p ${{ env.VS_CACHE_PATH }}/${{ env.VS_VERSION }}
-          wget -q https://cdn.vintagestory.at/gamefiles/stable/vs_client_linux-x64_${{ env.VS_VERSION }}.tar.gz -O /tmp/vs.tar.gz
-          tar xzf /tmp/vs.tar.gz -C ${{ env.VS_CACHE_PATH }}/${{ env.VS_VERSION }} --strip-components=1
-          rm /tmp/vs.tar.gz
+          version: ${{ env.VS_VERSION }}
+          mesa: "true"
+          xvfb: "true"
 
       - name: Build
         env:
-          VINTAGE_STORY: ${{ env.VS_CACHE_PATH }}/${{ env.VS_VERSION }}
+          VINTAGE_STORY: ${{ steps.vs.outputs.path }}
         run: dotnet build Pharos.sln -c Release
 
       - name: Stage assets
-        run: ln -sf ${{ env.VS_CACHE_PATH }}/${{ env.VS_VERSION }}/assets tests/Zaldaryon.Pharos.Tests/bin/Release/net10.0/assets || true
+        run: ln -sf ${{ steps.vs.outputs.path }}/assets tests/Zaldaryon.Pharos.Tests/bin/Release/net10.0/assets || true
 
       - name: Wait for the server to accept players
         run: |
@@ -280,16 +246,9 @@ jobs:
       - name: Test against the dedicated server
         env:
           PHAROS_REMOTE_SERVER: 127.0.0.1:42420
-          VINTAGE_STORY: ${{ env.VS_CACHE_PATH }}/${{ env.VS_VERSION }}
-          LD_LIBRARY_PATH: ${{ env.VS_CACHE_PATH }}/${{ env.VS_VERSION }}/Lib:${{ env.VS_CACHE_PATH }}/${{ env.VS_VERSION }}:/usr/lib/x86_64-linux-gnu
-          LIBGL_ALWAYS_SOFTWARE: 1
-          GALLIUM_DRIVER: llvmpipe
-          MESA_LOADER_DRIVER_OVERRIDE: llvmpipe
-          MESA_GL_VERSION_OVERRIDE: "4.5"
-          MESA_GLSL_VERSION_OVERRIDE: "450"
-          ALSOFT_DRIVERS: null
+          VINTAGE_STORY: ${{ steps.vs.outputs.path }}
           PHAROS_ARTIFACTS: ${{ github.workspace }}/artifacts/pharos
-        run: xvfb-run -a -s "-screen 0 1280x720x24" dotnet test Pharos.sln -c Release --no-build --filter "FullyQualifiedName~RemoteServerTests"
+        run: dotnet test Pharos.sln -c Release --no-build --filter "FullyQualifiedName~RemoteServerTests"
 
       - name: Upload failure artifacts
         if: failure() || cancelled()
@@ -372,15 +331,10 @@ jobs:
     needs: plan
     if: needs.plan.outputs.run == 'true' && needs.plan.outputs.full == 'true'
     runs-on: windows-latest
-    # Windows downloads the client, builds and runs the whole suite in one job, and it
-    # already reached 90m08s on 11/10, which the old budget killed. Runs took 58m to 82m.
-    timeout-minutes: 120
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
-    env:
-      VS_CACHE_PATH: C:\vintagestory-cache
-      PHAROS_CACHE: C:\pharos-cache
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -390,77 +344,60 @@ jobs:
         with:
           dotnet-version: "10.0.x"
 
-      - name: Cache Vintage Story
-        id: cache-vs
-        uses: actions/cache@v4
+      - name: Set up Vintage Story
+        id: vs
+        uses: ./.github/actions/setup-vintage-story
         with:
-          path: ${{ env.VS_CACHE_PATH }}\${{ env.VS_VERSION }}
-          key: vintagestory-windows-${{ env.VS_VERSION }}-v2
-
-      - name: Cache Pharos world presets
-        uses: actions/cache@v4
-        with:
-          path: ${{ env.PHAROS_CACHE }}
-          key: pharos-world-presets-Windows-${{ env.VS_VERSION }}-schema1
-
-      - name: Download and extract Vintage Story
-        if: steps.cache-vs.outputs.cache-hit != 'true'
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force -Path "${{ env.VS_CACHE_PATH }}\${{ env.VS_VERSION }}"
-          $ProgressPreference = 'SilentlyContinue'
-          Invoke-WebRequest -Uri "https://github.com/crazy-max/innoextract/releases/download/v1.13.0/innoextract-windows-amd64.exe" -OutFile "$env:TEMP\innoextract.exe"
-          Invoke-WebRequest -Uri "https://cdn.vintagestory.at/gamefiles/stable/vs_install_win-x64_${{ env.VS_VERSION }}.exe" -OutFile "$env:TEMP\vs_setup.exe"
-          $extractStage = "$env:TEMP\vs_extract"
-          New-Item -ItemType Directory -Force -Path $extractStage | Out-Null
-          & "$env:TEMP\innoextract.exe" --silent --extract --output-dir $extractStage "$env:TEMP\vs_setup.exe"
-          $sourceDir = if (Test-Path (Join-Path $extractStage "app\Vintagestory.exe")) { Join-Path $extractStage "app" } else { $extractStage }
-          Copy-Item -Path "$sourceDir\*" -Destination "${{ env.VS_CACHE_PATH }}\${{ env.VS_VERSION }}" -Recurse -Force
-          Remove-Item -Recurse -Force $extractStage -ErrorAction SilentlyContinue
-          Remove-Item -Force "$env:TEMP\vs_setup.exe" -ErrorAction SilentlyContinue
-          Remove-Item -Force "$env:TEMP\innoextract.exe" -ErrorAction SilentlyContinue
+          version: ${{ env.VS_VERSION }}
 
       - name: Build
         env:
-          VINTAGE_STORY: ${{ env.VS_CACHE_PATH }}\${{ env.VS_VERSION }}
+          VINTAGE_STORY: ${{ steps.vs.outputs.path }}
         run: dotnet build Pharos.sln -c Release
 
+      - name: Build and install Pharos CLI
+        shell: bash
+        run: |
+          dotnet pack src/Zaldaryon.Pharos.Cli/Zaldaryon.Pharos.Cli.csproj -c Release -o ./tool-nupkg -p:Version=0.0.0-ci.${{ github.run_id }}.${{ github.run_attempt }}
+          dotnet tool install Zaldaryon.Pharos.Cli --tool-path "$RUNNER_TEMP/bin" --add-source ./tool-nupkg --version "0.0.0-ci.${{ github.run_id }}.${{ github.run_attempt }}"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+
       - name: Warm cached survival world presets
+        shell: bash
         env:
-          VINTAGE_STORY: ${{ env.VS_CACHE_PATH }}\${{ env.VS_VERSION }}
+          VINTAGE_STORY: ${{ steps.vs.outputs.path }}
         run: |
-          dotnet run --project src/Zaldaryon.Pharos.Cli -c Release --no-build -- fixture --preset survival-flat --game "$env:VINTAGE_STORY"
-          dotnet run --project src/Zaldaryon.Pharos.Cli -c Release --no-build -- fixture --preset survival-standard-small --game "$env:VINTAGE_STORY"
+          pharos fixture --preset survival-flat --game "$VINTAGE_STORY"
+          pharos fixture --preset survival-standard-small --game "$VINTAGE_STORY"
 
-      - name: Install Mesa Windows
-        uses: f3d-app/install-mesa-windows-action@v1
-        with:
-          path: ${{ github.workspace }}\tests\Zaldaryon.Pharos.Tests\bin\Release\net10.0
-
-      - name: Copy Mesa to Vintage Story Lib
-        shell: pwsh
-        run: |
-          Copy-Item "${{ github.workspace }}\tests\Zaldaryon.Pharos.Tests\bin\Release\net10.0\opengl32.dll" "${{ env.VS_CACHE_PATH }}\${{ env.VS_VERSION }}\Lib\" -Force -ErrorAction SilentlyContinue
+      - name: Test xUnit v3 scenario package
+        if: matrix.shard == 1
+        shell: bash
+        run: dotnet test tests/Zaldaryon.Pharos.XUnit.V3.Tests -c Release --no-build
 
       - name: Test
+        shell: bash
         env:
-          VINTAGE_STORY: ${{ env.VS_CACHE_PATH }}\${{ env.VS_VERSION }}
-          GALLIUM_DRIVER: llvmpipe
-          LIBGL_ALWAYS_SOFTWARE: 1
-          MESA_LOADER_DRIVER_OVERRIDE: llvmpipe
-          LIBGL_ALWAYS_INDIRECT: 0
-          MESA_GL_VERSION_OVERRIDE: "4.5"
-          MESA_GLSL_VERSION_OVERRIDE: "450"
+          VINTAGE_STORY: ${{ steps.vs.outputs.path }}
           PHAROS_ARTIFACTS: ${{ github.workspace }}/artifacts/pharos
-          # Software rendering on the Windows runner is the slowest lane; the watchdog only
-          # catches hangs, so it gets twice the time.
           PHAROS_TIMEOUT_SCALE: "2"
           TEST_FILTER: ${{ needs.plan.outputs.filter }}
-          SHARD_FILTER: ${{ matrix.filter }}
         run: |
-          $filter = $env:SHARD_FILTER
-          if ($env:TEST_FILTER) { $filter = "($env:TEST_FILTER)&($env:SHARD_FILTER)" }
-          dotnet test Pharos.sln -c Release --no-build --filter "$filter"
+          mkdir -p artifacts/pharos
+          filter_arg=""
+          if [ -n "$TEST_FILTER" ]; then filter_arg="--filter $TEST_FILTER"; fi
+          pharos run tests/Zaldaryon.Pharos.Tests --no-build --parallel 2 --shard ${{ matrix.shard }}/${{ matrix.total }} $filter_arg --json artifacts/pharos/run-${{ matrix.shard }}.json --trx artifacts/pharos/shard-${{ matrix.shard }}.trx
+
+      - name: Upload shard results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pharos-results-windows-${{ matrix.shard }}-${{ github.run_attempt }}
+          path: |
+            ${{ github.workspace }}/artifacts/pharos/run-${{ matrix.shard }}.json
+            ${{ github.workspace }}/artifacts/pharos/shard-${{ matrix.shard }}.trx
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Upload failure artifacts
         if: failure() || cancelled()
@@ -543,3 +480,105 @@ jobs:
           fi
 
           echo "✓ All baseline values are positive"
+
+  summary:
+    name: Summary and Diff
+    needs: [plan, test-linux, test-windows]
+    if: always() && needs.plan.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Download Linux test results
+        uses: actions/download-artifact@v4
+        with:
+          pattern: pharos-results-linux-*
+          path: artifacts/results-linux
+          merge-multiple: true
+
+      - name: Download Windows test results
+        if: needs.plan.outputs.full == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          pattern: pharos-results-windows-*
+          path: artifacts/results-windows
+          merge-multiple: true
+
+      - name: Set up Vintage Story
+        id: vs
+        uses: ./.github/actions/setup-vintage-story
+        with:
+          version: ${{ env.VS_VERSION }}
+          mesa: "false"
+          xvfb: "false"
+
+      - name: Build and install Pharos CLI
+        env:
+          VINTAGE_STORY: ${{ steps.vs.outputs.path }}
+        run: |
+          dotnet pack src/Zaldaryon.Pharos.Cli/Zaldaryon.Pharos.Cli.csproj -c Release -o ./tool-nupkg -p:Version=0.0.0-ci.${{ github.run_id }}.${{ github.run_attempt }}
+          dotnet tool install Zaldaryon.Pharos.Cli --tool-path "$RUNNER_TEMP/bin" --add-source ./tool-nupkg --version "0.0.0-ci.${{ github.run_id }}.${{ github.run_attempt }}"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+
+      - name: Merge Linux shard results
+        run: |
+          mkdir -p artifacts/summary
+          shards=$(find artifacts/results-linux -name "run-*.json" 2>/dev/null | sort)
+          if [ -n "$shards" ]; then
+            pharos merge $shards -o artifacts/summary/pharos-run-linux.json --trx artifacts/summary/pharos-linux.trx
+          fi
+
+      - name: Merge Windows shard results
+        if: needs.plan.outputs.full == 'true'
+        run: |
+          shards=$(find artifacts/results-windows -name "run-*.json" 2>/dev/null | sort)
+          if [ -n "$shards" ]; then
+            pharos merge $shards -o artifacts/summary/pharos-run-windows.json --trx artifacts/summary/pharos-windows.trx
+          fi
+
+      - name: Run diff comparison
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ -f "artifacts/summary/pharos-run-linux.json" ]; then
+            echo "Linux merged test run:"
+            jq '{total: .summary.total, passed: .summary.passed, failed: .summary.failed, skipped: .summary.skipped, duration: .summary.duration}' artifacts/summary/pharos-run-linux.json || true
+          fi
+          mkdir -p artifacts/main-run
+          if gh run download --repo Zaldaryon/Pharos --name "pharos-run-merged-*" --dir artifacts/main-run 2>/dev/null; then
+            main_manifest=$(find artifacts/main-run -name "pharos-run-linux.json" | head -n 1)
+            if [ -n "$main_manifest" ] && [ -f "artifacts/summary/pharos-run-linux.json" ]; then
+              echo "Diff against main test run:"
+              pharos diff "$main_manifest" artifacts/summary/pharos-run-linux.json || true
+            fi
+          else
+            echo "No previous merged run manifest found on main for comparison."
+          fi
+
+      - name: Upload merged results
+        uses: actions/upload-artifact@v4
+        with:
+          name: pharos-run-merged-${{ github.run_attempt }}
+          path: artifacts/summary
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Verify test status
+        run: |
+          if [ "${{ needs.test-linux.result }}" != "success" ]; then
+            echo "::error::Linux tests failed"
+            exit 1
+          fi
+          if [ "${{ needs.plan.outputs.full }}" = "true" ] && [ "${{ needs.test-windows.result }}" != "success" ]; then
+            echo "::error::Windows tests failed"
+            exit 1
+          fi

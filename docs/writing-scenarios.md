@@ -6,13 +6,19 @@ This guide explains how to write client scenario tests using Pharos. A scenario 
 
 ### 1. Install the Package
 
-Add the Pharos XUnit metapackage to your test project:
+Add the Pharos XUnit package to your test project:
 
 ```bash
 dotnet add package Zaldaryon.Pharos.XUnit
 ```
 
-This brings in `Zaldaryon.Pharos` and `xunit.core` as dependencies.
+For projects targeting xUnit v3, install the preview package instead:
+
+```bash
+dotnet add package Zaldaryon.Pharos.XUnit.V3 --prerelease
+```
+
+This brings in `Zaldaryon.Pharos` and the scenario runner as dependencies.
 
 ### 2. Create a Scenario Class
 
@@ -46,6 +52,8 @@ public class ChunkLoadingTests : ClientScenarioBase
 To test against a real world instead, boot the client in engine mode and connect it to a server (see [Engine Mode](engine-mode.md)), or use a `ClientServerScenarioBase`, which does both for you:
 
 ```csharp
+using Zaldaryon.Pharos.Bootstrap;
+
 public class MyTests : ClientScenarioBase
 {
     protected override HeadlessClientOptions ClientOptions => new() { BootMode = ClientBootMode.Engine };
@@ -146,6 +154,8 @@ public void ChunksLoadAtPosition(int x, int y, int z)
 Declares mod paths to stage into a mod folder the client loads from, before it boots. Apply to the test class or assembly. Only an engine-mode client runs the mod loader.
 
 ```csharp
+using Zaldaryon.Pharos.Bootstrap;
+
 [PharosMods("mods/MyMod.zip", "mods/DependencyMod")]
 public class ModCompatibilityTests : ClientScenarioBase
 {
@@ -167,7 +177,7 @@ The staged copy is deleted together with the client.
 ```csharp
 [ClientScenario]
 [RequireGameVersion(">=1.22.0", Reason = "Uses the 1.22 calendar API.")]
-public void SeasonsFollowTheNewCalendar() { ... }
+public void SeasonsFollowTheNewCalendar() { }
 ```
 
 - **Ranges:** `>=1.22.0`, `>1.21.6`, `<=1.22.7`, `<1.23.0`, `=1.22.7`, or a bare `1.22.7`.
@@ -358,10 +368,10 @@ Test method names should describe the scenario and expected outcome:
 
 ```csharp
 // Good
-public void ChunksOutsideFrustum_AreCulled()
+public void ChunksOutsideFrustum_AreCulled() { }
 
 // Bad
-public void Test1()
+public void Test1() { }
 ```
 
 ### Save Artifacts on Failure

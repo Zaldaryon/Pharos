@@ -10,7 +10,7 @@ namespace Zaldaryon.Pharos.Tests.XUnit;
 
 /// <summary>
 /// Headless-safe tests for <see cref="ClientServerScenarioAttribute"/> and <see cref="ClientServerScenarioBase"/>.
-/// Tests validate attribute properties, base class structure, property types, and IAsyncLifetime shape
+/// Tests validate attribute properties, base class structure, property types, and lifecycle shape
 /// without requiring live server/client boot.
 /// </summary>
 public class ClientServerScenarioTests
@@ -90,9 +90,10 @@ public class ClientServerScenarioTests
     }
 
     [Fact]
-    public void ClientServerScenarioBase_ImplementsIAsyncLifetime()
+    public void ClientServerScenarioBase_ImplementsIScenarioLifecycleAndIAsyncDisposable()
     {
-        Assert.True(typeof(IAsyncLifetime).IsAssignableFrom(typeof(ClientServerScenarioBase)));
+        Assert.True(typeof(IScenarioLifecycle).IsAssignableFrom(typeof(ClientServerScenarioBase)));
+        Assert.True(typeof(IAsyncDisposable).IsAssignableFrom(typeof(ClientServerScenarioBase)));
     }
 
     [Fact]
@@ -226,7 +227,7 @@ public class ClientServerScenarioTests
 
     #endregion
 
-    #region IAsyncLifetime Method Tests
+    #region Lifecycle Method Tests
 
     [Fact]
     public void ClientServerScenarioBase_InitializeAsync_IsVirtual()

@@ -1,0 +1,80 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+
+    <VintageStoryPath Condition="'$(VintageStoryPath)' == ''">$(VINTAGE_STORY)</VintageStoryPath>
+    <VintageStoryPath Condition="'$(VintageStoryPath)' == '' and Exists('C:\Games\VintageStory')">C:\Games\VintageStory</VintageStoryPath>
+    <VintageStoryPath Condition="'$(VintageStoryPath)' == '' and Exists('$(MSBuildThisFileDirectory)../../../.vanilla/win-x64/vintagestory')">$(MSBuildThisFileDirectory)../../../.vanilla/win-x64/vintagestory</VintageStoryPath>
+    <NoWarn>$(NoWarn);MSB3277;CS0672;CS0108</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.8.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Zaldaryon.Pharos\Zaldaryon.Pharos.csproj" />
+    <ProjectReference Include="..\..\src\Zaldaryon.Pharos.XUnit\Zaldaryon.Pharos.XUnit.csproj" />
+    <ProjectReference Include="..\..\src\Zaldaryon.Pharos.Bridge\Zaldaryon.Pharos.Bridge.csproj" />
+    <ProjectReference Include="..\..\src\Zaldaryon.Pharos.AtlasCompat\Zaldaryon.Pharos.AtlasCompat.csproj" />
+    <ProjectReference Include="..\..\src\Zaldaryon.Pharos.Analyzers\Zaldaryon.Pharos.Analyzers.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="VintagestoryAPI">
+      <HintPath>$(VintageStoryPath)/VintagestoryAPI.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="protobuf-net">
+      <HintPath>$(VintageStoryPath)/Lib/protobuf-net.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="0Harmony">
+      <HintPath>$(VintageStoryPath)/Lib/0Harmony.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="VintagestoryLib">
+      <HintPath>$(VintageStoryPath)/VintagestoryLib.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="VSEssentials">
+      <HintPath>$(VintageStoryPath)/Mods/VSEssentials.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="OpenTK.Windowing.Desktop">
+      <HintPath>$(VintageStoryPath)/Lib/OpenTK.Windowing.Desktop.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="OpenTK.Windowing.GraphicsLibraryFramework">
+      <HintPath>$(VintageStoryPath)/Lib/OpenTK.Windowing.GraphicsLibraryFramework.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="OpenTK.Windowing.Common">
+      <HintPath>$(VintageStoryPath)/Lib/OpenTK.Windowing.Common.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="OpenTK.Graphics">
+      <HintPath>$(VintageStoryPath)/Lib/OpenTK.Graphics.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="OpenTK.Core">
+      <HintPath>$(VintageStoryPath)/Lib/OpenTK.Core.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="OpenTK.Mathematics">
+      <HintPath>$(VintageStoryPath)/Lib/OpenTK.Mathematics.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+  </ItemGroup>
+
+</Project>

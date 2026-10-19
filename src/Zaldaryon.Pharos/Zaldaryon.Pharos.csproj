@@ -17,7 +17,7 @@
     <IsPackable>true</IsPackable>
     <IsTestProject>false</IsTestProject>
     <PackageId>Zaldaryon.Pharos</PackageId>
-    <Version>0.6.0</Version>
+    <Version>0.7.0</Version>
     <Authors>Zaldaryon</Authors>
     <Description>Headless Vintage Story client test harness. Boots an embedded client without a window and drives it frame by frame for xUnit scenario testing.</Description>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
@@ -35,11 +35,18 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="Zaldaryon.Pharos.Tests" />
+    <InternalsVisibleTo Include="Zaldaryon.Pharos.XUnit" />
+    <InternalsVisibleTo Include="Zaldaryon.Pharos.XUnit.V3" />
+    <InternalsVisibleTo Include="Zaldaryon.Pharos.XUnit.V3.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Zaldaryon.Pharos.Scenarios" />
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
-    <PackageReference Include="xunit.core" Version="2.9.3" />
+    <PackageReference Include="xunit.abstractions" Version="2.0.3" />
   </ItemGroup>
 
   <ItemGroup>

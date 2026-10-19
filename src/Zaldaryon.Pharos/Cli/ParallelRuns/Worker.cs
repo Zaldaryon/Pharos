@@ -61,14 +61,22 @@ internal sealed class Worker
 
     /// <summary>The command a worker runs for <paramref name="group"/>, without a display.</summary>
     /// <param name="testTimeout">How long one test may run before vstest stops the test host; the results so far are kept.</param>
-    public IReadOnlyList<string> Command(int index, TimeSpan testTimeout) =>
-    [
-        _dotnet, "vstest", _assembly,
-        $"--Settings:{SettingsPath(index)}",
-        $"--logger:trx;LogFileName={TrxPath(index)}",
-        $"--ResultsDirectory:{Path.Combine(_workersDirectory, index.ToString(CultureInfo.InvariantCulture))}",
-        $"--Blame:CollectHangDump;TestTimeout={(long)testTimeout.TotalSeconds}s;HangDumpType=None",
-    ];
+    public IReadOnlyList<string> Command(int index, TimeSpan testTimeout)
+    {
+        if (RunCommand.IsTestingPlatform(_assembly))
+        {
+            return [_dotnet, _assembly, "-parallel", "none", "-trx", TrxPath(index)];
+        }
+
+        return
+        [
+            _dotnet, "vstest", _assembly,
+            $"--Settings:{SettingsPath(index)}",
+            $"--logger:trx;LogFileName={TrxPath(index)}",
+            $"--ResultsDirectory:{Path.Combine(_workersDirectory, index.ToString(CultureInfo.InvariantCulture))}",
+            $"--Blame:CollectHangDump;TestTimeout={(long)testTimeout.TotalSeconds}s;HangDumpType=None",
+        ];
+    }
 
     /// <summary>
     /// Runs <paramref name="group"/> as worker <paramref name="index"/>, on display
@@ -96,13 +104,24 @@ internal sealed class Worker
         Directory.CreateDirectory(_workersDirectory);
         File.Delete(trx);
 
-        // The filter goes in a settings file: on the command line, a large class's filter would
-        // pass Windows's limit.
-        await File.WriteAllTextAsync(SettingsPath(index),
-            $"<RunSettings><RunConfiguration><TestCaseFilter>{SecurityElement.Escape(FilterFor(group))}</TestCaseFilter></RunConfiguration></RunSettings>",
-            CancellationToken.None).ConfigureAwait(false);
+        bool isMtp = RunCommand.IsTestingPlatform(_assembly);
+        if (!isMtp)
+        {
+            // The filter goes in a settings file: on the command line, a large class's filter would
+            // pass Windows's limit.
+            await File.WriteAllTextAsync(SettingsPath(index),
+                $"<RunSettings><RunConfiguration><TestCaseFilter>{SecurityElement.Escape(FilterFor(group))}</TestCaseFilter></RunConfiguration></RunSettings>",
+                CancellationToken.None).ConfigureAwait(false);
+        }
 
         List<string> command = [.. Command(index, testTimeout)];
+        if (isMtp)
+        {
+            foreach (string test in group.Tests)
+            {
+                command.AddRange(["-method", test]);
+            }
+        }
         if (display is { } number)
         {
             // Each slot starts its search for a free display elsewhere, so workers started at

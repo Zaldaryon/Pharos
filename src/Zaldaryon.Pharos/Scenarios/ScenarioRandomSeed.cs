@@ -1,7 +1,8 @@
 using System.Globalization;
 using System.Reflection;
+using Zaldaryon.Pharos.XUnit;
 
-namespace Zaldaryon.Pharos.XUnit.Execution;
+namespace Zaldaryon.Pharos.Scenarios;
 
 /// <summary>
 /// The seed a scenario test runs with, from <see cref="SeededAttribute"/> and
@@ -10,7 +11,7 @@ namespace Zaldaryon.Pharos.XUnit.Execution;
 /// <param name="Seed">The seed.</param>
 /// <param name="Source">Where it came from, as the test's output says it.</param>
 /// <param name="Error">Why the seed could not be read; the test fails before its body.</param>
-internal sealed record ScenarioRandomSeed(int Seed, string Source, string? Error = null)
+public sealed record ScenarioRandomSeed(int Seed, string Source, string? Error = null)
 {
     /// <summary>
     /// The seed of the test, or null when no <see cref="SeededAttribute"/> covers it.

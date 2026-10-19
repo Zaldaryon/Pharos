@@ -76,6 +76,9 @@ public sealed class ServerTestPlayer : IServerTestPlayer, IDisposable
     public EntityPlayer? Entity => _player?.Entity;
 
     /// <inheritdoc />
+    public Vec3d Position => Entity?.Pos.XYZ ?? new Vec3d();
+
+    /// <inheritdoc />
     public HeadlessPlayerBot Bot { get; }
 
     /// <inheritdoc />
