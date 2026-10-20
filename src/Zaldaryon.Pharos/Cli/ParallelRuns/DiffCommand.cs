@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Xml.Linq;
+using Zaldaryon.Pharos.Cli.ParallelRuns.Compare;
 
 namespace Zaldaryon.Pharos.Cli.ParallelRuns;
 
@@ -145,14 +146,6 @@ public static class DiffCommand
         """;
 
     /// <summary>Runs <c>pharos diff</c> with the arguments that follow <c>diff</c>.</summary>
-    private static bool IsJson(string path) => string.Equals(Path.GetExtension(path), ".json", StringComparison.OrdinalIgnoreCase);
-
-    private static int Mismatch(TextWriter stderr)
-    {
-        stderr.WriteLine("Error: compare two TRX files, or two state hash recordings (.json), not one of each.");
-        return ExitError;
-    }
-
     public static int Run(IReadOnlyList<string> args, TextWriter stdout, TextWriter stderr)
     {
         DiffOptions? options;
@@ -219,9 +212,47 @@ public static class DiffCommand
         else
         {
             Print(diff, options, before.Abort, afterAborted, counted, stdout);
+            PrintMetrics(options, stdout);
         }
 
         return exitCode;
+    }
+
+    /// <summary>
+    /// The metric deltas of two run manifests: the single-run form of <c>pharos compare</c>. Metrics
+    /// never change the outcome, so a problem reading one is reported and nothing else is affected.
+    /// </summary>
+    /// <param name="options">The command's options.</param>
+    /// <param name="stdout">Where the table goes; nothing is printed when no manifest has metrics.</param>
+    private static void PrintMetrics(DiffOptions options, TextWriter stdout)
+    {
+        string? before = ManifestFor(options.Before, options.BeforeManifest);
+        string? after = ManifestFor(options.After, options.AfterManifest);
+        if (before == null || after == null) return;
+        try
+        {
+            ComparisonResult result = ComparisonModel.Build(
+                [ScenarioRunManifestWriter.Load(before)], [ScenarioRunManifestWriter.Load(after)],
+                "before", "after", new CompareAnalysisOptions(BootstrapSamples: 0));
+            if (result.Metrics.Count == 0) return;
+            ComparisonReport.WriteMetrics(result, stdout);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or FormatException or JsonException)
+        {
+            stdout.WriteLine($"Metrics could not be read: {ex.Message}");
+        }
+    }
+
+    // The manifest behind an input, whether the input is one or a TRX file beside it.
+    private static string? ManifestFor(string path, string? manifestPath) =>
+        IsManifest(path) ? path : manifestPath != null && IsManifest(manifestPath) ? manifestPath : null;
+
+    private static bool IsJson(string path) => string.Equals(Path.GetExtension(path), ".json", StringComparison.OrdinalIgnoreCase);
+
+    private static int Mismatch(TextWriter stderr)
+    {
+        stderr.WriteLine("Error: compare two TRX files, or two state hash recordings (.json), not one of each.");
+        return ExitError;
     }
 
     /// <summary>Compares the results of two runs.</summary>

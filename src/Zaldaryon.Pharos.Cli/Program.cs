@@ -12,10 +12,11 @@ internal static class Program
             return RunHere(args);
         }
 
-        // Help, Atlas migration, `run`, which starts `dotnet vstest` workers, `diff` and `fixture` need no game; the
-        // in-process test runner, benchmarks and smoke tests do.
+        // Help, Atlas migration, `run`, which starts `dotnet vstest` workers, `diff`, `compare`, which
+        // starts the same workers, and `fixture` need no game; the in-process test runner, benchmarks
+        // and smoke tests do.
         bool generatingPreset = args.Length > 0 && args[0] == "fixture" && args.Contains("--preset");
-        bool needsGame = args.Length > 0 && (generatingPreset || args[0] is not ("help" or "migrate-atlas" or "run" or "diff" or "fixture" or "merge" or "merge-runs" or "-h" or "--help"))
+        bool needsGame = args.Length > 0 && (generatingPreset || args[0] is not ("help" or "migrate-atlas" or "run" or "diff" or "compare" or "fixture" or "merge" or "merge-runs" or "-h" or "--help"))
             && !args.Contains("--help") && !args.Contains("-h");
         if (!needsGame) return RunHere(args);
 

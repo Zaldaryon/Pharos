@@ -85,13 +85,20 @@ internal static class ScenarioAttributes
     /// the game's mod loader picks it up.
     /// </summary>
     /// <exception cref="FileNotFoundException">A listed mod does not exist.</exception>
-    public static void StageMods(IEnumerable<string> modPaths, string modsDirectory)
+    public static void StageMods(IEnumerable<string> modPaths, string modsDirectory) =>
+        StageMods(modPaths, modsDirectory, Environment.GetEnvironmentVariable(OverrideVariable));
+
+    /// <summary>Stages mods, replacing declared paths with a build from <paramref name="overrideRoot"/>.</summary>
+    /// <param name="modPaths">The paths declared on the mod attributes.</param>
+    /// <param name="modsDirectory">Where the mods are staged.</param>
+    /// <param name="overrideRoot">A directory of alternative builds, or null.</param>
+    internal static void StageMods(IEnumerable<string> modPaths, string modsDirectory, string? overrideRoot)
     {
         Directory.CreateDirectory(modsDirectory);
 
         foreach (string path in modPaths)
         {
-            string fullPath = Path.GetFullPath(path);
+            string fullPath = Override(path, overrideRoot) ?? Path.GetFullPath(path);
             if (Directory.Exists(fullPath))
             {
                 CopyDirectory(fullPath, Path.Combine(modsDirectory, new DirectoryInfo(fullPath).Name));
@@ -105,6 +112,26 @@ internal static class ScenarioAttributes
                 throw new FileNotFoundException($"Mod path does not exist: '{path}' (resolved to '{fullPath}').", fullPath);
             }
         }
+    }
+
+    /// <summary>The environment variable that swaps a declared mod build for another one.</summary>
+    public const string OverrideVariable = "PHAROS_MOD_OVERRIDE";
+
+    /// <summary>
+    /// The build of a declared mod that <paramref name="overrideRoot"/> points at, if any: a file,
+    /// folder or zip of the same name in that directory is staged instead of the declared path.
+    /// <c>pharos compare</c> uses it to run the same tests against a second build.
+    /// </summary>
+    /// <param name="path">A path declared on a mod attribute.</param>
+    /// <param name="overrideRoot">The directory of alternative builds, or null.</param>
+    /// <returns>The replacement path, or null when the declared path stands.</returns>
+    private static string? Override(string path, string? overrideRoot)
+    {
+        if (string.IsNullOrWhiteSpace(overrideRoot) || !Directory.Exists(overrideRoot)) return null;
+        string name = Path.GetFileName(path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+        if (string.IsNullOrEmpty(name)) return null;
+        string candidate = Path.Combine(overrideRoot, name);
+        return File.Exists(candidate) || Directory.Exists(candidate) ? candidate : null;
     }
 
     private static IReadOnlyList<string> Collect<T>(Type testClass, Func<T, IEnumerable<string>> paths) where T : Attribute

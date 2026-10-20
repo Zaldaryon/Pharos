@@ -367,7 +367,7 @@ public static partial class RunCommand
         // The last run's failures would mix with this run's.
         if (string.IsNullOrEmpty(userArtifacts) && Directory.Exists(artifacts)) Directory.Delete(artifacts, recursive: true);
 
-        Worker worker = new(dotnet, assembly, workers, options.Filter, environment);
+        Worker worker = new(dotnet, assembly, workers, options.Filter, environment, options.WorkingDirectory);
         double scale = TimeoutScale();
         TimeSpan timeout = options.WorkerTimeout * scale;
         TimeSpan testTimeout = options.TestTimeout * scale;
