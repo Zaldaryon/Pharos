@@ -1,0 +1,11 @@
+{
+  "type": "content",
+  "modid": "pharosbrokenpatchmod",
+  "name": "Pharos Broken Patch Mod",
+  "version": "1.0.0",
+  "side": "Server",
+  "requiredOnClient": false,
+  "description": "Content-only mod the mod loading tests stage: one patch targets a missing file, another a missing path, so the loader reports not-found and error outcomes.",
+  "authors": ["Pharos"],
+  "dependencies": { "game": "" }
+}

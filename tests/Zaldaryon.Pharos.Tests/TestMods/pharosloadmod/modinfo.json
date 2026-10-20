@@ -1,0 +1,12 @@
+{
+  "type": "code",
+  "modid": "pharosloadmod",
+  "name": "Pharos Load Mod",
+  "version": "1.0.0",
+  "side": "Universal",
+  "requiredOnClient": true,
+  "requiredOnServer": false,
+  "description": "Source mod the mod loading tests stage: systems at two orders, one client-only system, patched assets, a wildcard patch and three skipped patches.",
+  "authors": ["Pharos"],
+  "dependencies": { "game": "" }
+}

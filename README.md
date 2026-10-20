@@ -309,6 +309,7 @@ See the [inspection API reference](docs/inspection-api.md) for method signatures
 - [Comparing Before and After](docs/compare.md): `pharos compare`, which runs the same tests against a baseline and reports each metric's delta, verdict and budget
 - [Server Profiling](docs/server-profiling.md): `Server.Profile.MeasureAsync`, which breaks a measured stretch of ticks down by system, mod, block entity, entity, behavior, AI task and player traffic
 - [World Metrics](docs/world-metrics.md): `Server.Worldgen`, `Server.Saves` and `Server.WorldStats`, which attribute generation by pass and handler, split a save by category and mod data key, and count the loaded world
+- [Mod Loading](docs/mod-loading.md): `Server.Mods` and `Client.Mods`, which report mod states, systems, run order, JSON patch outcomes, compatibility assets and asset origins
 - [CI and Cloud Environments](docs/ci-and-cloud.md): Running the suite in CI and cloud environments, offline or online auth, and a dedicated server in Docker
 - [Client-Server Testing](docs/writing-client-server-scenarios.md): `[ClientServerScenario]`, lockstep stepping, and packet assertions
 - [Inspection API Reference](docs/inspection-api.md): Detailed API for all inspector classes

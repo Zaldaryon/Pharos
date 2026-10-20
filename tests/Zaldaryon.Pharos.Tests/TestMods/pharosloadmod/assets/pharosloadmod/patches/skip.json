@@ -1,0 +1,23 @@
+[
+  {
+    "op": "add",
+    "file": "pharosloadmod:config/base.json",
+    "path": "/disabled",
+    "value": true,
+    "enabled": false
+  },
+  {
+    "op": "add",
+    "file": "pharosloadmod:config/base.json",
+    "path": "/condition",
+    "value": true,
+    "condition": { "when": "pharosNeverSet", "useValue": true }
+  },
+  {
+    "op": "add",
+    "file": "pharosloadmod:config/base.json",
+    "path": "/dependency",
+    "value": true,
+    "dependsOn": [{ "modid": "pharosmissingdependency" }]
+  }
+]
