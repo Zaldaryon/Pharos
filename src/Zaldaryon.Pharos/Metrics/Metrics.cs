@@ -60,6 +60,19 @@ public static class Metrics
         Current?.Publish(profile.Metrics());
     }
 
+    /// <summary>Publishes every number of one or more profiles into the running scenario's collector.</summary>
+    /// <param name="sources">The profiles, such as a worldgen, save and world stats profile.</param>
+    /// <exception cref="ArgumentNullException">A source is null.</exception>
+    public static void Publish(params IMetricSource[] sources)
+    {
+        ArgumentNullException.ThrowIfNull(sources);
+        foreach (IMetricSource source in sources)
+        {
+            ArgumentNullException.ThrowIfNull(source);
+            Current?.Publish(source.Metrics());
+        }
+    }
+
     /// <summary>Makes <paramref name="collector"/> current on this flow until the scope is disposed.</summary>
     internal static IDisposable BeginScope(MetricsCollector collector)
     {
