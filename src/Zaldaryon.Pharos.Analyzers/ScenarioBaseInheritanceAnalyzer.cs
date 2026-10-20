@@ -65,7 +65,8 @@ public sealed class ScenarioBaseInheritanceAnalyzer : DiagnosticAnalyzer
                     requiredBase = "ClientScenarioBase";
                 }
                 else if (attrName is "ServerScenario" or "ServerScenarioAttribute" or
-                                     "ServerTheory" or "ServerTheoryAttribute")
+                                     "ServerTheory" or "ServerTheoryAttribute" or
+                                     "ContentSweep" or "ContentSweepAttribute")
                 {
                     canonicalAttr = attrName.Replace("Attribute", "");
                     requiredBase = "ServerScenarioBase";

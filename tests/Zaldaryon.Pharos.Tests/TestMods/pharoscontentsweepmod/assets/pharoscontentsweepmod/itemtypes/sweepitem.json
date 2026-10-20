@@ -1,0 +1,7 @@
+{
+  "code": "sweepitem",
+  "shape": { "base": "game:item/resource/beeswax" },
+  "texture": { "base": "game:item/resource/beeswax" },
+  "durability": 5,
+  "creativeinventory": { "general": ["*"] }
+}

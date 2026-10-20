@@ -1,0 +1,13 @@
+{
+  "code": "sweepentity",
+  "class": "PharosSweepEntity",
+  "tags": ["inanimate"],
+  "hitboxSize": { "x": 0.5, "y": 0.5 },
+  "eyeHeight": 0.25,
+  "client": {
+    "renderer": "Shape",
+    "shape": { "base": "game:block/basic/cube" },
+    "behaviors": []
+  },
+  "server": { "behaviors": [] }
+}
