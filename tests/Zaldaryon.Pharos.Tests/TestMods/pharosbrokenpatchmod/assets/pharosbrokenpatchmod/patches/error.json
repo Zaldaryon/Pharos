@@ -1,0 +1,8 @@
+[
+  {
+    "op": "replace",
+    "file": "pharosbrokenpatchmod:config/base.json",
+    "path": "/doesNotExist",
+    "value": 1
+  }
+]

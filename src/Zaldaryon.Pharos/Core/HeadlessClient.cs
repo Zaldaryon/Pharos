@@ -18,7 +18,9 @@ using Zaldaryon.Pharos.Bootstrap;
 using Zaldaryon.Pharos.Culling;
 using Zaldaryon.Pharos.Fixtures;
 using Zaldaryon.Pharos.Graphics;
+using Zaldaryon.Pharos.Inspection;
 using Zaldaryon.Pharos.Memory;
+using Zaldaryon.Pharos.Mods;
 using Zaldaryon.Pharos.Platform;
 using Zaldaryon.Pharos.Player;
 using Zaldaryon.Pharos.Reporting;
@@ -331,6 +333,29 @@ public sealed class HeadlessClient : IDisposable
     public HotkeyDriver Hotkeys => _hotkeys ??= new HotkeyDriver(this);
 
     private HotkeyDriver? _hotkeys;
+
+    /// <summary>
+    /// How the client's game loaded the mods it staged: their states, systems, phases, patches and
+    /// compatibility assets. Engine mode only, after the client joins. See
+    /// <see cref="ModLoadReport"/> and <c>docs/mod-loading.md</c>.
+    /// </summary>
+    public ModLoadReport Mods
+    {
+        get
+        {
+            if (_mods != null) return _mods;
+            ModLoadReport profile = RunOnClientThread(() => ModLoadReport.Capture(Client.api));
+            if (profile.Loaded.Count > 0) _mods = profile;
+            return profile;
+        }
+    }
+
+    private ModLoadReport? _mods;
+
+    /// <summary>Which mod supplied an asset, and whether a patch changed it. Engine mode only.</summary>
+    public AssetInspector Assets => _assets ??= RunOnClientThread(() => new AssetInspector(Client.api, Mods));
+
+    private AssetInspector? _assets;
 
     /// <summary>
     /// The renderers the client calls each frame, stage by stage, with their mod, and how often

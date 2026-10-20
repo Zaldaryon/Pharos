@@ -1,0 +1,11 @@
+{
+  "type": "content",
+  "modid": "pharoscompatmod",
+  "name": "Pharos Compatibility Mod",
+  "version": "1.0.0",
+  "side": "Universal",
+  "requiredOnClient": false,
+  "description": "Content-only mod the mod loading tests stage: its compatibility folder replaces one pharosloadmod asset and adds another.",
+  "authors": ["Pharos"],
+  "dependencies": { "game": "" }
+}

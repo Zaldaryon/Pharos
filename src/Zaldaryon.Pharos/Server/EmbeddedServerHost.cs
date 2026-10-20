@@ -15,6 +15,8 @@ using Vintagestory.Common;
 using Vintagestory.Server;
 using Vintagestory.Server.Network;
 using Zaldaryon.Pharos.Core;
+using Zaldaryon.Pharos.Inspection;
+using Zaldaryon.Pharos.Mods;
 using Zaldaryon.Pharos.Platform;
 using Zaldaryon.Pharos.XUnit;
 using Zaldaryon.Pharos.Reporting;
@@ -189,6 +191,19 @@ public sealed partial class EmbeddedServerHost : IDisposable, IAsyncDisposable
     public ServerSavesDriver Saves => _saves ??= new ServerSavesDriver(this);
 
     private ServerSavesDriver? _saves;
+
+    /// <summary>
+    /// How the game loaded the staged mods: their states, systems, phases, patches and compatibility
+    /// assets. See <see cref="ModLoadReport"/> and <c>docs/mod-loading.md</c>.
+    /// </summary>
+    public ModLoadReport Mods => ModsProfile ?? ModLoadReport.Empty(Server.Api.Side);
+
+    /// <summary>Which mod supplied an asset, and whether a patch changed it.</summary>
+    public AssetInspector Assets => AssetInspector ?? new AssetInspector(Server.Api, Mods);
+
+    internal ModLoadReport? ModsProfile { get; init; }
+
+    internal AssetInspector? AssetInspector { get; init; }
 
     /// <summary>
     /// A snapshot of the loaded world: chunks, map chunks, map regions, entities and block
@@ -531,6 +546,7 @@ public sealed partial class EmbeddedServerHost : IDisposable, IAsyncDisposable
         server.MainSockets[0] = dummyTcpServer;
         server.UdpSockets[0] = dummyUdpServer;
 
+        ModLoadObserver.Install();
         server.PreLaunch();
         server.Launch();
 
@@ -549,7 +565,15 @@ public sealed partial class EmbeddedServerHost : IDisposable, IAsyncDisposable
 
         // The server has booted: what it logs from here on is not a boot diagnostic.
         logs.CompleteBoot();
-        return new EmbeddedServerHost(server, tcpNetwork, udpNetwork, options, dataPath, ownsDataPath, sandbox: null, gameThread) { Logs = logs, Port = port };
+        ModLoadReport mods = ModLoadReport.Capture(server.Api);
+        AssetInspector assets = new(server.Api, mods);
+        return new EmbeddedServerHost(server, tcpNetwork, udpNetwork, options, dataPath, ownsDataPath, sandbox: null, gameThread)
+        {
+            Logs = logs,
+            Port = port,
+            ModsProfile = mods,
+            AssetInspector = assets
+        };
     }
 
     /// <summary>
@@ -630,6 +654,7 @@ public sealed partial class EmbeddedServerHost : IDisposable, IAsyncDisposable
         server.MainSockets[0] = dummyTcpServer;
         server.UdpSockets[0] = dummyUdpServer;
 
+        ModLoadObserver.Install();
         server.PreLaunch();
         server.Launch();
 
@@ -648,7 +673,15 @@ public sealed partial class EmbeddedServerHost : IDisposable, IAsyncDisposable
 
         // The server has booted: what it logs from here on is not a boot diagnostic.
         logs.CompleteBoot();
-        return new EmbeddedServerHost(server, tcpNetwork, udpNetwork, options, dataPath, ownsDataPath: false, sandbox, gameThread) { Logs = logs, Port = port };
+        ModLoadReport mods = ModLoadReport.Capture(server.Api);
+        AssetInspector assets = new(server.Api, mods);
+        return new EmbeddedServerHost(server, tcpNetwork, udpNetwork, options, dataPath, ownsDataPath: false, sandbox, gameThread)
+        {
+            Logs = logs,
+            Port = port,
+            ModsProfile = mods,
+            AssetInspector = assets
+        };
     }
 
     /// <summary>

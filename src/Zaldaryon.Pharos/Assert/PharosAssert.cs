@@ -1,6 +1,8 @@
 using Vintagestory.API.MathTools;
+using Vintagestory.Common;
 using System.Globalization;
 using Zaldaryon.Pharos.Server;
+using Zaldaryon.Pharos.Mods;
 using static System.FormattableString;
 using Zaldaryon.Pharos.Culling;
 using Zaldaryon.Pharos.Core;
@@ -511,106 +513,282 @@ public static class PharosAssert
     }
 
     // -------------------------------------------------------------------------
-    // Mod compatibility assertions
+    // Mod loading assertions
     // -------------------------------------------------------------------------
 
     /// <summary>
-    /// Asserts that a subsystem is disabled in the feature registry.
+    /// Asserts that every patch of <paramref name="modId"/> that the loader was meant to apply
+    /// applied. Disabled, side-mismatched, condition-unmet and dependency-missing patches are
+    /// skipped by the loader on purpose and do not fail this assertion.
     /// </summary>
-    /// <param name="registry">The subsystem feature registry to check.</param>
-    /// <param name="subsystemName">The subsystem name to verify is disabled.</param>
-    /// <exception cref="PharosAssertException">Thrown when the subsystem is not disabled.</exception>
-    public static void SubsystemDisabled(Mods.SubsystemFeatureRegistry registry, string subsystemName)
+    /// <param name="host">The server whose mods to inspect.</param>
+    /// <param name="modId">The patch mod, such as <c>mymod</c>.</param>
+    /// <exception cref="PharosAssertException">Thrown when a patch was not found or reported an error.</exception>
+    public static void AllPatchesApplied(EmbeddedServerHost host, string modId)
     {
-        ArgumentNullException.ThrowIfNull(registry);
-        ArgumentException.ThrowIfNullOrWhiteSpace(subsystemName);
-
-        if (!registry.IsFeatureRegistered(subsystemName))
-        {
-            throw new PharosAssertException(
-                $"Subsystem '{subsystemName}' is not registered in the feature registry.");
-        }
-
-        if (registry.IsFeatureEnabled(subsystemName))
-        {
-            throw new PharosAssertException(
-                $"Expected subsystem '{subsystemName}' to be disabled, but it is currently enabled.");
-        }
+        ArgumentNullException.ThrowIfNull(host);
+        AllPatchesApplied(host.Mods, modId);
     }
 
-    /// <summary>
-    /// Asserts that a subsystem is enabled in the feature registry.
-    /// </summary>
-    /// <param name="registry">The subsystem feature registry to check.</param>
-    /// <param name="subsystemName">The subsystem name to verify is enabled.</param>
-    /// <exception cref="PharosAssertException">Thrown when the subsystem is not enabled.</exception>
-    public static void SubsystemEnabled(Mods.SubsystemFeatureRegistry registry, string subsystemName)
+    /// <summary>Asserts that every patch of <paramref name="modId"/> applied. See the server overload.</summary>
+    public static void AllPatchesApplied(HeadlessClient client, string modId)
     {
-        ArgumentNullException.ThrowIfNull(registry);
-        ArgumentException.ThrowIfNullOrWhiteSpace(subsystemName);
-
-        if (!registry.IsFeatureRegistered(subsystemName))
-        {
-            throw new PharosAssertException(
-                $"Subsystem '{subsystemName}' is not registered in the feature registry.");
-        }
-
-        if (!registry.IsFeatureEnabled(subsystemName))
-        {
-            string? reason = registry.GetDisableReason(subsystemName);
-            string reasonPart = reason != null ? $" Reason: {reason}" : "";
-            throw new PharosAssertException(
-                $"Expected subsystem '{subsystemName}' to be enabled, but it is disabled.{reasonPart}");
-        }
+        ArgumentNullException.ThrowIfNull(client);
+        AllPatchesApplied(client.Mods, modId);
     }
 
-    /// <summary>
-    /// Asserts that the mod compatibility snapshot has no conflicts.
-    /// </summary>
-    /// <param name="snapshot">The mod compatibility snapshot to validate.</param>
-    /// <exception cref="PharosAssertException">Thrown when conflicts are detected.</exception>
-    public static void ModCompatibilityClean(Mods.ModCompatibilitySnapshot snapshot)
+    /// <summary>Asserts that every patch of <paramref name="modId"/> applied. See the server overload.</summary>
+    public static void AllPatchesApplied(ModLoadReport profile, string modId)
     {
-        ArgumentNullException.ThrowIfNull(snapshot);
-
-        if (snapshot.HasConflicts)
-        {
-            string disabled = snapshot.DisabledSubsystems.Count > 0
-                ? $" Disabled subsystems: {string.Join(", ", snapshot.DisabledSubsystems)}."
-                : "";
-            string mods = snapshot.ActiveMockMods.Count > 0
-                ? $" Active mods: {string.Join(", ", snapshot.ActiveMockMods)}."
-                : "";
-            throw new PharosAssertException(
-                $"Expected clean mod compatibility (no conflicts), but conflicts were detected.{disabled}{mods}");
-        }
-
-        if (snapshot.DisabledSubsystems.Count > 0)
-        {
-            throw new PharosAssertException(
-                $"Expected clean mod compatibility, but {snapshot.DisabledSubsystems.Count} subsystem(s) are disabled: " +
-                $"{string.Join(", ", snapshot.DisabledSubsystems)}.");
-        }
-    }
-
-    /// <summary>
-    /// Asserts that a specific mod is detected in the compatibility snapshot.
-    /// </summary>
-    /// <param name="snapshot">The mod compatibility snapshot to check.</param>
-    /// <param name="modId">The mod ID to verify is present.</param>
-    /// <exception cref="PharosAssertException">Thrown when the mod is not detected.</exception>
-    public static void ModDetected(Mods.ModCompatibilitySnapshot snapshot, string modId)
-    {
-        ArgumentNullException.ThrowIfNull(snapshot);
+        ArgumentNullException.ThrowIfNull(profile);
         ArgumentException.ThrowIfNullOrWhiteSpace(modId);
 
-        if (!snapshot.ActiveMockMods.Contains(modId, StringComparer.OrdinalIgnoreCase))
+        PatchResult[] failures = profile.Patches
+            .Where(patch => string.Equals(patch.SourceMod, modId, StringComparison.OrdinalIgnoreCase))
+            .Where(patch => patch.Outcome is PatchOutcome.NotFound or PatchOutcome.Error)
+            .ToArray();
+        if (failures.Length == 0) return;
+
+        string list = string.Join(Environment.NewLine, failures.Select(patch => "  " + patch));
+        throw new PharosAssertException(
+            $"{failures.Length} patch(es) of mod '{modId}' did not apply:{Environment.NewLine}{list}");
+    }
+
+    /// <summary>
+    /// Asserts that <paramref name="first"/> ran before <paramref name="second"/> in
+    /// <paramref name="phase"/>. A selector is <c>mod:TypeName</c>, a full type name, or a bare type
+    /// name, such as <c>mymod:MySystem</c> or <c>game:RecipeLoader</c>.
+    /// </summary>
+    /// <param name="host">The server whose run log to inspect.</param>
+    /// <param name="first">The system that must run first.</param>
+    /// <param name="second">The system that must run after it.</param>
+    /// <param name="phase">The phase both systems must have run in.</param>
+    /// <exception cref="PharosAssertException">Thrown when either system did not run in the phase, or ran in the wrong order.</exception>
+    public static void LoadsBefore(EmbeddedServerHost host, string first, string second, ModRunPhase phase)
+    {
+        ArgumentNullException.ThrowIfNull(host);
+        LoadsBefore(host.Mods, first, second, phase);
+    }
+
+    /// <summary>Asserts that one system ran before another. See the server overload.</summary>
+    public static void LoadsBefore(HeadlessClient client, string first, string second, ModRunPhase phase)
+    {
+        ArgumentNullException.ThrowIfNull(client);
+        LoadsBefore(client.Mods, first, second, phase);
+    }
+
+    /// <summary>Asserts that one system ran before another. See the server overload.</summary>
+    public static void LoadsBefore(ModLoadReport report, string first, string second, ModRunPhase phase)
+    {
+        ArgumentNullException.ThrowIfNull(report);
+        ArgumentException.ThrowIfNullOrWhiteSpace(first);
+        ArgumentException.ThrowIfNullOrWhiteSpace(second);
+
+        SystemRun firstRun = FindRun(report, first, phase);
+        SystemRun secondRun = FindRun(report, second, phase);
+        if (firstRun.Order < secondRun.Order) return;
+
+        throw new PharosAssertException(
+            $"Expected '{first}' to run before '{second}' in {phase}, but they ran at positions " +
+            $"{firstRun.Order} and {secondRun.Order}.");
+    }
+
+    /// <summary>
+    /// Asserts that <paramref name="first"/> ran before <paramref name="second"/> in any phase.
+    /// See the phase overload for the selector forms.
+    /// </summary>
+    public static void LoadsBefore(EmbeddedServerHost host, string first, string second)
+    {
+        ArgumentNullException.ThrowIfNull(host);
+        LoadsBefore(host.Mods, first, second);
+    }
+
+    /// <summary>Asserts that one system ran before another in any phase. See the server overload.</summary>
+    public static void LoadsBefore(HeadlessClient client, string first, string second)
+    {
+        ArgumentNullException.ThrowIfNull(client);
+        LoadsBefore(client.Mods, first, second);
+    }
+
+    /// <summary>Asserts that one system ran before another in any phase. See the phase overload.</summary>
+    public static void LoadsBefore(ModLoadReport report, string first, string second)
+    {
+        ArgumentNullException.ThrowIfNull(report);
+        ArgumentException.ThrowIfNullOrWhiteSpace(first);
+        ArgumentException.ThrowIfNullOrWhiteSpace(second);
+
+        SystemRun firstRun = FindFirstRun(report, first);
+        SystemRun secondRun = FindFirstRun(report, second);
+        if (firstRun.Order < secondRun.Order) return;
+
+        throw new PharosAssertException(
+            $"Expected '{first}' to run before '{second}', but they ran at positions " +
+            $"{firstRun.Order} and {secondRun.Order}.");
+    }
+
+    /// <summary>
+    /// Asserts that the system of type <paramref name="first"/> ran before <paramref name="second"/>
+    /// in <paramref name="phase"/>. The type form avoids a selector clash when two mods have a
+    /// system with the same name.
+    /// </summary>
+    public static void LoadsBefore(EmbeddedServerHost host, Type first, string second, ModRunPhase phase)
+    {
+        ArgumentNullException.ThrowIfNull(host);
+        LoadsBefore(host.Mods, first, second, phase);
+    }
+
+    /// <summary>Asserts a typed system ran before another system. See the server overload.</summary>
+    public static void LoadsBefore(HeadlessClient client, Type first, string second, ModRunPhase phase)
+    {
+        ArgumentNullException.ThrowIfNull(client);
+        LoadsBefore(client.Mods, first, second, phase);
+    }
+
+    /// <summary>Asserts a typed system ran before another system. See the server overload.</summary>
+    public static void LoadsBefore(ModLoadReport report, Type first, string second, ModRunPhase phase)
+    {
+        ArgumentNullException.ThrowIfNull(report);
+        ArgumentNullException.ThrowIfNull(first);
+        ArgumentException.ThrowIfNullOrWhiteSpace(second);
+
+        SystemRun firstRun = FindRun(report, first, phase);
+        SystemRun secondRun = FindRun(report, second, phase);
+        if (firstRun.Order < secondRun.Order) return;
+
+        throw new PharosAssertException(
+            $"Expected '{first.Name}' to run before '{second}' in {phase}, but they ran at positions " +
+            $"{firstRun.Order} and {secondRun.Order}.");
+    }
+
+    /// <summary>Asserts a typed system ran before another system in any phase. See the phase overload.</summary>
+    public static void LoadsBefore(EmbeddedServerHost host, Type first, string second)
+    {
+        ArgumentNullException.ThrowIfNull(host);
+        LoadsBefore(host.Mods, first, second);
+    }
+
+    /// <summary>Asserts a typed system ran before another system in any phase. See the phase overload.</summary>
+    public static void LoadsBefore(HeadlessClient client, Type first, string second)
+    {
+        ArgumentNullException.ThrowIfNull(client);
+        LoadsBefore(client.Mods, first, second);
+    }
+
+    /// <summary>Asserts a typed system ran before another system in any phase. See the phase overload.</summary>
+    public static void LoadsBefore(ModLoadReport report, Type first, string second)
+    {
+        ArgumentNullException.ThrowIfNull(report);
+        ArgumentNullException.ThrowIfNull(first);
+        ArgumentException.ThrowIfNullOrWhiteSpace(second);
+
+        SystemRun firstRun = FindFirstRun(report, first);
+        SystemRun secondRun = FindFirstRun(report, second);
+        if (firstRun.Order < secondRun.Order) return;
+
+        throw new PharosAssertException(
+            $"Expected '{first.Name}' to run before '{second}', but they ran at positions " +
+            $"{firstRun.Order} and {secondRun.Order}.");
+    }
+
+    /// <summary>
+    /// Asserts that the loader saw no mod error and no missing dependency.
+    /// </summary>
+    /// <param name="host">The server whose mods to inspect.</param>
+    /// <exception cref="PharosAssertException">Thrown when a mod is errored or a dependency is missing.</exception>
+    public static void NoModErrors(EmbeddedServerHost host)
+    {
+        ArgumentNullException.ThrowIfNull(host);
+        NoModErrors(host.Mods);
+    }
+
+    /// <summary>Asserts that the client's loader saw no mod error. See the server overload.</summary>
+    public static void NoModErrors(HeadlessClient client)
+    {
+        ArgumentNullException.ThrowIfNull(client);
+        NoModErrors(client.Mods);
+    }
+
+    /// <summary>Asserts that the loader saw no mod error. See the server overload.</summary>
+    public static void NoModErrors(ModLoadReport profile)
+    {
+        ArgumentNullException.ThrowIfNull(profile);
+
+        LoadedMod[] errors = profile.Loaded.Values
+            .Where(mod => mod.Error != null || mod.Status == ModStatus.Errored)
+            .ToArray();
+        if (errors.Length > 0 || profile.MissingDependencies.Count > 0)
         {
-            throw new PharosAssertException(
-                $"Expected mod '{modId}' to be detected, but it was not in ActiveMockMods. " +
-                $"Active mods: [{string.Join(", ", snapshot.ActiveMockMods)}].");
+            string mods = errors.Length == 0
+                ? ""
+                : " Errored mods: " + string.Join(", ", errors.Select(mod => $"{mod.Id} ({mod.Error ?? ModError.Loading})")) + ".";
+            string missing = profile.MissingDependencies.Count == 0
+                ? ""
+                : " Missing dependencies: " + string.Join(", ", profile.MissingDependencies) + ".";
+            throw new PharosAssertException($"Expected no mod errors.{mods}{missing}".TrimEnd());
         }
     }
+
+    private static SystemRun FindRun(ModLoadReport report, string selector, ModRunPhase phase)
+    {
+        SystemRun? run = report.RunLog.FirstOrDefault(candidate =>
+            candidate.Phase == phase
+            && (string.Equals(candidate.Key, selector, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(candidate.Type.FullName, selector, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(candidate.Type.Name, selector, StringComparison.OrdinalIgnoreCase)));
+        if (run != null) return run;
+
+        string available = string.Join(", ", report.RunLog
+            .Where(candidate => candidate.Phase == phase)
+            .Select(candidate => candidate.Key)
+            .Distinct(StringComparer.OrdinalIgnoreCase));
+        throw new PharosAssertException(
+            $"No system matched '{selector}' in {phase}. Systems that ran: [{available}].");
+    }
+
+    private static SystemRun FindRun(ModLoadReport report, Type type, ModRunPhase phase)
+    {
+        SystemRun? run = report.RunLog.FirstOrDefault(candidate =>
+            candidate.Phase == phase && candidate.Type == type);
+        if (run != null) return run;
+
+        string available = string.Join(", ", report.RunLog
+            .Where(candidate => candidate.Phase == phase)
+            .Select(candidate => candidate.Key)
+            .Distinct(StringComparer.OrdinalIgnoreCase));
+        throw new PharosAssertException(
+            $"No system of type '{type.FullName}' ran in {phase}. Systems that ran: [{available}].");
+    }
+
+    private static SystemRun FindFirstRun(ModLoadReport report, string selector)
+    {
+        SystemRun? run = report.RunLog.FirstOrDefault(candidate =>
+            string.Equals(candidate.Key, selector, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(candidate.Type.FullName, selector, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(candidate.Type.Name, selector, StringComparison.OrdinalIgnoreCase));
+        if (run != null) return run;
+
+        string available = string.Join(", ", report.RunLog
+            .Select(candidate => candidate.Key)
+            .Distinct(StringComparer.OrdinalIgnoreCase));
+        throw new PharosAssertException(
+            $"No system matched '{selector}'. Systems that ran: [{available}].");
+    }
+
+    private static SystemRun FindFirstRun(ModLoadReport report, Type type)
+    {
+        SystemRun? run = report.RunLog.FirstOrDefault(candidate => candidate.Type == type);
+        if (run != null) return run;
+
+        string available = string.Join(", ", report.RunLog
+            .Select(candidate => candidate.Key)
+            .Distinct(StringComparer.OrdinalIgnoreCase));
+        throw new PharosAssertException(
+            $"No system of type '{type.FullName}' ran. Systems that ran: [{available}].");
+    }
+
+    // -------------------------------------------------------------------------
+    // World, recipe and processor assertions
+    // -------------------------------------------------------------------------
 
     /// <summary>
     /// Asserts that two captures of a world hold the same state: the same blocks, fluids, block-entity trees and entities, in the
@@ -713,30 +891,6 @@ public static class PharosAssert
         {
             throw new PharosAssertException(
                 $"Expected the action to be denied with '{code}', but the server sent '{sent ?? result.Reason ?? "no error"}'.");
-        }
-    }
-
-    /// <summary>
-    /// Asserts that conflicts exist and at least the specified number of subsystems are disabled.
-    /// </summary>
-    /// <param name="snapshot">The mod compatibility snapshot to validate.</param>
-    /// <param name="minDisabledSubsystems">Minimum number of disabled subsystems expected.</param>
-    /// <exception cref="PharosAssertException">Thrown when conflict requirements are not met.</exception>
-    public static void ModConflictsExist(Mods.ModCompatibilitySnapshot snapshot, int minDisabledSubsystems = 1)
-    {
-        ArgumentNullException.ThrowIfNull(snapshot);
-
-        if (!snapshot.HasConflicts)
-        {
-            throw new PharosAssertException(
-                "Expected mod conflicts to exist, but snapshot reports HasConflicts=false.");
-        }
-
-        if (snapshot.DisabledSubsystems.Count < minDisabledSubsystems)
-        {
-            throw new PharosAssertException(
-                $"Expected at least {minDisabledSubsystems} disabled subsystem(s), but only " +
-                $"{snapshot.DisabledSubsystems.Count} found: [{string.Join(", ", snapshot.DisabledSubsystems)}].");
         }
     }
 

@@ -1,0 +1,11 @@
+{
+  "type": "code",
+  "modid": "pharosdependentmod",
+  "name": "Pharos Dependent Mod",
+  "version": "1.0.0",
+  "side": "Server",
+  "requiredOnClient": false,
+  "description": "Source mod the mod loading tests stage: it depends on pharosloadmod, so the loader must order it after that mod.",
+  "authors": ["Pharos"],
+  "dependencies": { "game": "", "pharosloadmod": "1.0.0" }
+}

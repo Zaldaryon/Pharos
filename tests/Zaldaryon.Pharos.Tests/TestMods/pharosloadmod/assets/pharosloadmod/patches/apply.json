@@ -1,0 +1,8 @@
+[
+  {
+    "op": "replace",
+    "file": "pharosloadmod:config/base.json",
+    "path": "/value",
+    "value": 2
+  }
+]

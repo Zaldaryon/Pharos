@@ -1,0 +1,8 @@
+[
+  {
+    "op": "add",
+    "file": "game:lang/en.json",
+    "path": "/pharosOrigin",
+    "value": "loadmod"
+  }
+]
