@@ -1,4 +1,5 @@
 using Vintagestory.API.MathTools;
+using System.Globalization;
 using Zaldaryon.Pharos.Server;
 using static System.FormattableString;
 using Zaldaryon.Pharos.Culling;
@@ -24,6 +25,37 @@ public static class PharosAssert
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(reason);
         throw new ScenarioSkipException(reason);
+    }
+
+    /// <summary>
+    /// Asserts that the tick work of a mod, as <see cref="ServerProfile.Mods"/> measured it, stayed
+    /// within a budget.
+    /// </summary>
+    /// <param name="profile">The profile from <see cref="ServerProfileDriver.MeasureAsync"/>.</param>
+    /// <param name="modId">The mod's id, as its <c>modinfo.json</c> declares it.</param>
+    /// <param name="maxMeanMsPerTick">The most milliseconds per tick the mod may cost on average.</param>
+    /// <exception cref="PharosAssertException">
+    /// The mod has no tick work in the profile, or its mean cost is above the budget.
+    /// </exception>
+    /// <remarks>
+    /// A mod that ran no listener or callback has no entry: that is a failure, not a pass, because a
+    /// budget on work that was never measured proves nothing.
+    /// </remarks>
+    public static void TickCostBelow(ServerProfile profile, string modId, double maxMeanMsPerTick)
+    {
+        ArgumentNullException.ThrowIfNull(profile);
+        ArgumentException.ThrowIfNullOrWhiteSpace(modId);
+        if (!profile.Mods.TryGetValue(modId, out ServerProfileEntry? entry))
+        {
+            throw new PharosAssertException(
+                $"The profile has no tick work for mod '{modId}': it registered no listener or callback that ran in the measured ticks.");
+        }
+
+        if (entry.MeanMsPerTick > maxMeanMsPerTick)
+        {
+            throw new PharosAssertException(string.Create(CultureInfo.InvariantCulture,
+                $"Mod '{modId}' cost {entry.MeanMsPerTick:0.####} ms per tick, above the {maxMeanMsPerTick:0.####} ms budget ({entry.TotalMs:0.###} ms over {entry.Ticks} ticks, {entry.Calls} calls)."));
+        }
     }
 
     /// <summary>

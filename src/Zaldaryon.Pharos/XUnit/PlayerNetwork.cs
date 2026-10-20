@@ -32,6 +32,18 @@ public sealed class PlayerNetwork
     public void Sever() => _connection.Sever();
 
     /// <summary>
+    /// Sends a chat line from the player without running a server tick, so a test can choose the
+    /// tick that handles it. A leading slash runs it as a command with this player as the caller.
+    /// </summary>
+    /// <exception cref="ArgumentException"><paramref name="message"/> is empty.</exception>
+    /// <exception cref="InvalidOperationException">The player is not joined.</exception>
+    public void SendChat(string message)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(message);
+        _player.RunBotOnGameThread(() => _connection.Chat(message));
+    }
+
+    /// <summary>
     /// Freezes the player: it stops reading and answering the server's pings, so the server times it out after the game's ping timeout
     /// of simulated time. See <see cref="ServerTestPlayer.Freeze"/>.
     /// </summary>

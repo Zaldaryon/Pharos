@@ -52,6 +52,14 @@ public static class Metrics
     /// <summary>Publishes a collector's series into the running scenario's collector.</summary>
     public static void Publish(MetricsCollector collector) => Current?.Merge(collector);
 
+    /// <summary>Publishes every number of a server profile into the running scenario's collector.</summary>
+    /// <exception cref="ArgumentNullException"><paramref name="profile"/> is null.</exception>
+    public static void Publish(Server.ServerProfile profile)
+    {
+        ArgumentNullException.ThrowIfNull(profile);
+        Current?.Publish(profile.Metrics());
+    }
+
     /// <summary>Makes <paramref name="collector"/> current on this flow until the scope is disposed.</summary>
     internal static IDisposable BeginScope(MetricsCollector collector)
     {
