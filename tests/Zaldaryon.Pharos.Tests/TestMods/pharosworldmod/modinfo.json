@@ -1,0 +1,11 @@
+{
+  "type": "code",
+  "modid": "pharosworldmod",
+  "name": "Pharos World Mod",
+  "version": "1.0.0",
+  "side": "Universal",
+  "requiredOnClient": true,
+  "description": "Mod the world metric tests stage: worldgen handlers, mod data at the savegame, region and chunk levels, and a block entity.",
+  "authors": ["Pharos"],
+  "dependencies": { "game": "" }
+}

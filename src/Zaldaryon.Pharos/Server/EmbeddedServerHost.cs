@@ -174,6 +174,28 @@ public sealed partial class EmbeddedServerHost : IDisposable, IAsyncDisposable
 
     private ServerProfileDriver? _profile;
 
+    /// <summary>
+    /// Generates a fresh chunk area and reports what each world generator cost, by pass, mod and
+    /// handler. See <see cref="ServerWorldgenDriver"/>.
+    /// </summary>
+    public ServerWorldgenDriver Worldgen => _worldgen ??= new ServerWorldgenDriver(this);
+
+    private ServerWorldgenDriver? _worldgen;
+
+    /// <summary>
+    /// Runs one save and reports the time and bytes of each category and the mod data it carries.
+    /// See <see cref="ServerSavesDriver"/>.
+    /// </summary>
+    public ServerSavesDriver Saves => _saves ??= new ServerSavesDriver(this);
+
+    private ServerSavesDriver? _saves;
+
+    /// <summary>
+    /// A snapshot of the loaded world: chunks, map chunks, map regions, entities and block
+    /// entities. See <see cref="WorldStats"/>.
+    /// </summary>
+    public WorldStats WorldStats => WorldStats.Capture(this);
+
     /// <summary>Controls and inspects entities in the server world.</summary>
     public ServerEntityDriver Entities => _entities ??= new ServerEntityDriver(this);
 

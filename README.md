@@ -198,6 +198,20 @@ profile.Publish(); // feed the numbers into result.json and pharos compare
 
 See [Server Profiling](docs/server-profiling.md).
 
+To see what worldgen costs, what a save writes, and how much of the world is loaded:
+
+```csharp
+WorldgenProfile worldgen = await Server.Worldgen.MeasureAsync(64, 64, 65, 65);
+SaveProfile save = await Server.Saves.MeasureAsync();
+WorldStats stats = Server.WorldStats;
+
+Assert.True(worldgen.MeanMsPerColumn < 5);
+Assert.True(save.TotalBytes < 100_000_000);
+Assert.True(stats.LoadedChunks > 0);
+```
+
+See [World Metrics](docs/world-metrics.md).
+
 ## Quick Start: A Real Client Joining a Server
 
 Boot the client in engine mode to run the vanilla client startup. The client joins the server, goes through character creation, receives chunks and renders the world through the game's own pipeline. It needs no auth server and no outbound network access:
@@ -294,6 +308,7 @@ See the [inspection API reference](docs/inspection-api.md) for method signatures
 - [Metrics](docs/metrics.md): Named per-test metrics, automatic frame/tick/memory/GL/network/world collectors, and the `result.json` schema
 - [Comparing Before and After](docs/compare.md): `pharos compare`, which runs the same tests against a baseline and reports each metric's delta, verdict and budget
 - [Server Profiling](docs/server-profiling.md): `Server.Profile.MeasureAsync`, which breaks a measured stretch of ticks down by system, mod, block entity, entity, behavior, AI task and player traffic
+- [World Metrics](docs/world-metrics.md): `Server.Worldgen`, `Server.Saves` and `Server.WorldStats`, which attribute generation by pass and handler, split a save by category and mod data key, and count the loaded world
 - [CI and Cloud Environments](docs/ci-and-cloud.md): Running the suite in CI and cloud environments, offline or online auth, and a dedicated server in Docker
 - [Client-Server Testing](docs/writing-client-server-scenarios.md): `[ClientServerScenario]`, lockstep stepping, and packet assertions
 - [Inspection API Reference](docs/inspection-api.md): Detailed API for all inspector classes
