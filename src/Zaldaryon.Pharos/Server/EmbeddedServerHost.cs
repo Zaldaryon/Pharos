@@ -166,6 +166,14 @@ public sealed partial class EmbeddedServerHost : IDisposable, IAsyncDisposable
 
     private ServerTickListenerInspector? _tickListeners;
 
+    /// <summary>
+    /// Profiles the server's systems, mods, block entities, entities, AI tasks and traffic for a
+    /// stretch of ticks. See <see cref="ServerProfileDriver"/>.
+    /// </summary>
+    public ServerProfileDriver Profile => _profile ??= new ServerProfileDriver(this);
+
+    private ServerProfileDriver? _profile;
+
     /// <summary>Controls and inspects entities in the server world.</summary>
     public ServerEntityDriver Entities => _entities ??= new ServerEntityDriver(this);
 

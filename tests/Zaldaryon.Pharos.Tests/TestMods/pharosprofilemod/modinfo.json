@@ -1,0 +1,11 @@
+{
+  "type": "code",
+  "modid": "pharosprofilemod",
+  "name": "Pharos Profile Mod",
+  "version": "1.0.0",
+  "side": "Universal",
+  "requiredOnClient": true,
+  "description": "Mod the server profile tests stage: a tick listener, a callback, a block entity listener and a channel that sends to every player.",
+  "authors": ["Pharos"],
+  "dependencies": { "game": "" }
+}

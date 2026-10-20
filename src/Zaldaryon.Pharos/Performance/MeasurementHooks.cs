@@ -8,6 +8,7 @@ using Vintagestory.API.MathTools;
 using Vintagestory.Client.NoObf;
 using Vintagestory.Common;
 using Vintagestory.Server;
+using Zaldaryon.Pharos.Server;
 
 namespace Zaldaryon.Pharos.Performance;
 
@@ -178,7 +179,9 @@ internal static class MeasurementHooks
 
     private static void TimedServerSystemTick(ServerSystem system, float deltaTime)
     {
-        if (ServerTickCollector.Active is not { } collector)
+        ServerTickCollector? collector = ServerTickCollector.Active;
+        ServerProfiler? profile = ServerProfiler.Active is { IsGameThread: true } active ? active : null;
+        if (collector == null && profile == null)
         {
             system.OnServerTick(deltaTime);
             return;
@@ -191,13 +194,17 @@ internal static class MeasurementHooks
         }
         finally
         {
-            collector.RecordSystemTick(system.GetType().Name, Stopwatch.GetElapsedTime(start).TotalMilliseconds);
+            double milliseconds = Stopwatch.GetElapsedTime(start).TotalMilliseconds;
+            collector?.RecordSystemTick(system.GetType().Name, milliseconds);
+            profile?.AddSystem(system.GetType().Name, milliseconds);
         }
     }
 
     private static void TimedTickListener(GameTickListener listener, long elapsedMilliseconds)
     {
-        if (ServerTickCollector.Active is not { } collector)
+        ServerTickCollector? collector = ServerTickCollector.Active;
+        ServerProfiler? profile = ServerProfiler.Active is { IsGameThread: true } active ? active : null;
+        if (collector == null && profile == null)
         {
             listener.OnTriggered(elapsedMilliseconds);
             return;
@@ -210,14 +217,18 @@ internal static class MeasurementHooks
         }
         finally
         {
-            collector.RecordListenerTick(listener.ProfilerName ?? "unknown", Stopwatch.GetElapsedTime(start).TotalMilliseconds);
+            double milliseconds = Stopwatch.GetElapsedTime(start).TotalMilliseconds;
+            collector?.RecordListenerTick(listener.ProfilerName ?? "unknown", milliseconds);
+            profile?.AddListener(listener, milliseconds);
         }
     }
 
     private static void TimedTickListenerBlock(GameTickListenerBlock listener, IWorldAccessor world, BlockPos pos,
         long elapsedMilliseconds)
     {
-        if (ServerTickCollector.Active is not { } collector)
+        ServerTickCollector? collector = ServerTickCollector.Active;
+        ServerProfiler? profile = ServerProfiler.Active is { IsGameThread: true } active ? active : null;
+        if (collector == null && profile == null)
         {
             listener.OnTriggered(world, pos, elapsedMilliseconds);
             return;
@@ -230,17 +241,28 @@ internal static class MeasurementHooks
         }
         finally
         {
-            collector.RecordListenerTick(listener.ProfilerName ?? "unknown", Stopwatch.GetElapsedTime(start).TotalMilliseconds);
+            double milliseconds = Stopwatch.GetElapsedTime(start).TotalMilliseconds;
+            collector?.RecordListenerTick(listener.ProfilerName ?? "unknown", milliseconds);
+            profile?.AddListener(listener, milliseconds);
         }
     }
 
     private static void TimedSleep(int milliseconds)
     {
         ServerTickCollector.TickWorkDone();
+        ServerProfiler.Active?.TickFinished();
         Thread.Sleep(milliseconds);
     }
 
-    private static void ServerTickStarting(ServerMain __instance) => ServerTickCollector.TickStarting(__instance.Suspended);
+    private static void ServerTickStarting(ServerMain __instance)
+    {
+        ServerTickCollector.TickStarting(__instance.Suspended);
+        ServerProfiler.Active?.TickStarting(__instance.Suspended);
+    }
 
-    private static void ServerTickDone() => ServerTickCollector.TickWorkDone();
+    private static void ServerTickDone()
+    {
+        ServerTickCollector.TickWorkDone();
+        ServerProfiler.Active?.TickFinished();
+    }
 }
