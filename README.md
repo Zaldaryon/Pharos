@@ -162,6 +162,15 @@ pharos run tests/MyMod.Tests --filter "Category=Live" --parallel 2 --trx results
 
 See [Parallel Runs](docs/parallel-runs.md).
 
+To compare a change against a baseline and see what each metric did, `pharos compare` runs the same
+tests on both sides, alternating and repeating them:
+
+```bash
+pharos compare tests/MyMod.Tests --baseline origin/main --repeat 5 --budgets pharos.compare.json
+```
+
+See [Comparing Before and After](docs/compare.md).
+
 To build a test world, stamp in a WorldEdit schematic, or boot each class from a saved world that
 `pharos fixture` made from a builder test:
 
@@ -269,6 +278,7 @@ See the [inspection API reference](docs/inspection-api.md) for method signatures
 - [Test Worlds](docs/test-worlds.md): Schematics, saved worlds with `[ServerWorld(SaveFile = ...)]`, and `pharos fixture`
 - [Failure Artifacts and the Watchdog](docs/failure-artifacts.md): The screenshot, logs, traffic and run details a failing scenario saves, and the timeout that stops a hung one
 - [Metrics](docs/metrics.md): Named per-test metrics, automatic frame/tick/memory/GL/network/world collectors, and the `result.json` schema
+- [Comparing Before and After](docs/compare.md): `pharos compare`, which runs the same tests against a baseline and reports each metric's delta, verdict and budget
 - [CI and Cloud Environments](docs/ci-and-cloud.md): Running the suite in CI and cloud environments, offline or online auth, and a dedicated server in Docker
 - [Client-Server Testing](docs/writing-client-server-scenarios.md): `[ClientServerScenario]`, lockstep stepping, and packet assertions
 - [Inspection API Reference](docs/inspection-api.md): Detailed API for all inspector classes

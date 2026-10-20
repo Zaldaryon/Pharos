@@ -80,6 +80,13 @@ public static class PhCliRunner
                 case "merge" or "merge-runs":
                     return ParallelRuns.MergeCommand.Run(args[1..], stdout, stderr);
 
+                case "compare":
+                    return ParallelRuns.Compare.CompareCommand.Run(args[1..], stdout, stderr);
+
+                case "help" when args.Length > 1 && args[1] == "compare":
+                    stdout.WriteLine(ParallelRuns.Compare.CompareCommand.HelpText);
+                    return ExitCodeSuccess;
+
                 case "help" when args.Length > 1 && args[1] is "merge" or "merge-runs":
                     stdout.WriteLine(ParallelRuns.MergeCommand.HelpText);
                     return ExitCodeSuccess;
@@ -321,6 +328,7 @@ public static class PhCliRunner
           (default)         Run xUnit tests from a test assembly
           run               Run a test assembly's classes in parallel worker processes
           diff              Compare two test runs (TRX files) and gate on regressions
+          compare           Compare the same tests against a baseline, per metric
           fixture           Run a builder scenario and save the world it leaves
           benchmark         Run performance benchmarks and check for regressions
           smoke             Boot, join and play with a mod, failing on errors

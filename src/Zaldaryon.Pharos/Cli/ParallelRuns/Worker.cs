@@ -42,14 +42,17 @@ internal sealed class Worker
     private readonly string _workersDirectory;
     private readonly string? _userFilter;
     private readonly IReadOnlyDictionary<string, string> _environment;
+    private readonly string? _workingDirectory;
 
-    public Worker(string dotnet, string assembly, string workersDirectory, string? userFilter, IReadOnlyDictionary<string, string> environment)
+    public Worker(string dotnet, string assembly, string workersDirectory, string? userFilter, IReadOnlyDictionary<string, string> environment,
+        string? workingDirectory = null)
     {
         _dotnet = dotnet;
         _assembly = assembly;
         _workersDirectory = workersDirectory;
         _userFilter = string.IsNullOrWhiteSpace(userFilter) ? null : userFilter;
         _environment = environment;
+        _workingDirectory = workingDirectory;
     }
 
     /// <summary>
@@ -137,6 +140,7 @@ internal sealed class Worker
             RedirectStandardInput = true,
         };
         foreach (string arg in command.Skip(1)) start.ArgumentList.Add(arg);
+        if (!string.IsNullOrEmpty(_workingDirectory)) start.WorkingDirectory = _workingDirectory;
         foreach ((string key, string value) in _environment) start.Environment[key] = value;
         foreach ((string key, string value) in extraEnvironment) start.Environment[key] = value;
 

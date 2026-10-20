@@ -101,6 +101,12 @@ public sealed record RunOptions
     /// <summary>Variables set in every worker's environment, for tests of the runner.</summary>
     internal IReadOnlyDictionary<string, string> WorkerEnvironment { get; init; } = new Dictionary<string, string>();
 
+    /// <summary>
+    /// The directory each worker runs in; null to inherit the command's. <c>pharos compare</c> sets
+    /// it to the side's checkout so the tests' relative mod and data paths resolve there.
+    /// </summary>
+    internal string? WorkingDirectory { get; init; }
+
     /// <summary>The options in <paramref name="args"/>, which follow <c>run</c>; null when help was asked for.</summary>
     /// <exception cref="ArgumentException">An argument is unknown, missing its value, or out of range.</exception>
     public static RunOptions? Parse(IReadOnlyList<string> args)
