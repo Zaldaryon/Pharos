@@ -1,0 +1,9 @@
+{
+  "code": "sweepthrowingblock",
+  "class": "PharosSweepThrowingBlock",
+  "shape": { "base": "game:block/basic/cube" },
+  "textures": { "all": { "base": "game:block/stone/rock/granite1" } },
+  "blockmaterial": "Stone",
+  "drops": [{ "type": "item", "code": "pharoscontentsweepmod:missingdrop" }],
+  "creativeinventory": { "general": ["*"] }
+}

@@ -1,0 +1,12 @@
+{
+  "type": "code",
+  "modid": "pharoscontentsweepmod",
+  "name": "Pharos Content Sweep Mod",
+  "version": "1.0.0",
+  "side": "Server",
+  "requiredOnClient": false,
+  "requiredOnServer": true,
+  "description": "Small block, item and entity definitions used to test Pharos content sweeps.",
+  "authors": ["Pharos"],
+  "dependencies": { "game": "", "survival": "" }
+}

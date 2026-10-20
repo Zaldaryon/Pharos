@@ -47,4 +47,45 @@ public class ScenarioBaseInheritanceAnalyzerTests
         var diagnostics = await AnalyzerTestHelper.GetDiagnosticsAsync(_analyzer, source);
         Assert.Empty(diagnostics);
     }
+
+    [Fact]
+    public async Task ContentSweepOnClassWithoutServerScenarioBase_ReportsWarning()
+    {
+        const string source = """
+        using System;
+
+        public class ContentSweepAttribute : Attribute { }
+
+        public class MyTestClass
+        {
+            [ContentSweep]
+            public void Sweep() { }
+        }
+        """;
+
+        var diagnostics = await AnalyzerTestHelper.GetDiagnosticsAsync(_analyzer, source);
+        var diagnostic = Assert.Single(diagnostics);
+        Assert.Equal(DiagnosticIds.ScenarioAttributeWithoutBaseClass, diagnostic.Id);
+    }
+
+    [Fact]
+    public async Task ContentSweepOnServerScenarioBase_DoesNotReportWarning()
+    {
+        const string source = """
+        using System;
+
+        public class ContentSweepAttribute : Attribute { }
+        public class ServerScenarioBase { }
+
+        public class MyTestClass : ServerScenarioBase
+        {
+            [ContentSweep]
+            public void Sweep() { }
+        }
+        """;
+
+        var diagnostics = await AnalyzerTestHelper.GetDiagnosticsAsync(_analyzer, source);
+        Assert.Empty(diagnostics);
+    }
+
 }

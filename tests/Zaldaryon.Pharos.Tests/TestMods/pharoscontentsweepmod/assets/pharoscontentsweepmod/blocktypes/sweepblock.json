@@ -1,0 +1,10 @@
+{
+  "code": "sweepblock",
+  "class": "Block",
+  "entityClass": "PharosSweepBlockEntity",
+  "shape": { "base": "game:block/basic/cube" },
+  "textures": { "all": { "base": "game:block/stone/rock/granite1" } },
+  "blockmaterial": "Stone",
+  "drops": [{ "type": "item", "code": "pharoscontentsweepmod:sweepitem" }],
+  "creativeinventory": { "general": ["*"] }
+}
