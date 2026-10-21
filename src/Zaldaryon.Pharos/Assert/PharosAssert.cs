@@ -1067,6 +1067,66 @@ public static class PharosAssert
     }
 
     // -------------------------------------------------------------------------
+    // Bag assertions
+    // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// Asserts that the items a bag held are on the ground near where the player fell, in the item
+    /// entities the game dropped them in.
+    /// </summary>
+    /// <param name="host">The server whose world is read.</param>
+    /// <param name="before">How many items the bag held.</param>
+    /// <param name="inItemEntityNear">Where the player fell.</param>
+    /// <param name="code">The code of the items, such as <c>game:flint</c>.</param>
+    /// <param name="radius">How many blocks around the position the items may lie.</param>
+    /// <exception cref="PharosAssertException">Thrown when the items are not there.</exception>
+    public static void BagContentsPreserved(
+        EmbeddedServerHost host,
+        int before,
+        Vintagestory.API.MathTools.BlockPos inItemEntityNear,
+        string code,
+        int radius = 4)
+    {
+        ArgumentNullException.ThrowIfNull(host);
+        ArgumentException.ThrowIfNullOrWhiteSpace(code);
+        ArgumentOutOfRangeException.ThrowIfNegative(before);
+
+        int found = host.RunOnGameThread(() =>
+        {
+            Vintagestory.API.MathTools.BlockPos from = inItemEntityNear.AddCopy(-radius, -radius, -radius);
+            Vintagestory.API.MathTools.BlockPos to = inItemEntityNear.AddCopy(radius, radius, radius);
+            int total = 0;
+            foreach (Vintagestory.API.Common.Entities.Entity entity in host.Api.World.GetEntitiesInsideCuboid(from, to))
+            {
+                if (entity is not Vintagestory.API.Common.EntityItem item || item.Itemstack == null) continue;
+
+                if (item.Itemstack.Collectible?.Code.ToString() == code)
+                {
+                    total += item.Itemstack.StackSize;
+                    continue;
+                }
+
+                // The items may lie inside a bag that fell with them.
+                foreach (Vintagestory.API.Common.CollectibleBehavior behavior in item.Itemstack.Collectible.CollectibleBehaviors)
+                {
+                    if (behavior is not Vintagestory.API.Common.IHeldBag bag) continue;
+                    foreach (Vintagestory.API.Common.ItemStack content in bag.GetContents(item.Itemstack, host.Api.World))
+                    {
+                        if (content?.Collectible?.Code.ToString() == code) total += content.StackSize;
+                    }
+                }
+            }
+
+            return total;
+        });
+
+        if (found >= before) return;
+
+        throw new PharosAssertException(
+            $"The bag held {before} x {code}, but only {found} lie in the item entities near {inItemEntityNear}.");
+    }
+
+    // -------------------------------------------------------------------------
     // World, recipe and processor assertions
     // -------------------------------------------------------------------------
 
