@@ -1,0 +1,10 @@
+{
+  "type": "code",
+  "modid": "pharoscommandmod",
+  "name": "Pharos Command Mod",
+  "version": "1.0.0",
+  "side": "Server",
+  "description": "Source mod the command tests stage: it registers a command tree with subcommands, aliases, privileges and argument parsers, and a chat handler that rewrites messages.",
+  "authors": ["Pharos"],
+  "dependencies": { "game": "" }
+}

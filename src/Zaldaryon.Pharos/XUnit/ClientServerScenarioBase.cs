@@ -222,35 +222,8 @@ public abstract class ClientServerScenarioBase : IScenarioLifecycle, IAsyncDispo
     [Obsolete("Use ExecuteSuccessAsPlayerAsync instead. This method will be removed in 0.8.")]
     public Task ExecuteSuccessAsPlayer(IServerTestPlayer player, string command) => ExecuteSuccessAsPlayerAsync(player, command);
 
-    private Task<CommandResult> ExecuteCommandCore(string command, Caller? caller)
-    {
-        EmbeddedServerHost host = Server;
-
-        TaskCompletionSource<CommandResult> tcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
-
-        string normalizedCommand = command.TrimStart('/');
-        int spaceIndex = normalizedCommand.IndexOf(' ');
-        string rawArgs = spaceIndex >= 0 ? normalizedCommand[(spaceIndex + 1)..] : string.Empty;
-
-        TextCommandCallingArgs args = new()
-        {
-            RawArgs = new CmdArgs(rawArgs),
-            Caller = caller ?? ServerScenarioBase.ConsoleCaller()
-        };
-
-        void Execute() => Api.ChatCommands.ExecuteUnparsed("/" + normalizedCommand, args, result =>
-        {
-            CommandResult cmdResult = new(
-                result.Status,
-                result.StatusMessage,
-                result.Data);
-
-            tcs.TrySetResult(cmdResult);
-        });
-
-        host.RunOnGameThread(Execute);
-        return tcs.Task;
-    }
+    private Task<CommandResult> ExecuteCommandCore(string command, Caller? caller) =>
+        Server.Commands.ExecuteAsync(command, caller ?? ServerScenarioBase.ConsoleCaller());
 
     /// <summary>Polls an assertion once per deterministic client and server frame.</summary>
     protected Task SucceedWhenAsync(Action assertion, int maxFrames = 600, CancellationToken ct = default, int? maxTicks = null)

@@ -1,0 +1,8 @@
+{
+  "pharos-command-root": "Pharos command root",
+  "pharos-command-reset": "Reset the Pharos command",
+  "pharos-command-tp": "Teleport the caller",
+  "pharos-command-count": "Count something",
+  "pharos-command-whoami": "Tell the caller who it is",
+  "pharos-command-alias": "A command with an alias"
+}

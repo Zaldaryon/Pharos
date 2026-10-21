@@ -832,42 +832,6 @@ public abstract class ServerScenarioBase : IScenarioLifecycle, IAsyncDisposable
         FromChatGroupId = GlobalConstants.ConsoleGroup,
     };
 
-    private Task<CommandResult> ExecuteCommandCore(string command, Caller? caller)
-    {
-        EmbeddedServerHost host = Server;
-
-        TaskCompletionSource<CommandResult> tcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
-
-        // Strip leading slash if present
-        string normalizedCommand = command.TrimStart('/');
-
-        // Parse command and arguments
-        int spaceIndex = normalizedCommand.IndexOf(' ');
-        string cmdName = spaceIndex >= 0 ? normalizedCommand[..spaceIndex] : normalizedCommand;
-        string rawArgs = spaceIndex >= 0 ? normalizedCommand[(spaceIndex + 1)..] : string.Empty;
-
-        // Build calling args
-        TextCommandCallingArgs args = new()
-        {
-            RawArgs = new CmdArgs(rawArgs),
-            Caller = caller ?? ConsoleCaller()
-        };
-
-        // Execute command with callback for async completion, on the server's game thread like a
-        // command typed into the server console
-        // ExecuteUnparsed takes the text as typed: it drops the leading slash itself.
-        void Execute() => Api.ChatCommands.ExecuteUnparsed("/" + normalizedCommand, args, result =>
-        {
-            CommandResult cmdResult = new(
-                result.Status,
-                result.StatusMessage,
-                result.Data);
-
-            tcs.TrySetResult(cmdResult);
-        });
-
-        host.RunOnGameThread(Execute);
-
-        return tcs.Task;
-    }
+    private Task<CommandResult> ExecuteCommandCore(string command, Caller? caller) =>
+        Server.Commands.ExecuteAsync(command, caller ?? ConsoleCaller());
 }

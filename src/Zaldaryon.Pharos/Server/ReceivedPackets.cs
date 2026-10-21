@@ -1,3 +1,4 @@
+using Vintagestory.API.Common;
 using Vintagestory.API.MathTools;
 using Vintagestory.API.Util;
 using Vintagestory.Common;
@@ -8,7 +9,14 @@ namespace Zaldaryon.Pharos.Server;
 /// <param name="Message">The line as sent, with any formatting markup.</param>
 /// <param name="GroupId">The chat group (channel) it was sent on.</param>
 /// <param name="ChatType">The engine's chat type: notification, own message, others' message, command result, and so on.</param>
-public sealed record ReceivedChatLine(string Message, int GroupId, int ChatType);
+public sealed record ReceivedChatLine(string Message, int GroupId, int ChatType)
+{
+    /// <summary>The line's text without the chat's markup.</summary>
+    public string PlainMessage => ChatText.Plain(Message);
+
+    /// <summary>The line's chat type, as the engine's enum.</summary>
+    public EnumChatType Type => (EnumChatType)ChatType;
+}
 
 /// <summary>An entity the server started tracking for a headless player.</summary>
 /// <param name="EntityId">The entity id, unique within the world.</param>

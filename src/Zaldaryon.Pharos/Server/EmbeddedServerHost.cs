@@ -112,6 +112,16 @@ public sealed partial class EmbeddedServerHost : IDisposable, IAsyncDisposable
 
     private ModConfigDriver? _modConfig;
 
+    /// <summary>The server's commands: their tree, their parsers, and the callers that may run them.</summary>
+    public CommandDriver Commands => _commands ??= new CommandDriver(this);
+
+    private CommandDriver? _commands;
+
+    /// <summary>The server's chat handlers, and what they did with the messages.</summary>
+    public ChatDriver Chat => _chat ??= new ChatDriver(this);
+
+    private ChatDriver? _chat;
+
     /// <summary>
     /// The TCP and UDP port the server listens on for network clients, or null when it accepts
     /// only in-memory connections. See <see cref="ServerWorldOptions.ListenPort"/>.
@@ -562,6 +572,7 @@ public sealed partial class EmbeddedServerHost : IDisposable, IAsyncDisposable
         server.UdpSockets[0] = dummyUdpServer;
 
         ModLoadObserver.Install();
+        CommandRegistry.Install();
         server.PreLaunch();
         server.Launch();
 
@@ -670,6 +681,7 @@ public sealed partial class EmbeddedServerHost : IDisposable, IAsyncDisposable
         server.UdpSockets[0] = dummyUdpServer;
 
         ModLoadObserver.Install();
+        CommandRegistry.Install();
         server.PreLaunch();
         server.Launch();
 
