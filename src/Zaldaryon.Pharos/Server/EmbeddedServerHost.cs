@@ -127,6 +127,11 @@ public sealed partial class EmbeddedServerHost : IDisposable, IAsyncDisposable
 
     private Zaldaryon.Pharos.Items.ItemDriver? _items;
 
+    /// <summary>The server's inventories: the containers, the items on the ground and what moves between them.</summary>
+    public InventoryDriver Inventories => _inventories ??= new InventoryDriver(this);
+
+    private InventoryDriver? _inventories;
+
     /// <summary>The held-item hooks of the game, and what they did.</summary>
     public Zaldaryon.Pharos.Items.HeldDriver Held => _held ??= new Zaldaryon.Pharos.Items.HeldDriver();
 
