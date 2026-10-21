@@ -1159,6 +1159,43 @@ public static class PharosAssert
     }
 
     /// <summary>
+    /// Asserts that a block spreads to a neighbour: the block at <paramref name="to"/> becomes the
+    /// block at <paramref name="from"/> when the region is ticked.
+    /// </summary>
+    /// <param name="host">The server whose blocks are ticked.</param>
+    /// <param name="from">The block that spreads.</param>
+    /// <param name="to">The block that should take the spread.</param>
+    /// <param name="maxRounds">The most rounds of ticks to give it.</param>
+    /// <param name="seed">The seed of the random the blocks see.</param>
+    /// <exception cref="PharosAssertException">Thrown when the spread did not happen.</exception>
+    public static void SpreadsTo(EmbeddedServerHost host, Vintagestory.API.MathTools.BlockPos from, Vintagestory.API.MathTools.BlockPos to, int maxRounds = 50, int seed = 0)
+    {
+        ArgumentNullException.ThrowIfNull(host);
+        ArgumentNullException.ThrowIfNull(from);
+        ArgumentNullException.ThrowIfNull(to);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxRounds);
+
+        int id = host.GetBlock(from).Id;
+        Vintagestory.API.MathTools.BlockPos min = new(
+            Math.Min(from.X, to.X) - 1,
+            Math.Min(from.Y, to.Y) - 1,
+            Math.Min(from.Z, to.Z) - 1);
+        Vintagestory.API.MathTools.BlockPos max = new(
+            Math.Max(from.X, to.X) + 1,
+            Math.Max(from.Y, to.Y) + 1,
+            Math.Max(from.Z, to.Z) + 1);
+
+        for (int round = 0; round < maxRounds; round++)
+        {
+            host.BlockTicks.TickRegionAsync(min, max, rounds: 1, seed: seed + round).GetAwaiter().GetResult();
+            if (host.GetBlock(to).Id == id) return;
+        }
+
+        throw new PharosAssertException(
+            $"The block at {to} did not become the block at {from} within {maxRounds} rounds of ticks.");
+    }
+
+    /// <summary>
     /// Asserts that a transition runs slower in one container than in another.
     /// </summary>
     /// <param name="host">The server whose items are read.</param>
