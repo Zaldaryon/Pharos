@@ -316,6 +316,7 @@ See the [inspection API reference](docs/inspection-api.md) for method signatures
 - [Containers and Item Flow](docs/containers.md): the inventories of the chests, the crates and the ground, the totals of a region, and what the hoppers moved
 - [Bags, Wearables and Liquids](docs/bags-and-wearables.md): the contents of a bag, the gear a player wears, and the litres a container holds
 - [Spoilage and Temperature](docs/spoilage.md): the transitions of a stack, the rates they run at, and the temperature of an item
+- [Projectiles](docs/projectiles.md): how a shot flies, what it hits and what happened to its stack
 - [Configuration](docs/configuration.md): `[WorldConfig]`, `[ServerConfig]` and the configuration matrices, which set a scenario's configuration before the server boots and put it back after a test
 - [CI and Cloud Environments](docs/ci-and-cloud.md): Running the suite in CI and cloud environments, offline or online auth, and a dedicated server in Docker
 - [Client-Server Testing](docs/writing-client-server-scenarios.md): `[ClientServerScenario]`, lockstep stepping, and packet assertions
