@@ -964,6 +964,109 @@ public static class PharosAssert
     }
 
     // -------------------------------------------------------------------------
+    // Inventory assertions
+    // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// Asserts that a region holds the same items as it did before: nothing appeared and nothing
+    /// vanished.
+    /// </summary>
+    /// <param name="before">The totals before the action.</param>
+    /// <param name="after">The totals after the action.</param>
+    /// <exception cref="PharosAssertException">Thrown when an item appeared or vanished.</exception>
+    public static void ItemsConserved(ItemTotals before, ItemTotals after)
+    {
+        ArgumentNullException.ThrowIfNull(before);
+        ArgumentNullException.ThrowIfNull(after);
+
+        List<string> problems = [];
+        foreach (string code in before.ByCode.Keys.Union(after.ByCode.Keys).Order(StringComparer.Ordinal))
+        {
+            int had = before.Count(code);
+            int has = after.Count(code);
+            if (had == has) continue;
+            problems.Add(had > has
+                ? $"{code}: {had - has} item(s) vanished"
+                : $"{code}: {has - had} item(s) appeared");
+        }
+
+        if (problems.Count == 0) return;
+
+        string list = string.Join(Environment.NewLine, problems.Select(problem => "  " + problem));
+        throw new PharosAssertException(
+            $"The items were not conserved: the region held {before.Total} and holds {after.Total}.{Environment.NewLine}{list}");
+    }
+
+    /// <summary>
+    /// Asserts that the client's copy of an open container holds the same items as the server's.
+    /// </summary>
+    /// <param name="session">The session whose client and server are compared.</param>
+    /// <param name="position">Where the container stands.</param>
+    /// <exception cref="PharosAssertException">Thrown when the copies differ, or the client has no copy open.</exception>
+    public static void InventorySynced(ClientServerLoopbackSession session, Vintagestory.API.MathTools.BlockPos position)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        ArgumentNullException.ThrowIfNull(position);
+
+        (string ClassName, Dictionary<string, int> Items)? server = session.NativeServer?.RunOnGameThread<(string, Dictionary<string, int>)?>(() =>
+        {
+            if (session.NativeServer.Api.World.BlockAccessor.GetBlockEntity(position) is not Vintagestory.API.Common.IBlockEntityContainer container)
+            {
+                return null;
+            }
+
+            return (container.InventoryClassName, ItemsOf(container.Inventory));
+        });
+        if (server == null)
+        {
+            throw new PharosAssertException($"The block at {position} has no inventory to compare.");
+        }
+
+        Dictionary<string, int>? client = session.Client.RunOnClientThread(() =>
+        {
+            Vintagestory.API.Common.IInventory? open = session.Client.Client.player?.InventoryManager.OpenedInventories
+                .FirstOrDefault(inventory => inventory.ClassName == server.Value.ClassName);
+            return open == null ? null : ItemsOf(open);
+        });
+        if (client == null)
+        {
+            throw new PharosAssertException(
+                $"The client has no open inventory of the class '{server.Value.ClassName}', so the copies cannot be compared.");
+        }
+
+        List<string> problems = [];
+        foreach (string code in server.Value.Items.Keys.Union(client.Keys).Order(StringComparer.Ordinal))
+        {
+            int had = server.Value.Items.GetValueOrDefault(code);
+            int has = client.GetValueOrDefault(code);
+            if (had == has) continue;
+            problems.Add($"{code}: the server has {had}, the client has {has}");
+        }
+
+        if (problems.Count == 0) return;
+
+        string list = string.Join(Environment.NewLine, problems.Select(problem => "  " + problem));
+        throw new PharosAssertException(
+            $"The client's copy of the '{server.Value.ClassName}' at {position} differs from the server's:{Environment.NewLine}{list}");
+    }
+
+    private static Dictionary<string, int> ItemsOf(Vintagestory.API.Common.IInventory? inventory)
+    {
+        Dictionary<string, int> items = new(StringComparer.Ordinal);
+        if (inventory == null) return items;
+
+        foreach (Vintagestory.API.Common.ItemSlot slot in inventory)
+        {
+            Vintagestory.API.Common.ItemStack? stack = slot?.Itemstack;
+            if (stack?.Collectible == null) continue;
+            string code = stack.Collectible.Code.ToString();
+            items[code] = items.GetValueOrDefault(code) + stack.StackSize;
+        }
+
+        return items;
+    }
+
+    // -------------------------------------------------------------------------
     // World, recipe and processor assertions
     // -------------------------------------------------------------------------
 
