@@ -38,6 +38,7 @@ Assert.NotEmpty(dropped);
 destroyed, what dropped and who was hurt.
 
 ```csharp
+BlockPos center = new(10, 64, 10);
 ExplosionReport report = await Server.World.ExplodeAsync(center, EnumBlastType.RockBlast, destructionRadius: 4, injureRadius: 6);
 
 Assert.NotEmpty(report.Destroyed);

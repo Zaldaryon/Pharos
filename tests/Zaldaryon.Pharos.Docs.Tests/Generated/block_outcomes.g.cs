@@ -205,6 +205,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.block_outcomes.Snippet_3
         public async Task ExecuteSnippetAsync()
         {
 #line 40 "docs/block-outcomes.md"
+BlockPos center = new(10, 64, 10);
 ExplosionReport report = await Server.World.ExplodeAsync(center, EnumBlastType.RockBlast, destructionRadius: 4, injureRadius: 6);
 
 Assert.NotEmpty(report.Destroyed);
@@ -258,7 +259,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.block_outcomes.Snippet_4
         
         public async Task ExecuteSnippetAsync()
         {
-#line 54 "docs/block-outcomes.md"
+#line 55 "docs/block-outcomes.md"
 using ContactTrace trace = Server.Blocks.TraceContacts(pos, radius: 8);
 ContactEvent contact = await trace.WaitForAsync(ContactHook.EntityInside, pos, maxTicks: 200);
 
@@ -313,7 +314,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.block_outcomes.Snippet_5
         
         public async Task ExecuteSnippetAsync()
         {
-#line 67 "docs/block-outcomes.md"
+#line 68 "docs/block-outcomes.md"
 using NeighbourUpdateTrace trace = Server.Blocks.TraceNeighbourUpdates(pos, radius: 8);
 NeighbourUpdate update = await trace.WaitForAsync(pos, maxTicks: 100);
 

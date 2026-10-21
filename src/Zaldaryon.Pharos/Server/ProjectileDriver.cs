@@ -153,16 +153,12 @@ public sealed class ProjectileDriver
     private static readonly List<ProjectileLog> s_logs = [];
     private static bool s_installed;
 
-    // The hooks below run without a driver in hand, so they read the tick from the server that is
-    // running. A server is a process of its own, so there is only one.
-    private static EmbeddedServerHost? s_host;
-
     private readonly EmbeddedServerHost _host;
 
     internal ProjectileDriver(EmbeddedServerHost host)
     {
         _host = host;
-        s_host = host;
+        RunningServer.Host = host;
     }
 
     /// <summary>Records the projectiles that fly in a region, until the log is disposed.</summary>
@@ -415,5 +411,5 @@ public sealed class ProjectileDriver
         }
     }
 
-    private static int TickOf(Entity entity) => s_host?.TickCount ?? 0;
+    private static int TickOf(Entity entity) => RunningServer.TickCount;
 }
