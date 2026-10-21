@@ -137,6 +137,10 @@ public sealed partial class EmbeddedServerHost : IDisposable, IAsyncDisposable
 
     private SnowDriver? _snow;
 
+    /// <summary>The block outcomes of the server: the drops, the explosions and the hooks a block calls.</summary>
+    public BlockOutcomeDriver Blocks => _blocks ??= new BlockOutcomeDriver(this);
+
+    private BlockOutcomeDriver? _blocks;
 
     /// <summary>The server's projectiles: how they fly, what they hit and what happened to their stack.</summary>
     public ProjectileDriver Projectiles => _projectiles ??= new ProjectileDriver(this);

@@ -25,6 +25,21 @@ public sealed record RoomReading(int ExitCount, int SkylightCount, int NonSkylig
     public bool Enclosed => ExitCount == 0;
 }
 
+/// <summary>An entity an explosion hurt.</summary>
+/// <param name="EntityId">The entity's id.</param>
+/// <param name="Code">The entity's code.</param>
+/// <param name="Damage">How much health it lost.</param>
+public sealed record DamagedEntity(long EntityId, string Code, float Damage);
+
+/// <summary>What an explosion did.</summary>
+/// <param name="Destroyed">The blocks the explosion destroyed.</param>
+/// <param name="Drops">The items the destroyed blocks dropped.</param>
+/// <param name="Damaged">The entities the explosion hurt.</param>
+public sealed record ExplosionReport(
+    IReadOnlyList<BlockPos> Destroyed,
+    IReadOnlyList<EntityItem> Drops,
+    IReadOnlyList<DamagedEntity> Damaged);
+
 /// <summary>Waits for and reads the server's world physics: light, liquids, falling blocks, relighting, rooms and fire.</summary>
 public sealed class WorldPhysicsDriver
 {
@@ -198,4 +213,150 @@ public sealed class WorldPhysicsDriver
     // The game's liquid spread callbacks are bound to the fluid layer's handlers.
     private static bool IsLiquidHandler(string handler) =>
         handler.Contains("Fluid", StringComparison.OrdinalIgnoreCase) || handler.Contains("Liquid", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Sets off an explosion the way the game does, and reports what it destroyed, what dropped
+    /// and who was hurt.
+    /// </summary>
+    /// <param name="pos">Where the explosion starts.</param>
+    /// <param name="blastType">The kind of blast.</param>
+    /// <param name="destructionRadius">How many blocks it destroys.</param>
+    /// <param name="injureRadius">How many blocks it hurts.</param>
+    /// <param name="blockDropChanceMultiplier">How likely the destroyed blocks are to drop.</param>
+    /// <param name="ignitedByPlayerUid">The player who set it off, when one did.</param>
+    /// <param name="ct">Cancels the wait.</param>
+    /// <returns>What the explosion did.</returns>
+    public async Task<ExplosionReport> ExplodeAsync(
+        BlockPos pos,
+        EnumBlastType blastType = EnumBlastType.RockBlast,
+        double destructionRadius = 4,
+        double injureRadius = 6,
+        float blockDropChanceMultiplier = 1,
+        string? ignitedByPlayerUid = null,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(pos);
+
+        int reach = (int)Math.Ceiling(Math.Max(destructionRadius, injureRadius)) + 2;
+        Dictionary<BlockPos, int> blocksBefore = SnapshotBlocks(pos, reach);
+        Dictionary<long, float> healthBefore = SnapshotHealth(pos, reach);
+        HashSet<long> itemsBefore = SnapshotItemIds(pos, reach);
+
+        _host.RunOnGameThread(() => _host.Api.World.CreateExplosion(
+            pos,
+            blastType,
+            destructionRadius,
+            injureRadius,
+            blockDropChanceMultiplier,
+            ignitedByPlayerUid));
+
+        for (int tick = 0; tick < 3; tick++)
+        {
+            ct.ThrowIfCancellationRequested();
+            _host.Tick();
+            await Task.Yield();
+        }
+
+        List<BlockPos> destroyed = [];
+        foreach (KeyValuePair<BlockPos, int> entry in blocksBefore)
+        {
+            if (entry.Value == 0) continue;
+            if (_host.Api.World.BlockAccessor.GetBlock(entry.Key).Id == 0) destroyed.Add(entry.Key);
+        }
+
+        List<EntityItem> drops = [];
+        foreach (EntityItem item in ItemsIn(pos, reach))
+        {
+            if (!itemsBefore.Contains(item.EntityId)) drops.Add(item);
+        }
+
+        List<DamagedEntity> damaged = [];
+        foreach (KeyValuePair<long, float> entry in healthBefore)
+        {
+            Entity? entity = _host.Api.World.GetEntityById(entry.Key);
+            if (entity == null) continue;
+
+            float now = Health(entity);
+            if (now < entry.Value) damaged.Add(new DamagedEntity(entry.Key, entity.Code?.ToString() ?? "", entry.Value - now));
+        }
+
+        return new ExplosionReport(destroyed, drops, damaged);
+    }
+
+    private Dictionary<BlockPos, int> SnapshotBlocks(BlockPos center, int reach)
+    {
+        Dictionary<BlockPos, int> blocks = [];
+        _host.RunOnGameThread(() =>
+        {
+            BlockPos from = center.AddCopy(-reach, -reach, -reach);
+            BlockPos to = center.AddCopy(reach, reach, reach);
+            for (int x = from.X; x <= to.X; x++)
+            {
+                for (int y = from.Y; y <= to.Y; y++)
+                {
+                    for (int z = from.Z; z <= to.Z; z++)
+                    {
+                        BlockPos pos = new(x, y, z);
+                        blocks[pos] = _host.Api.World.BlockAccessor.GetBlock(pos).Id;
+                    }
+                }
+            }
+        });
+
+        return blocks;
+    }
+
+    private Dictionary<long, float> SnapshotHealth(BlockPos center, int reach)
+    {
+        Dictionary<long, float> health = [];
+        _host.RunOnGameThread(() =>
+        {
+            foreach (Entity entity in EntitiesIn(center, reach))
+            {
+                health[entity.EntityId] = Health(entity);
+            }
+        });
+
+        return health;
+    }
+
+    private HashSet<long> SnapshotItemIds(BlockPos center, int reach)
+    {
+        HashSet<long> ids = [];
+        _host.RunOnGameThread(() =>
+        {
+            foreach (EntityItem item in ItemsIn(center, reach)) ids.Add(item.EntityId);
+        });
+
+        return ids;
+    }
+
+    private List<EntityItem> ItemsIn(BlockPos center, int reach)
+    {
+        List<EntityItem> items = [];
+        _host.RunOnGameThread(() =>
+        {
+            foreach (Entity entity in EntitiesIn(center, reach))
+            {
+                if (entity is EntityItem item) items.Add(item);
+            }
+        });
+
+        return items;
+    }
+
+    private List<Entity> EntitiesIn(BlockPos center, int reach)
+    {
+        List<Entity> entities = [];
+        BlockPos from = center.AddCopy(-reach, -reach, -reach);
+        BlockPos to = center.AddCopy(reach, reach, reach);
+        foreach (Entity entity in _host.Api.World.GetEntitiesInsideCuboid(from, to)) entities.Add(entity);
+
+        return entities;
+    }
+
+    private static float Health(Entity entity)
+    {
+        return entity.WatchedAttributes.GetTreeAttribute("health")?.GetFloat("currenthealth", 20) ?? 20;
+    }
 }
