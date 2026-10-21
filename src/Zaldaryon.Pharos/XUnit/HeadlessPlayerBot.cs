@@ -182,6 +182,63 @@ public sealed class HeadlessPlayerBot
         return HandUseAsync(position, face, EnumHandInteract.HeldItemInteract, EnumHandInteractNw.StartHeldItemUse, EnumHandInteractNw.StopHeldItemUse, "held item use", maxTicks, ct);
     }
 
+    /// <summary>
+    /// Holds the item in the active hotbar slot over a block, the way a player holds the right mouse
+    /// button: the server runs the item's held interaction once per tick while the button is down.
+    /// </summary>
+    /// <param name="ticks">How many server ticks the button is held for.</param>
+    /// <param name="position">The block the item is used on.</param>
+    /// <param name="face">The face of the block. The top face by default.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>What the server made of the hold.</returns>
+    public async Task<BotResult> UseHeldAsync(int ticks, BlockPos position, BlockFacing? face = null, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(position);
+        ArgumentOutOfRangeException.ThrowIfNegative(ticks);
+        BlockFacing hitFace = face ?? BlockFacing.UP;
+        EmbeddedServerHost host = _owner.RequireBotHost();
+
+        await _interactionGate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            if (_owner.RunBotOnGameThread(() => RequireEntity().Controls.HandUse != EnumHandInteract.None))
+            {
+                return new(false, null, "The player is already using a block or item.");
+            }
+
+            int errorsBefore = _owner.Received.IngameErrors.Count;
+            SendHandUsePacket(position, hitFace, EnumHandInteract.HeldItemInteract, EnumHandInteractNw.StartHeldItemUse);
+            BotResult? started = await WaitForAsync(
+                () => RequireEntity().Controls.HandUse == EnumHandInteract.HeldItemInteract,
+                maxTicks: 4,
+                errorsBefore,
+                $"The server did not accept the held item use at {position}.",
+                ct).ConfigureAwait(false);
+            if (!started.Accepted) return started;
+
+            for (int tick = 0; tick < ticks; tick++)
+            {
+                ct.ThrowIfCancellationRequested();
+                SendHandUsePacket(position, hitFace, EnumHandInteract.HeldItemInteract, EnumHandInteractNw.StepHeldItemUse);
+                host.Tick();
+                await Task.Delay(1, ct).ConfigureAwait(false);
+                if (FindNewError(errorsBefore) is { } error) return error;
+            }
+
+            SendHandUsePacket(position, hitFace, EnumHandInteract.HeldItemInteract, EnumHandInteractNw.StopHeldItemUse);
+            return await WaitForAsync(
+                () => RequireEntity().Controls.HandUse == EnumHandInteract.None,
+                maxTicks: 4,
+                errorsBefore,
+                $"The server did not stop the held item use at {position}.",
+                ct).ConfigureAwait(false);
+        }
+        finally
+        {
+            _interactionGate.Release();
+        }
+    }
+
     private static string Capitalize(string text) => char.ToUpperInvariant(text[0]) + text[1..];
 
     private async Task<BotResult> HandUseAsync(BlockPos position, BlockFacing? face, EnumHandInteract useType, EnumHandInteractNw start, EnumHandInteractNw stop, string what, int maxTicks, CancellationToken ct)

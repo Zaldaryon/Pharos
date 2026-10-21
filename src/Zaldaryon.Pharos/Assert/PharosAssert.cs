@@ -899,6 +899,71 @@ public static class PharosAssert
     }
 
     // -------------------------------------------------------------------------
+    // Item assertions
+    // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// Asserts that a tool cannot mine a block: its tier is below the one the block needs, or it is
+    /// not made for the block's material.
+    /// </summary>
+    /// <param name="host">The server whose items and blocks are read.</param>
+    /// <param name="toolCode">The code of the tool, such as <c>game:pickaxe-copper</c>.</param>
+    /// <param name="blockCode">The code of the block, such as <c>game:ore-rich-ilmenite-granite</c>.</param>
+    /// <exception cref="PharosAssertException">Thrown when the tool can mine the block.</exception>
+    public static void CannotMine(EmbeddedServerHost host, string toolCode, string blockCode)
+    {
+        ArgumentNullException.ThrowIfNull(host);
+        ArgumentException.ThrowIfNullOrWhiteSpace(toolCode);
+        ArgumentException.ThrowIfNullOrWhiteSpace(blockCode);
+
+        (int toolTier, int requiredTier) = host.RunOnGameThread(() =>
+        {
+            Vintagestory.API.Common.Item? item = host.Api.World.GetItem(new Vintagestory.API.Common.AssetLocation(toolCode))
+                ?? throw new ArgumentException($"The server has no item '{toolCode}'.", nameof(toolCode));
+            Vintagestory.API.Common.AssetLocation blockAsset = new(blockCode);
+            Vintagestory.API.Common.Block? block = host.Api.World.Blocks
+                .FirstOrDefault(candidate => candidate.Code == blockAsset);
+            if (block == null)
+            {
+                throw new ArgumentException($"The server has no block '{blockCode}'.", nameof(blockCode));
+            }
+
+            Vintagestory.API.Common.ItemStack tool = new(item, 1);
+            return (tool.Collectible.GetToolTier(new Vintagestory.API.Common.DummySlot(tool)), block.RequiredMiningTier);
+        });
+
+        if (requiredTier <= 0) return;
+        if (toolTier >= requiredTier)
+        {
+            throw new PharosAssertException(
+                $"The tool '{toolCode}' has tier {toolTier} and can mine '{blockCode}', which needs tier {requiredTier}.");
+        }
+    }
+
+    /// <summary>
+    /// Asserts that the item in a hotbar slot lost the given amount of durability.
+    /// </summary>
+    /// <param name="host">The server whose player is read.</param>
+    /// <param name="slot">The hotbar slot, counted from zero.</param>
+    /// <param name="expectedLost">How much durability the item should have lost.</param>
+    /// <param name="durabilityBefore">The durability the item had before the action.</param>
+    /// <param name="player">The player whose slot is read. The first online player is used when none is given.</param>
+    /// <exception cref="PharosAssertException">Thrown when the item did not lose that much durability.</exception>
+    public static void DurabilityLost(EmbeddedServerHost host, int slot, int expectedLost, int durabilityBefore, Vintagestory.API.Common.IPlayer? player = null)
+    {
+        ArgumentNullException.ThrowIfNull(host);
+        if (expectedLost < 0) throw new ArgumentOutOfRangeException(nameof(expectedLost), "The lost durability cannot be negative.");
+
+        int remaining = host.Items.Durability(slot, player);
+        int lost = durabilityBefore - remaining;
+        if (lost != expectedLost)
+        {
+            throw new PharosAssertException(
+                $"The item in the hotbar slot {slot} lost {lost} durability, not {expectedLost}: it had {durabilityBefore} and has {remaining} left.");
+        }
+    }
+
+    // -------------------------------------------------------------------------
     // World, recipe and processor assertions
     // -------------------------------------------------------------------------
 

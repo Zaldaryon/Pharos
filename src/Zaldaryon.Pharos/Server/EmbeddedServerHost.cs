@@ -122,6 +122,16 @@ public sealed partial class EmbeddedServerHost : IDisposable, IAsyncDisposable
 
     private ChatDriver? _chat;
 
+    /// <summary>The server's items: how long they take to mine with, their tier and their durability.</summary>
+    public Zaldaryon.Pharos.Items.ItemDriver Items => _items ??= new Zaldaryon.Pharos.Items.ItemDriver(this);
+
+    private Zaldaryon.Pharos.Items.ItemDriver? _items;
+
+    /// <summary>The held-item hooks of the game, and what they did.</summary>
+    public Zaldaryon.Pharos.Items.HeldDriver Held => _held ??= new Zaldaryon.Pharos.Items.HeldDriver();
+
+    private Zaldaryon.Pharos.Items.HeldDriver? _held;
+
     /// <summary>
     /// The TCP and UDP port the server listens on for network clients, or null when it accepts
     /// only in-memory connections. See <see cref="ServerWorldOptions.ListenPort"/>.

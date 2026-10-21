@@ -85,6 +85,11 @@ public sealed partial class ClientServerLoopbackSession : IDisposable
         }
     }
 
+    /// <summary>The holds the client makes with the item in its hand.</summary>
+    public LiveHeldInteraction Held => _held ??= new LiveHeldInteraction(this);
+
+    private LiveHeldInteraction? _held;
+
     /// <summary>Gets whether the client has connected to the server.</summary>
     public bool IsConnected { get; private set; }
 
