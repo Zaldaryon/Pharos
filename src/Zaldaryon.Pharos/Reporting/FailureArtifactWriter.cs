@@ -66,6 +66,9 @@ internal sealed record ScenarioFailure
     /// <summary>The world the server booted.</summary>
     public ServerWorldOptions? World { get; init; }
 
+    /// <summary>The effective world, server and seeded-file configuration of this row, for run.json.</summary>
+    public IReadOnlyDictionary<string, string>? Configuration { get; init; }
+
     /// <summary>The seed of the game's random generators when the test failed, for run.json; null when unseeded.</summary>
     public int? RandomSeed { get; init; }
 
@@ -511,6 +514,9 @@ internal static class FailureArtifactWriter
             ["seed"] = failure.World?.Seed,
             ["worldType"] = failure.World?.WorldType,
             ["playStyle"] = failure.World?.PlayStyle,
+            ["configuration"] = failure.Configuration is { Count: > 0 } configuration
+                ? configuration.ToDictionary(entry => entry.Key, entry => entry.Value, StringComparer.Ordinal)
+                : null,
             ["randomSeed"] = failure.RandomSeed,
             ["randomSeedSource"] = failure.RandomSeedSource,
             ["isolation"] = failure.Isolation,

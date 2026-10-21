@@ -93,6 +93,10 @@ public sealed record WorldSnapshot : IWorldSnapshot
 
     private IReadOnlyDictionary<string, byte[]> SaveGameModData { get; init; } = new Dictionary<string, byte[]>();
 
+    private byte[]? WorldConfiguration { get; init; }
+
+    private string? ServerConfiguration { get; init; }
+
     private string[] RuntimePrivilegeCodes { get; init; } = [];
 
     private IReadOnlyDictionary<string, byte[]> WorldPlayerData { get; }
@@ -182,6 +186,10 @@ public sealed record WorldSnapshot : IWorldSnapshot
             Calendar = host.Calendar.Capture(),
             Weather = host.Weather.Capture(),
             SaveGameModData = StateRestore.Copy((api.WorldManager.SaveGame as SaveGame)?.ModData),
+            WorldConfiguration = (api.WorldManager.SaveGame as SaveGame)?.WorldConfiguration is TreeAttribute worldConfiguration
+                ? worldConfiguration.ToBytes()
+                : null,
+            ServerConfiguration = ServerConfigState.Capture(server.Config),
             RuntimePrivilegeCodes = [.. ServerConfigInternals.RuntimePrivilegeCodes(server.Config)],
         };
 
@@ -316,6 +324,9 @@ public sealed record WorldSnapshot : IWorldSnapshot
         ServerMain server = host.Server;
         AdoptChunksLoadedLater(server);
 
+        RestoreServerConfiguration(server);
+        RestoreWorldConfiguration(server);
+
         // The calendar first: restored weather and block entities read the time. Mod data before
         // the weather, which keeps state of its own in the save game and in each region.
         if (Calendar != null) host.Calendar.Restore(Calendar);
@@ -362,6 +373,23 @@ public sealed record WorldSnapshot : IWorldSnapshot
 
         int players = RestoreOnlinePlayers(server, filter);
         return new WorldRestoreResult(restored, players, modData, regions);
+    }
+
+    private void RestoreServerConfiguration(ServerMain server)
+    {
+        if (ServerConfiguration == null) return;
+        ServerConfigState.Restore(server.Config, ServerConfiguration);
+    }
+
+    private void RestoreWorldConfiguration(ServerMain server)
+    {
+        if (WorldConfiguration == null || ((ICoreServerAPI)server.Api).WorldManager.SaveGame is not SaveGame save) return;
+        if (save.WorldConfiguration is not TreeAttribute live)
+        {
+            live = new TreeAttribute();
+            save.WorldConfiguration = live;
+        }
+        StateRestore.TreeInPlace(live, TreeAttribute.CreateFromBytes(WorldConfiguration), static _ => true);
     }
 
     private int RestoreSaveGameModData(ServerMain server, WorldRestoreFilter filter)

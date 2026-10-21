@@ -88,4 +88,32 @@ public class ScenarioBaseInheritanceAnalyzerTests
         Assert.Empty(diagnostics);
     }
 
+    [Fact]
+    public async Task ConfigurationMatrixOnClassWithoutServerScenarioBase_ReportsWarning()
+    {
+        const string source = """
+        using System;
+
+        public class WorldConfigMatrixAttribute : Attribute { }
+        public class ServerConfigMatrixAttribute : Attribute { }
+        public class ModConfigMatrixAttribute : Attribute { }
+
+        public class MyTestClass
+        {
+            [WorldConfigMatrix]
+            public void World() { }
+
+            [ServerConfigMatrix]
+            public void Server() { }
+
+            [ModConfigMatrix]
+            public void Mod() { }
+        }
+        """;
+
+        var diagnostics = await AnalyzerTestHelper.GetDiagnosticsAsync(_analyzer, source);
+        Assert.Equal(3, diagnostics.Length);
+        Assert.All(diagnostics, diagnostic => Assert.Equal(DiagnosticIds.ScenarioAttributeWithoutBaseClass, diagnostic.Id));
+    }
+
 }

@@ -69,6 +69,8 @@ public abstract class ClientServerScenarioBase : IScenarioLifecycle, IAsyncDispo
     private DataFileSet _files = DataFileSet.Empty;
     private DataFileBaseline? _serverFiles;
     private DataFileBaseline? _clientFiles;
+    private ScenarioConfiguration _configuration = ScenarioConfiguration.Empty;
+    private ServerWorldOptions? _bootWorld;
     private ClientServerPoolKey? _poolKey;
     private readonly List<ServerTestPlayer> _testPlayers = [];
     private ServerTestPlayer? _serverPlayer;
@@ -493,8 +495,11 @@ public abstract class ClientServerScenarioBase : IScenarioLifecycle, IAsyncDispo
         try
         {
             bool rollback = EffectiveIsolation == Isolation.Rollback && WaitForPlayerJoinOnInit;
-            _files = ScenarioAttributes.DataFiles(GetType(), EnumAppSide.Server, EnumAppSide.Client);
-            _poolKey = rollback ? PoolKey() : null;
+            _configuration = ScenarioAttributes.Configuration(GetType());
+            _bootWorld = _configuration.ApplyWorldValues(WorldPresetCache.Resolve(WorldOptions));
+            _files = ScenarioAttributes.DataFiles(GetType(), _configuration, EnumAppSide.Server, EnumAppSide.Client);
+            ScenarioAttributes.RecordConfiguration(_configuration, _bootWorld, _files);
+            _poolKey = rollback ? PoolKey(_bootWorld) : null;
 
             if (_poolKey != null && ScenarioHostPool.Take<PooledClientServer>(GetType(), _poolKey) is { } pooled)
             {
@@ -529,8 +534,8 @@ public abstract class ClientServerScenarioBase : IScenarioLifecycle, IAsyncDispo
                 // After the hook: what the class sets up there lives as long as the pair.
                 _serverListeners = RollbackParticipants.Capture(_serverHost);
                 _clientListeners = RollbackParticipants.Capture(_client!);
-                _serverFiles = _serverHost.RunOnGameThread(() => DataFileBaseline.Capture(_sandbox!.RootPath, _files, EnumAppSide.Server));
-                _clientFiles = _client!.RunOnClientThread(() => DataFileBaseline.Capture(_client.DataPath!, _files, EnumAppSide.Client));
+                _serverFiles = _serverHost.RunOnGameThread(() => DataFileBaseline.Capture(_sandbox!.RootPath, _files, EnumAppSide.Server, includeModConfig: true, includeServerConfig: true));
+                _clientFiles = _client!.RunOnClientThread(() => DataFileBaseline.Capture(_client.DataPath!, _files, EnumAppSide.Client, includeModConfig: true));
             }
 
             IsolationReport = IsolationLog.Prepared(GetType(), reused: false, recycled: false, System.Diagnostics.Stopwatch.GetElapsedTime(bootStart));
@@ -672,6 +677,7 @@ public abstract class ClientServerScenarioBase : IScenarioLifecycle, IAsyncDispo
         ServerDataPath = _sandbox?.RootPath,
         Sandbox = _sandbox,
         World = WorldOptions,
+        Configuration = test.Configuration,
         Isolation = EffectiveIsolation.ToString(),
         IsolationReport = IsolationReport,
         RandomSeed = _serverHost?.Random.CurrentSeed ?? _client?.Random.CurrentSeed,
@@ -695,6 +701,7 @@ public abstract class ClientServerScenarioBase : IScenarioLifecycle, IAsyncDispo
         _clientModsDirectory = Path.Combine(_sandbox.RootPath, "ClientMods");
         ScenarioAttributes.StageMods([.. serverMods, .. ClientModPaths], _clientModsDirectory);
         _files.WriteTo(_sandbox.RootPath, EnumAppSide.Server);
+        _configuration.WriteServerConfig(_sandbox.RootPath);
         if (_files.HasFilesFor(EnumAppSide.Client) && ClientOptions.DataPath != null)
         {
             throw new NotSupportedException(
@@ -702,7 +709,7 @@ public abstract class ClientServerScenarioBase : IScenarioLifecycle, IAsyncDispo
         }
 
         // Boot embedded server in sandbox
-        _serverHost = EmbeddedServerHost.Boot(_sandbox, WorldPresetCache.Resolve(WorldOptions));
+        _serverHost = EmbeddedServerHost.Boot(_sandbox, _bootWorld ?? WorldPresetCache.Resolve(WorldOptions));
 
         // Initialize headless client (separate platform init)
         HeadlessClientOptions clientOptions = ClientOptions;
@@ -756,18 +763,19 @@ public abstract class ClientServerScenarioBase : IScenarioLifecycle, IAsyncDispo
         }
     }
 
-    private ClientServerPoolKey PoolKey()
+    private ClientServerPoolKey PoolKey(ServerWorldOptions world)
     {
         HeadlessClientOptions client = ClientOptions;
         return new ClientServerPoolKey(
-            WorldPresetCache.Resolve(WorldOptions),
+            world,
             string.Join("|", ServerModPaths),
             string.Join("|", [.. ClientModPaths, .. client.ModPaths]),
             PlayerName,
             client.BootMode,
             client.Width,
             client.Height,
-            _files.Key);
+            _files.Key,
+            _configuration.Key);
     }
 
     /// <summary>
@@ -1179,7 +1187,7 @@ public abstract class ClientServerScenarioBase : IScenarioLifecycle, IAsyncDispo
 
     private sealed record ClientServerPoolKey(
         ServerWorldOptions World, string ServerMods, string ClientMods, string PlayerName,
-        ClientBootMode BootMode, int Width, int Height, string DataFiles);
+        ClientBootMode BootMode, int Width, int Height, string DataFiles, string Config);
 
     /// <summary>A joined client and its server, kept for the next test of the same class.</summary>
     private sealed record PooledClientServer(

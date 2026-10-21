@@ -120,25 +120,11 @@ public class ScenarioTestRunnerV3 : XunitTestRunner
     {
         IScenarioLifecycle? lifecycle = instance as IScenarioLifecycle;
         bool hasNativeAsyncLifetime = instance is Xunit.IAsyncLifetime;
-        bool initialized = false;
-        if (lifecycle != null && !hasNativeAsyncLifetime)
-        {
-            try
-            {
-                await lifecycle.InitializeAsync().ConfigureAwait(false);
-                initialized = true;
-            }
-            catch (Exception ex)
-            {
-                ctxt.Aggregator.Add(ex);
-                return TimeSpan.Zero;
-            }
-        }
-
         ScenarioRandomSeed? randomSeed = ScenarioRandomSeed.Resolve(method.DeclaringType!, method, ctxt.TestMethodArguments);
         ScenarioTestInfo info = new(ctxt.Test.TestDisplayName, method.DeclaringType!, method.Name, method)
         {
-            RandomSeed = randomSeed
+            RandomSeed = randomSeed,
+            MethodArguments = [.. ctxt.TestMethodArguments],
         };
         ScenarioAttemptState state = new();
         IsolationLog.Notes notes = new();
@@ -151,8 +137,23 @@ public class ScenarioTestRunnerV3 : XunitTestRunner
         ScenarioAttemptState.Current = state;
         IsolationLog.Current = notes;
 
+        bool initialized = false;
         try
         {
+            if (lifecycle != null && !hasNativeAsyncLifetime)
+            {
+                try
+                {
+                    await lifecycle.InitializeAsync().ConfigureAwait(false);
+                    initialized = true;
+                }
+                catch (Exception ex)
+                {
+                    ctxt.Aggregator.Add(ex);
+                    return TimeSpan.Zero;
+                }
+            }
+
             decimal elapsed = await ScenarioEngine.ExecuteBodyAsync(
                 info,
                 lifecycle,

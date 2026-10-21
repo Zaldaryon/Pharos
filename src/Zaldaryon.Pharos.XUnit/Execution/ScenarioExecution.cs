@@ -287,7 +287,7 @@ internal sealed class ScenarioTestRunner(
                 string outcome = state.Skipped && failure == null ? "Skipped" : failure == null ? "Passed" : "Failed";
                 ScenarioAttemptManifestWriterAdapter.Write(Test, policy,
                     [new ScenarioAttemptEntry(1, state.Phase, outcome, (double)result.Item1, failure?.ToString(), state.ArtifactDirectories.ToArray())],
-                    outcome, false, state.Metrics);
+                    outcome, false, state.Metrics, state.Configuration);
                 return Tuple.Create(result.Item1, s_versions + _randomSeed?.OutputLine + result.Item2 + notes.Text);
             }
             finally
@@ -305,6 +305,7 @@ internal sealed class ScenarioTestRunner(
         bool skipped = false;
         CapturingMessageBus? finalMessages = null;
         IReadOnlyDictionary<string, Zaldaryon.Pharos.Metrics.MetricSummary>? lastMetrics = null;
+        IReadOnlyDictionary<string, string>? lastConfiguration = null;
         for (int number = 1; number <= policy.Attempts; number++)
         {
             if (CancellationTokenSource.IsCancellationRequested) break;
@@ -339,6 +340,7 @@ internal sealed class ScenarioTestRunner(
             Exception? failure = attemptAggregator.ToException();
             ClassifyTerminalFailure(state, failure);
             lastMetrics = state.Metrics;
+            lastConfiguration = state.Configuration;
             lastFailure = failure;
             totalTime += result.Item1;
             attemptOutputs.Add(result.Item2 + notes.Text);
@@ -367,7 +369,7 @@ internal sealed class ScenarioTestRunner(
         string historyText = $"Pharos attempts: {history.Count}/{policy.Attempts}; required successes: {policy.RequiredSuccesses}; successes: {successes}; flaky={flaky.ToString().ToLowerInvariant()}.";
         if (history.Count > 1)
             historyText += Environment.NewLine + string.Join(Environment.NewLine, history.Select(a => $"  attempt {a.Number}: {a.Outcome}{(string.IsNullOrWhiteSpace(a.Failure) ? "" : ": " + FirstLine(a.Failure))}"));
-        ScenarioAttemptManifestWriterAdapter.Write(Test, policy, history, finalOutcome, flaky, lastMetrics);
+        ScenarioAttemptManifestWriterAdapter.Write(Test, policy, history, finalOutcome, flaky, lastMetrics, lastConfiguration);
 
         if (!passed && !skipped)
         {
@@ -412,7 +414,11 @@ internal sealed class ScenarioTestRunner(
     {
         // Async, so the test info stays on this test's flow: the class's InitializeAsync reads it
         // to save artifacts when the scenario cannot even start.
-        ScenarioTestInfo.Current = new ScenarioTestInfo(Test.DisplayName, TestClass, TestMethod.Name, TestMethod) { RandomSeed = _randomSeed };
+        ScenarioTestInfo.Current = new ScenarioTestInfo(Test.DisplayName, TestClass, TestMethod.Name, TestMethod)
+        {
+            RandomSeed = _randomSeed,
+            MethodArguments = [.. TestMethodArguments],
+        };
         return await new ScenarioTestInvoker(Test, MessageBus, TestClass, ConstructorArguments, TestMethod, TestMethodArguments, BeforeAfterAttributes, aggregator, CancellationTokenSource, timeoutMs)
             .RunAsync().ConfigureAwait(false);
     }

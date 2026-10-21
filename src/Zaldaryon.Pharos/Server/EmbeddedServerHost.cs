@@ -97,6 +97,21 @@ public sealed partial class EmbeddedServerHost : IDisposable, IAsyncDisposable
     /// <summary>The server configuration.</summary>
     public ServerConfig Config => Server.Config;
 
+    /// <summary>Changes the world's saved configuration on the game thread.</summary>
+    public WorldConfigDriver WorldConfig => _worldConfig ??= new WorldConfigDriver(this);
+
+    private WorldConfigDriver? _worldConfig;
+
+    /// <summary>Edits the live server config and marks it for saving.</summary>
+    public ServerConfigDriver ServerConfig => _serverConfig ??= new ServerConfigDriver(this);
+
+    private ServerConfigDriver? _serverConfig;
+
+    /// <summary>Writes JSON files into the server's isolated <c>ModConfig</c> folder.</summary>
+    public ModConfigDriver ModConfig => _modConfig ??= new ModConfigDriver(this);
+
+    private ModConfigDriver? _modConfig;
+
     /// <summary>
     /// The TCP and UDP port the server listens on for network clients, or null when it accepts
     /// only in-memory connections. See <see cref="ServerWorldOptions.ListenPort"/>.

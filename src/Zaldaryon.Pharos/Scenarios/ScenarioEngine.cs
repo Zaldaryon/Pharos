@@ -166,6 +166,7 @@ public static class ScenarioEngine
         string? skipReason = null;
         List<string> allArtifactDirs = [];
         IReadOnlyDictionary<string, Metrics.MetricSummary>? lastMetrics = null;
+        IReadOnlyDictionary<string, string>? lastConfiguration = null;
 
         for (int number = 1; number <= policy.Attempts; number++)
         {
@@ -177,7 +178,8 @@ public static class ScenarioEngine
             IsolationLog.Notes? previousNotes = IsolationLog.Current;
             ScenarioTestInfo info = new(request.DisplayName, request.TestClass, request.Method.Name, request.Method)
             {
-                RandomSeed = randomSeed
+                RandomSeed = randomSeed,
+                MethodArguments = request.Arguments ?? [],
             };
             ScenarioTestInfo? previousInfo = ScenarioTestInfo.Current;
 
@@ -244,6 +246,7 @@ public static class ScenarioEngine
 
             ClassifyTerminalFailure(state, attemptException);
             lastMetrics = state.Metrics;
+            lastConfiguration = state.Configuration;
             lastFailure = attemptException;
             attemptOutputs.Add(notes.Text);
 
@@ -275,7 +278,8 @@ public static class ScenarioEngine
             history,
             finalOutcome,
             flaky,
-            lastMetrics);
+            lastMetrics,
+            lastConfiguration);
 
         // 6. Build combined output
         string outputBody = policy.Attempts == 1

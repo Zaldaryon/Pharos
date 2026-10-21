@@ -141,7 +141,7 @@ for doc_path in docs:
             def replace_bracket(match):
                 inner = match.group(1)
                 inner = re.sub(
-                    r'\b(ClientScenario|ServerScenario|ClientServerScenario|AtlasScenario|ClientTheory|ServerTheory|AtlasTheory|Fact|Theory|InlineData|MemberData|ClassData|ClientSettingsMatrix|ServerSettingsMatrix)\b(\s*\([^)]*\))?',
+                    r'\b(ClientScenario|ServerScenario|ClientServerScenario|AtlasScenario|ClientTheory|ServerTheory|AtlasTheory|Fact|Theory|InlineData|MemberData|ClassData|ClientSettingsMatrix|ServerSettingsMatrix|WorldConfig|ServerConfig|WorldConfigMatrix|ServerConfigMatrix|ModConfigMatrix)\b(\s*\([^)]*\))?',
                     'DocExample',
                     inner
                 )
