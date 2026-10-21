@@ -1127,6 +1127,64 @@ public static class PharosAssert
     }
 
     // -------------------------------------------------------------------------
+    // Transition assertions
+    // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// Asserts that a stack spoils within the given days, the way the item itself says.
+    /// </summary>
+    /// <param name="host">The server whose items are read.</param>
+    /// <param name="slot">The slot the stack sits in.</param>
+    /// <param name="days">How many days the item should stay fresh.</param>
+    /// <param name="tolerance">How many days the fresh time may differ.</param>
+    /// <exception cref="PharosAssertException">Thrown when the item does not spoil, or spoils in another time.</exception>
+    public static void SpoilsWithin(EmbeddedServerHost host, Vintagestory.API.Common.ItemSlot slot, double days, double tolerance = 1)
+    {
+        ArgumentNullException.ThrowIfNull(host);
+        ArgumentNullException.ThrowIfNull(slot);
+        ArgumentOutOfRangeException.ThrowIfNegative(tolerance);
+
+        Vintagestory.API.Common.TransitionState? perish = host.Items.Transition(slot, Vintagestory.API.Common.EnumTransitionType.Perish);
+        if (perish == null)
+        {
+            throw new PharosAssertException("The item in the slot does not spoil, so it cannot spoil within a time.");
+        }
+
+        double fresh = perish.FreshHours / 24f;
+        if (Math.Abs(fresh - days) > tolerance)
+        {
+            throw new PharosAssertException(
+                $"The item stays fresh for {fresh:0.##} days, not {days:0.##} days (tolerance {tolerance:0.##}).");
+        }
+    }
+
+    /// <summary>
+    /// Asserts that a transition runs slower in one container than in another.
+    /// </summary>
+    /// <param name="host">The server whose items are read.</param>
+    /// <param name="type">The kind of transition, such as <see cref="Vintagestory.API.Common.EnumTransitionType.Perish"/>.</param>
+    /// <param name="slower">The slot whose container slows the transition down.</param>
+    /// <param name="faster">The slot whose container lets it run faster.</param>
+    /// <exception cref="PharosAssertException">Thrown when the transition is not slower in the first container.</exception>
+    public static void SlowerIn(
+        EmbeddedServerHost host,
+        Vintagestory.API.Common.EnumTransitionType type,
+        Vintagestory.API.Common.ItemSlot slower,
+        Vintagestory.API.Common.ItemSlot faster)
+    {
+        ArgumentNullException.ThrowIfNull(host);
+        ArgumentNullException.ThrowIfNull(slower);
+        ArgumentNullException.ThrowIfNull(faster);
+
+        float slow = host.Items.TransitionRate(slower, type);
+        float fast = host.Items.TransitionRate(faster, type);
+        if (slow < fast) return;
+
+        throw new PharosAssertException(
+            $"The {type} transition runs at {slow:0.###} in the first container and {fast:0.###} in the second, so it is not slower in the first.");
+    }
+
+    // -------------------------------------------------------------------------
     // World, recipe and processor assertions
     // -------------------------------------------------------------------------
 
