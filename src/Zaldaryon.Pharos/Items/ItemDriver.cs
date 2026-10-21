@@ -83,6 +83,96 @@ public sealed class ItemDriver
         });
     }
 
+    /// <summary>The transition states of a stack: how fresh it is, and how far it has transitioned.</summary>
+    /// <param name="slot">The slot the stack sits in.</param>
+    public IReadOnlyList<TransitionState> Transitions(Vintagestory.API.Common.ItemSlot slot)
+    {
+        ArgumentNullException.ThrowIfNull(slot);
+        return _host.RunOnGameThread(() =>
+        {
+            if (slot.Itemstack?.Collectible == null) return [];
+            return slot.Itemstack.Collectible.UpdateAndGetTransitionStates(_host.Api.World, slot);
+        });
+    }
+
+    /// <summary>The state of one kind of transition, or null when the stack does not have it.</summary>
+    /// <param name="slot">The slot the stack sits in.</param>
+    /// <param name="type">The kind of transition, such as <see cref="EnumTransitionType.Perish"/>.</param>
+    public TransitionState? Transition(Vintagestory.API.Common.ItemSlot slot, EnumTransitionType type) =>
+        Transitions(slot).FirstOrDefault(state => state.Props?.Type == type);
+
+    /// <summary>The temperature of a stack, in the game's units.</summary>
+    /// <param name="slot">The slot the stack sits in.</param>
+    public float Temperature(Vintagestory.API.Common.ItemSlot slot)
+    {
+        ArgumentNullException.ThrowIfNull(slot);
+        return _host.RunOnGameThread(() =>
+        {
+            if (slot.Itemstack?.Collectible == null) return 0f;
+            return slot.Itemstack.Collectible.GetTemperature(_host.Api.World, slot.Itemstack);
+        });
+    }
+
+    /// <summary>Sets the temperature of a stack, the way the game cools and heats an item.</summary>
+    /// <param name="slot">The slot the stack sits in.</param>
+    /// <param name="temperature">The temperature to set.</param>
+    public void SetTemperature(Vintagestory.API.Common.ItemSlot slot, float temperature)
+    {
+        ArgumentNullException.ThrowIfNull(slot);
+        _host.RunOnGameThread(() =>
+        {
+            if (slot.Itemstack?.Collectible == null) return;
+            slot.Itemstack.Collectible.SetTemperature(_host.Api.World, slot.Itemstack, temperature);
+        });
+    }
+
+    /// <summary>The rate multiplier of a transition, the way the game applies it.</summary>
+    /// <param name="slot">The slot the stack sits in.</param>
+    /// <param name="type">The kind of transition, such as <see cref="EnumTransitionType.Perish"/>.</param>
+    public float TransitionRate(Vintagestory.API.Common.ItemSlot slot, EnumTransitionType type)
+    {
+        ArgumentNullException.ThrowIfNull(slot);
+        return _host.RunOnGameThread(() =>
+        {
+            if (slot.Itemstack?.Collectible == null) return 0f;
+            return slot.Itemstack.Collectible.GetTransitionRateMul(_host.Api.World, slot, type);
+        });
+    }
+
+    /// <summary>The container's part of the rate multiplier of a transition.</summary>
+    /// <param name="slot">The slot the stack sits in.</param>
+    /// <param name="type">The kind of transition, such as <see cref="EnumTransitionType.Perish"/>.</param>
+    public float ContainerTransitionRate(Vintagestory.API.Common.ItemSlot slot, EnumTransitionType type)
+    {
+        ArgumentNullException.ThrowIfNull(slot);
+        return _host.RunOnGameThread(() =>
+        {
+            if (slot.Itemstack == null || slot.Inventory == null) return 1f;
+            return slot.Inventory.GetTransitionSpeedMul(type, slot.Itemstack);
+        });
+    }
+
+    /// <summary>
+    /// Advances the calendar and lets the inventories apply the transitions the time passed, so a
+    /// stack that spoiled now holds the stack it turns into.
+    /// </summary>
+    /// <param name="span">How much game time to pass.</param>
+    /// <param name="ticks">How many server ticks to run after the time passed.</param>
+    /// <param name="ct">Cancels the wait.</param>
+    public async Task AgeAsync(TimeSpan span, int ticks = 2, CancellationToken ct = default)
+    {
+        if (span < TimeSpan.Zero) throw new ArgumentOutOfRangeException(nameof(span), "The game time cannot run backwards.");
+        ArgumentOutOfRangeException.ThrowIfNegative(ticks);
+
+        _host.Calendar.Advance(span);
+        for (int tick = 0; tick < ticks; tick++)
+        {
+            ct.ThrowIfCancellationRequested();
+            _host.Tick();
+            await Task.Yield();
+        }
+    }
+
     /// <summary>The tier of a tool, the way the game reads it.</summary>
     /// <param name="stack">The stack to read.</param>
     public int ToolTier(ItemStack stack)
