@@ -225,10 +225,12 @@ public abstract class ServerScenarioBase : IScenarioLifecycle, IAsyncDisposable
 
         try
         {
-            ServerWorldOptions options = WorldPresetCache.Resolve(WorldOptions);
+            ScenarioConfiguration configuration = ScenarioAttributes.Configuration(GetType());
+            ServerWorldOptions options = configuration.ApplyWorldValues(WorldPresetCache.Resolve(WorldOptions));
             IReadOnlyList<string> mods = ScenarioAttributes.ServerMods(GetType());
-            DataFileSet files = ScenarioAttributes.DataFiles(GetType(), EnumAppSide.Server);
-            ServerPoolKey key = new(options, string.Join("|", mods), EffectiveIsolation, files.Key);
+            DataFileSet files = ScenarioAttributes.DataFiles(GetType(), configuration, EnumAppSide.Server);
+            ScenarioAttributes.RecordConfiguration(configuration, options, files);
+            ServerPoolKey key = new(options, string.Join("|", mods), EffectiveIsolation, files.Key, configuration.Key);
 
             _pooled = EffectiveIsolation is Isolation.Recycle or Isolation.Rollback
                 ? ScenarioHostPool.Take<PooledServer>(GetType(), key)
@@ -247,6 +249,7 @@ public abstract class ServerScenarioBase : IScenarioLifecycle, IAsyncDisposable
                 {
                     ScenarioAttributes.StageMods(mods, sandbox.ModsPath);
                     files.WriteTo(sandbox.RootPath, EnumAppSide.Server);
+                    configuration.WriteServerConfig(sandbox.RootPath);
                     _pooled = new PooledServer(sandbox, EmbeddedServerHost.Boot(sandbox, options), key, files);
                 }
                 catch (Exception ex)
@@ -398,6 +401,7 @@ public abstract class ServerScenarioBase : IScenarioLifecycle, IAsyncDisposable
         ServerDataPath = server?.DataPath ?? sandbox?.RootPath,
         Sandbox = sandbox,
         World = WorldOptions,
+        Configuration = test.Configuration,
         Isolation = EffectiveIsolation.ToString(),
         IsolationReport = IsolationReport,
         RandomSeed = server?.Random.CurrentSeed,
@@ -602,7 +606,7 @@ public abstract class ServerScenarioBase : IScenarioLifecycle, IAsyncDisposable
     protected int DataFilePort(string name) =>
         (_pooled ?? throw new InvalidOperationException("Data file ports are known once the server has booted.")).Files.Port(name);
 
-    private sealed record ServerPoolKey(ServerWorldOptions Options, string Mods, Isolation Isolation, string DataFiles);
+    private sealed record ServerPoolKey(ServerWorldOptions Options, string Mods, Isolation Isolation, string DataFiles, string Config);
 
     private sealed class PooledServer(ServerSandbox sandbox, EmbeddedServerHost host, ServerPoolKey key, DataFileSet files) : IDisposable
     {
@@ -651,7 +655,7 @@ public abstract class ServerScenarioBase : IScenarioLifecycle, IAsyncDisposable
         {
             _baseline = Host.TakeSnapshot();
             _tracking = Host.RunOnGameThread(() => _baseline.TrackChunksLoadedLater(Host));
-            _dataFiles = Host.RunOnGameThread(() => DataFileBaseline.Capture(Sandbox.RootPath, Files, EnumAppSide.Server));
+            _dataFiles = Host.RunOnGameThread(() => DataFileBaseline.Capture(Sandbox.RootPath, Files, EnumAppSide.Server, includeModConfig: true, includeServerConfig: true));
             _landClaims = Host.LandClaims.Capture();
             _pvp = Host.Pvp.Capture();
             _reinforcement = Host.Reinforcement.Capture();

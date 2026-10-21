@@ -66,7 +66,10 @@ public sealed class ScenarioBaseInheritanceAnalyzer : DiagnosticAnalyzer
                 }
                 else if (attrName is "ServerScenario" or "ServerScenarioAttribute" or
                                      "ServerTheory" or "ServerTheoryAttribute" or
-                                     "ContentSweep" or "ContentSweepAttribute")
+                                     "ContentSweep" or "ContentSweepAttribute" or
+                                     "WorldConfigMatrix" or "WorldConfigMatrixAttribute" or
+                                     "ServerConfigMatrix" or "ServerConfigMatrixAttribute" or
+                                     "ModConfigMatrix" or "ModConfigMatrixAttribute")
                 {
                     canonicalAttr = attrName.Replace("Attribute", "");
                     requiredBase = "ServerScenarioBase";

@@ -11,6 +11,12 @@ namespace Zaldaryon.Pharos.Scenarios;
 /// <param name="Method">The test method, when the scenario pipeline runs it.</param>
 public sealed record ScenarioTestInfo(string DisplayName, Type TestClass, string MethodName, MethodInfo? Method = null)
 {
+    /// <summary>The arguments of this theory row, available while its scenario is initialized.</summary>
+    public IReadOnlyList<object?> MethodArguments { get; init; } = [];
+
+    /// <summary>The effective configuration recorded for this scenario row.</summary>
+    public IReadOnlyDictionary<string, string>? Configuration { get; internal set; }
+
     /// <summary>The seed the test runs with, from <see cref="SeededAttribute"/>, or null when it is not seeded.</summary>
     public ScenarioRandomSeed? RandomSeed { get; init; }
 

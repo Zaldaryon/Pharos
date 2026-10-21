@@ -58,6 +58,20 @@ internal sealed partial class DataFileSet
         }
     }
 
+    /// <summary>The seeded files and content hashes written into a scenario run manifest.</summary>
+    public IReadOnlyDictionary<string, string> ForRunManifest()
+    {
+        SortedDictionary<string, string> files = new(StringComparer.Ordinal);
+        foreach (Entry entry in _entries)
+        {
+            string side = entry.Side == EnumAppSide.Server ? "server" : "client";
+            string key = $"{side}.file.{entry.To}";
+            string hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(entry.Content)).ToLowerInvariant();
+            files[key] = $"{Path.GetFileName(entry.Source)} sha256:{hash}";
+        }
+        return files;
+    }
+
     /// <summary>
     /// Reads, checks and fills in the files <paramref name="attributes"/> name, for the sides
     /// <paramref name="sides"/> a scenario has. A test's attributes replace its class's for the
@@ -231,7 +245,8 @@ internal sealed partial class DataFileSet
 
 /// <summary>
 /// The seeded files and everything under <c>ModConfig</c> in one data folder, as they were once the
-/// side had booted, to put back after a test changed them.
+/// side had booted, to put back after a test changed them. Server scenarios can also include
+/// <c>serverconfig.json</c>.
 /// </summary>
 /// <remarks>
 /// Taken after boot rather than from the sources: many mods rewrite their config when they start,
@@ -250,12 +265,14 @@ internal sealed class DataFileBaseline
         _files = files;
     }
 
-    /// <summary>Records the files of <paramref name="set"/> for <paramref name="side"/> in <paramref name="dataPath"/>, or null when there are none.</summary>
-    public static DataFileBaseline? Capture(string dataPath, DataFileSet set, EnumAppSide side)
+    /// <summary>Records the scenario's mod config files and seeded files, or null when none are watched.</summary>
+    public static DataFileBaseline? Capture(string dataPath, DataFileSet set, EnumAppSide side,
+        bool includeModConfig = false, bool includeServerConfig = false)
     {
-        if (!set.HasFilesFor(side)) return null;
+        if (!set.HasFilesFor(side) && !includeModConfig && !(includeServerConfig && side == EnumAppSide.Server)) return null;
 
         List<string> destinations = set.DestinationsFor(side).ToList();
+        if (includeServerConfig && side == EnumAppSide.Server) destinations.Add("serverconfig.json");
         Dictionary<string, byte[]> files = new(PathComparer);
         foreach (string path in Watched(dataPath, destinations))
         {

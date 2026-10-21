@@ -59,6 +59,9 @@ public sealed class ScenarioAttemptState
     /// <summary>The metrics this attempt collected, for its <c>pharos-run.json</c> record.</summary>
     public IReadOnlyDictionary<string, Zaldaryon.Pharos.Metrics.MetricSummary>? Metrics { get; private set; }
 
+    /// <summary>The effective configuration this attempt used.</summary>
+    public IReadOnlyDictionary<string, string>? Configuration { get; private set; }
+
     /// <summary>Records where the attempt's <c>result.json</c> was written.</summary>
     public void SetMetricsDirectory(string directory)
     {
@@ -72,6 +75,9 @@ public sealed class ScenarioAttemptState
         ArgumentNullException.ThrowIfNull(metrics);
         Metrics = metrics;
     }
+
+    /// <summary>Records the configuration used by this attempt.</summary>
+    public void SetConfiguration(IReadOnlyDictionary<string, string>? configuration) => Configuration = configuration;
 
     /// <summary>Marks this attempt as non-retryable.</summary>
     public void MarkNonRetryable(string phase = "setup")
@@ -107,7 +113,8 @@ public sealed record ScenarioAttemptFragment(
     string FinalOutcome,
     bool Flaky,
     IReadOnlyList<ScenarioAttemptEntry> AttemptHistory,
-    IReadOnlyDictionary<string, Zaldaryon.Pharos.Metrics.MetricSummary>? Metrics = null);
+    IReadOnlyDictionary<string, Zaldaryon.Pharos.Metrics.MetricSummary>? Metrics = null,
+    IReadOnlyDictionary<string, string>? Configuration = null);
 
 /// <summary>Writes attempt manifests to disk for worker coordination and flaky test analysis.</summary>
 public static class ScenarioAttemptManifestWriter
@@ -131,14 +138,15 @@ public static class ScenarioAttemptManifestWriter
         IReadOnlyList<ScenarioAttemptEntry> attempts,
         string outcome,
         bool flaky,
-        IReadOnlyDictionary<string, Zaldaryon.Pharos.Metrics.MetricSummary>? metrics = null)
+        IReadOnlyDictionary<string, Zaldaryon.Pharos.Metrics.MetricSummary>? metrics = null,
+        IReadOnlyDictionary<string, string>? configuration = null)
     {
         string? directory = Environment.GetEnvironmentVariable(DirectoryVariable);
         if (string.IsNullOrWhiteSpace(directory)) return;
 
         try
         {
-            WriteCore(assembly, fullyQualifiedName, displayName, policy, attempts, outcome, flaky, directory, metrics);
+            WriteCore(assembly, fullyQualifiedName, displayName, policy, attempts, outcome, flaky, directory, metrics, configuration);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException or
                                    JsonException or ArgumentException or NotSupportedException)
@@ -156,7 +164,8 @@ public static class ScenarioAttemptManifestWriter
         string outcome,
         bool flaky,
         string directory,
-        IReadOnlyDictionary<string, Zaldaryon.Pharos.Metrics.MetricSummary>? metrics)
+        IReadOnlyDictionary<string, Zaldaryon.Pharos.Metrics.MetricSummary>? metrics,
+        IReadOnlyDictionary<string, string>? configuration)
     {
         Directory.CreateDirectory(directory);
         string identity = fullyQualifiedName + "\0" + displayName;
@@ -164,7 +173,7 @@ public static class ScenarioAttemptManifestWriter
         ScenarioAttemptFragment record = new(1, Environment.GetEnvironmentVariable("PHAROS_RUN_ID") ?? "",
             assembly,
             fullyQualifiedName, displayName,
-            policy.Attempts, policy.RequiredSuccesses, outcome, outcome, flaky, attempts, metrics);
+            policy.Attempts, policy.RequiredSuccesses, outcome, outcome, flaky, attempts, metrics, configuration);
         string path = Path.Combine(directory, $"{stem}-{Guid.NewGuid():N}.json");
         string temporary = path + ".tmp";
         try

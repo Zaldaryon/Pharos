@@ -1,6 +1,8 @@
+using System.Reflection;
 using Xunit;
 using Xunit.v3;
 using Zaldaryon.Pharos.Core;
+using Zaldaryon.Pharos.Scenarios;
 using Zaldaryon.Pharos.UI;
 using Zaldaryon.Pharos.XUnit;
 
@@ -94,5 +96,46 @@ public class V3AttributeTests
 
         Assert.Equal(4, rows.Count);
         Assert.True(attr.SupportsDiscoveryEnumeration());
+    }
+
+    [Fact]
+    public async Task WorldConfigMatrixAttribute_ProvidesDataRows()
+    {
+        WorldConfigMatrixAttribute attr = new("creatureHostility", "aggressive", "passive");
+        var rows = await attr.GetData(TheoryMethod(), new Xunit.Sdk.DisposalTracker());
+
+        Assert.Equal(2, rows.Count);
+        Assert.True(attr.SupportsDiscoveryEnumeration());
+        Assert.Equal(ScenarioConfigurationMatrixKind.World, attr.Kind);
+    }
+
+    [Fact]
+    public async Task ServerConfigMatrixAttribute_ProvidesDataRows()
+    {
+        ServerConfigMatrixAttribute attr = new("MaxChunkRadius", "4", "8");
+        var rows = await attr.GetData(TheoryMethod(), new Xunit.Sdk.DisposalTracker());
+
+        Assert.Equal(2, rows.Count);
+        Assert.Equal(ScenarioConfigurationMatrixKind.Server, attr.Kind);
+    }
+
+    [Fact]
+    public async Task ModConfigMatrixAttribute_ProvidesDataRows()
+    {
+        ModConfigMatrixAttribute attr = new("mymod.json", "easy.json", "hard.json");
+        var rows = await attr.GetData(TheoryMethod(), new Xunit.Sdk.DisposalTracker());
+
+        Assert.Equal(2, rows.Count);
+        Assert.Equal(ScenarioConfigurationMatrixKind.Mod, attr.Kind);
+    }
+
+    private static MethodInfo TheoryMethod() =>
+        typeof(Rows).GetMethod("TheRow", BindingFlags.NonPublic | BindingFlags.Instance)!;
+
+    private sealed class Rows
+    {
+        private void TheRow(string value)
+        {
+        }
     }
 }
