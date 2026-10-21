@@ -312,6 +312,7 @@ See the [inspection API reference](docs/inspection-api.md) for method signatures
 - [Mod Loading](docs/mod-loading.md): `Server.Mods` and `Client.Mods`, which report mod states, systems, run order, JSON patch outcomes, compatibility assets and asset origins
 - [Content Sweep](docs/content-sweep.md): `[ContentSweep]` and `ContentSweep.RunAsync`, which place, break, round-trip and spawn each code from a mod
 - [Commands](docs/commands.md): `Server.Commands`, which reads a mod's command tree, runs its parsers without its handler, and records what the chat handlers did
+- [Held Items](docs/held-items.md): the held-item hooks, the mining times and the durability, and the holds a client or a bot makes
 - [Configuration](docs/configuration.md): `[WorldConfig]`, `[ServerConfig]` and the configuration matrices, which set a scenario's configuration before the server boots and put it back after a test
 - [CI and Cloud Environments](docs/ci-and-cloud.md): Running the suite in CI and cloud environments, offline or online auth, and a dedicated server in Docker
 - [Client-Server Testing](docs/writing-client-server-scenarios.md): `[ClientServerScenario]`, lockstep stepping, and packet assertions

@@ -234,6 +234,11 @@ public sealed class HeadlessClient : IDisposable
     /// </summary>
     public ClientCommandDriver Commands => _commands ??= new ClientCommandDriver(this);
 
+    /// <summary>The item in the client's hand: the holds, and what the hooks did.</summary>
+    public ClientHeldDriver Held => _held ??= new ClientHeldDriver(this);
+
+    private ClientHeldDriver? _held;
+
     /// <summary>Whether the tests run on an Optimum build. See <see cref="Optimum"/>.</summary>
     public bool HasOptimum => OptimumDiagnostics.Loaded != null;
 
