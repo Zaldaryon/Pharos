@@ -129,12 +129,29 @@ public class V3AttributeTests
         Assert.Equal(ScenarioConfigurationMatrixKind.Mod, attr.Kind);
     }
 
+    [Fact]
+    public async Task CommandPrivilegeMatrixAttribute_ProvidesDataRows()
+    {
+        CommandPrivilegeMatrixAttribute attr = new("/mycmd reset", "suplayer", "admin") { Expected = "denied,allowed" };
+        var rows = await attr.GetData(PrivilegeMethod(), new Xunit.Sdk.DisposalTracker());
+
+        Assert.Equal(2, rows.Count);
+        Assert.True(attr.SupportsDiscoveryEnumeration());
+    }
+
     private static MethodInfo TheoryMethod() =>
         typeof(Rows).GetMethod("TheRow", BindingFlags.NonPublic | BindingFlags.Instance)!;
+
+    private static MethodInfo PrivilegeMethod() =>
+        typeof(Rows).GetMethod("ThePrivilegeRow", BindingFlags.NonPublic | BindingFlags.Instance)!;
 
     private sealed class Rows
     {
         private void TheRow(string value)
+        {
+        }
+
+        private void ThePrivilegeRow(CommandPrivilegeCase privilege)
         {
         }
     }

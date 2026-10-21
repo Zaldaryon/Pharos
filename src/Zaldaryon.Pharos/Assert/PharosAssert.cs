@@ -1,13 +1,14 @@
+using static System.FormattableString;
+using System.Globalization;
+using Vintagestory.API.Config;
 using Vintagestory.API.MathTools;
 using Vintagestory.Common;
-using System.Globalization;
-using Zaldaryon.Pharos.Server;
-using Zaldaryon.Pharos.Mods;
-using static System.FormattableString;
-using Zaldaryon.Pharos.Culling;
 using Zaldaryon.Pharos.Core;
+using Zaldaryon.Pharos.Culling;
 using Zaldaryon.Pharos.Graphics;
 using Zaldaryon.Pharos.Memory;
+using Zaldaryon.Pharos.Mods;
+using Zaldaryon.Pharos.Server;
 using Zaldaryon.Pharos.Timing;
 using Zaldaryon.Pharos.Visual;
 using Zaldaryon.Pharos.XUnit;
@@ -784,6 +785,117 @@ public static class PharosAssert
             .Distinct(StringComparer.OrdinalIgnoreCase));
         throw new PharosAssertException(
             $"No system of type '{type.FullName}' ran. Systems that ran: [{available}].");
+    }
+
+    // -------------------------------------------------------------------------
+    // Command assertions
+    // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// Asserts that every command a mod registered is complete and described: the game's own
+    /// validation passes, no node misses a name, a privilege, a handler or a description, and every
+    /// description resolves in the language the server runs in and in every language the mod ships.
+    /// </summary>
+    /// <param name="host">The server whose commands to check.</param>
+    /// <param name="modId">The mod whose commands to check, such as <c>mymod</c>.</param>
+    /// <exception cref="PharosAssertException">Thrown when a command is incomplete or a description does not resolve.</exception>
+    public static void CommandsValid(EmbeddedServerHost host, string modId)
+    {
+        ArgumentNullException.ThrowIfNull(host);
+        ArgumentException.ThrowIfNullOrWhiteSpace(modId);
+
+        List<(string Name, Vintagestory.API.Common.IChatCommand Command)> commands = [.. CommandRegistry.CommandsOf(host, modId)];
+        if (commands.Count == 0)
+        {
+            throw new PharosAssertException($"The mod '{modId}' registered no command, so there is nothing to check.");
+        }
+
+        List<string> problems = [];
+        IReadOnlyList<string> languages = LanguagesOf(host, modId);
+
+        foreach ((string name, Vintagestory.API.Common.IChatCommand command) in commands)
+        {
+            try
+            {
+                command.Validate();
+            }
+            catch (Exception ex)
+            {
+                problems.Add($"{name}: {ex.Message}");
+                continue;
+            }
+
+            foreach (CommandNode node in NodesOf(command))
+            {
+                if (node.Incomplete)
+                {
+                    problems.Add($"{node.FullName}: the command is incomplete, a name, a privilege, a handler or a description is missing");
+                }
+
+                if (string.IsNullOrWhiteSpace(node.Description))
+                {
+                    problems.Add($"{node.FullName}: the command has no description");
+                    continue;
+                }
+
+                if (!Resolves(node.Description))
+                {
+                    problems.Add($"{node.FullName}: the description '{node.Description}' does not resolve in {Lang.CurrentLocale}");
+                }
+
+                foreach (string language in languages)
+                {
+                    if (!Lang.AvailableLanguages.TryGetValue(language, out ITranslationService? service)) continue;
+                    if (service.GetIfExists(node.Description) == null)
+                    {
+                        problems.Add($"{node.FullName}: the description '{node.Description}' does not resolve in {language}");
+                    }
+                }
+            }
+        }
+
+        if (problems.Count == 0) return;
+
+        string list = string.Join(Environment.NewLine, problems.Select(problem => "  " + problem));
+        throw new PharosAssertException(
+            $"{problems.Count} problem(s) in the commands of mod '{modId}':{Environment.NewLine}{list}");
+    }
+
+    private static IEnumerable<CommandNode> NodesOf(Vintagestory.API.Common.IChatCommand command)
+    {
+        yield return new CommandNode(
+            command.Name ?? "",
+            command.FullName ?? "",
+            [],
+            [],
+            command.CallSyntax ?? "",
+            "",
+            command.Description ?? "",
+            command.Incomplete,
+            new Dictionary<string, CommandNode>());
+
+        foreach (Vintagestory.API.Common.IChatCommand subcommand in command.Subcommands)
+        {
+            foreach (CommandNode node in NodesOf(subcommand)) yield return node;
+        }
+    }
+
+    private static bool Resolves(string description) => Lang.GetIfExists(description) != null;
+
+    /// <summary>The languages a mod ships translations for, by the files in its lang folder.</summary>
+    private static IReadOnlyList<string> LanguagesOf(EmbeddedServerHost host, string modId)
+    {
+        Vintagestory.API.Common.Mod? mod = host.Api.ModLoader.Mods.FirstOrDefault(candidate =>
+            string.Equals(candidate.Info?.ModID, modId, StringComparison.OrdinalIgnoreCase));
+        if (mod == null || string.IsNullOrWhiteSpace(mod.SourcePath)) return [];
+
+        string folder = Path.Combine(mod.SourcePath, "assets", modId, "lang");
+        if (!Directory.Exists(folder)) return [];
+
+        return [.. Directory.EnumerateFiles(folder, "*.json")
+            .Select(path => Path.GetFileNameWithoutExtension(path))
+            .Where(code => !string.IsNullOrWhiteSpace(code))
+            .Order(StringComparer.OrdinalIgnoreCase)];
     }
 
     // -------------------------------------------------------------------------
