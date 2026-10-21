@@ -127,6 +127,11 @@ public sealed partial class EmbeddedServerHost : IDisposable, IAsyncDisposable
 
     private Zaldaryon.Pharos.Items.ItemDriver? _items;
 
+    /// <summary>The server's projectiles: how they fly, what they hit and what happened to their stack.</summary>
+    public ProjectileDriver Projectiles => _projectiles ??= new ProjectileDriver(this);
+
+    private ProjectileDriver? _projectiles;
+
     /// <summary>The server's liquid containers, and the pouring between them.</summary>
     public Zaldaryon.Pharos.Items.LiquidDriver Liquids => _liquids ??= new Zaldaryon.Pharos.Items.LiquidDriver(this);
 
