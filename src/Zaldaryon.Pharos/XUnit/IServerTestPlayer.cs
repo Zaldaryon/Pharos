@@ -98,6 +98,9 @@ public interface IServerTestPlayer
     /// <param name="quantity">The quantity to give. Default is 1.</param>
     void GiveItem(string itemCode, int quantity = 1);
 
+    /// <summary>The gear the player wears, and the stats the worn items give.</summary>
+    Zaldaryon.Pharos.Items.GearDriver Gear { get; }
+
     /// <summary>
     /// Checks whether the player has at least the specified quantity of an item.
     /// </summary>

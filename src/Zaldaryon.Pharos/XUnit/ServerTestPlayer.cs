@@ -310,6 +310,11 @@ public sealed class ServerTestPlayer : IServerTestPlayer, IDisposable
         OnGameThread(() => _player.Entity.TryGiveItemStack(new ItemStack(collectible, quantity)));
     }
 
+    /// <summary>The gear the player wears, and the stats the worn items give.</summary>
+    public Zaldaryon.Pharos.Items.GearDriver Gear => _gear ??= new Zaldaryon.Pharos.Items.GearDriver(this);
+
+    private Zaldaryon.Pharos.Items.GearDriver? _gear;
+
     /// <inheritdoc />
     public bool HasItem(string itemCode, int quantity = 1)
     {

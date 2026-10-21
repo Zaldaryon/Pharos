@@ -148,6 +148,40 @@ public sealed class InventoryDriver
         });
     }
 
+    /// <summary>
+    /// The contents of a bag in a slot, read and written the way the game writes them.
+    /// </summary>
+    /// <param name="slot">The slot the bag sits in.</param>
+    /// <exception cref="InvalidOperationException">The item in the slot is not a bag.</exception>
+    public Zaldaryon.Pharos.Items.BagContents Bag(Vintagestory.API.Common.ItemSlot slot)
+    {
+        ArgumentNullException.ThrowIfNull(slot);
+        return _host.RunOnGameThread(() =>
+        {
+            ItemStack? stack = slot.Itemstack;
+            if (stack?.Collectible == null)
+            {
+                throw new InvalidOperationException("The slot holds no item, so it holds no bag.");
+            }
+
+            IHeldBag? bag = stack.Collectible.CollectibleBehaviors.OfType<IHeldBag>().FirstOrDefault();
+            if (bag == null)
+            {
+                throw new InvalidOperationException($"The item '{stack.Collectible.Code}' is not a bag.");
+            }
+
+            InventoryBase? parent = slot.Inventory;
+            if (parent == null)
+            {
+                throw new InvalidOperationException("The bag's slot belongs to no inventory, so its contents cannot be read.");
+            }
+
+            int index = parent.GetSlotId(slot);
+            List<ItemSlotBagContent> slots = [.. bag.GetOrCreateSlots(stack, parent, index, _host.Api.World)];
+            return new Zaldaryon.Pharos.Items.BagContents(stack, bag, slots);
+        });
+    }
+
     /// <summary>Whether the block at a position has an inventory.</summary>
     /// <param name="position">Where the container stands.</param>
     public bool HasInventory(BlockPos position) => _host.RunOnGameThread(() =>
