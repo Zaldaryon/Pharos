@@ -127,6 +127,16 @@ public sealed partial class EmbeddedServerHost : IDisposable, IAsyncDisposable
 
     private Zaldaryon.Pharos.Items.ItemDriver? _items;
 
+    /// <summary>The random block ticks of the server: the blocks that spread, melt and grow.</summary>
+    public BlockTickDriver BlockTicks => _blockTicks ??= new BlockTickDriver(this);
+
+    private BlockTickDriver? _blockTicks;
+
+    /// <summary>The snow of the server: how much lies on a block and how it settles.</summary>
+    public SnowDriver Snow => _snow ??= new SnowDriver(this);
+
+    private SnowDriver? _snow;
+
     /// <summary>The block outcomes of the server: the drops, the explosions and the hooks a block calls.</summary>
     public BlockOutcomeDriver Blocks => _blocks ??= new BlockOutcomeDriver(this);
 
