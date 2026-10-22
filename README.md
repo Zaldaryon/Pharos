@@ -303,6 +303,7 @@ See the [inspection API reference](docs/inspection-api.md) for method signatures
 - [Smoke Testing a Mod](docs/smoke-test.md): `pharos smoke` and `ModSmokeTest`, in a terminal or in CI
 - [Boot Diagnostics](docs/boot-diagnostics.md): The warnings a client or server logs while booting, `[StrictBoot]` and `[AllowBootDiagnostic]`
 - [Parallel Runs](docs/parallel-runs.md): `pharos run --parallel`, which runs test classes in worker processes and merges their results
+- [Run Reports](docs/reports.md): `pharos report`, which turns a run into an HTML page, a Markdown summary and timings
 - [Test Worlds](docs/test-worlds.md): Schematics, saved worlds with `[ServerWorld(SaveFile = ...)]`, and `pharos fixture`
 - [Failure Artifacts and the Watchdog](docs/failure-artifacts.md): The screenshot, logs, traffic and run details a failing scenario saves, and the timeout that stops a hung one
 - [Metrics](docs/metrics.md): Named per-test metrics, automatic frame/tick/memory/GL/network/world collectors, and the `result.json` schema

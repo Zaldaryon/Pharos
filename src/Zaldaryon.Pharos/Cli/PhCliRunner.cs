@@ -80,6 +80,9 @@ public static class PhCliRunner
                 case "merge" or "merge-runs":
                     return ParallelRuns.MergeCommand.Run(args[1..], stdout, stderr);
 
+                case "report":
+                    return ParallelRuns.ReportCommand.Run(args[1..], stdout, stderr);
+
                 case "compare":
                     return ParallelRuns.Compare.CompareCommand.Run(args[1..], stdout, stderr);
 
@@ -89,6 +92,10 @@ public static class PhCliRunner
 
                 case "help" when args.Length > 1 && args[1] is "merge" or "merge-runs":
                     stdout.WriteLine(ParallelRuns.MergeCommand.HelpText);
+                    return ExitCodeSuccess;
+
+                case "help" when args.Length > 1 && args[1] == "report":
+                    stdout.WriteLine(ParallelRuns.ReportCommand.HelpText);
                     return ExitCodeSuccess;
 
                 case "help" when args.Length > 1 && args[1] == "diff":
@@ -329,6 +336,7 @@ public static class PhCliRunner
           run               Run a test assembly's classes in parallel worker processes
           diff              Compare two test runs (TRX files) and gate on regressions
           compare           Compare the same tests against a baseline, per metric
+          report            Write an HTML page, a Markdown summary and timings from a run
           fixture           Run a builder scenario and save the world it leaves
           benchmark         Run performance benchmarks and check for regressions
           smoke             Boot, join and play with a mod, failing on errors
@@ -355,6 +363,7 @@ public static class PhCliRunner
           pharos benchmark --baseline-file pharos-baselines.json
           pharos smoke --mod bin/Release/mymod.zip --strict
           pharos run tests/MyMod.Tests --filter "Category=Live" --parallel 4
+          pharos report pharos-run/pharos.trx
           pharos migrate-atlas ./MyTestProject --dry-run
           pharos help migrate-atlas
         """;

@@ -45,6 +45,9 @@ public sealed record RunOptions
     /// <summary>Path to write the run manifest JSON to; overrides the default in ResultsDirectory.</summary>
     public string? ManifestPath { get; init; }
 
+    /// <summary>Where the run writes its HTML page, Markdown summary and timings; null for none.</summary>
+    public string? ReportDirectory { get; init; }
+
     /// <summary>The shard to run: 1-indexed shard number and total shards.</summary>
     public ShardOptions? Shard { get; init; }
 
@@ -177,6 +180,9 @@ public sealed record RunOptions
                     break;
                 case "--manifest":
                     options = options with { ManifestPath = Value() };
+                    break;
+                case "--report":
+                    options = options with { ReportDirectory = Value() };
                     break;
                 case "--json":
                     if (i + 1 < args.Count && !args[i + 1].StartsWith('-') && (target != null || args[i + 1].EndsWith(".json", StringComparison.OrdinalIgnoreCase)))
