@@ -319,6 +319,7 @@ See the [inspection API reference](docs/inspection-api.md) for method signatures
 - [Projectiles](docs/projectiles.md): how a shot flies, what it hits and what happened to its stack
 - [Block outcomes](docs/block-outcomes.md): the drops of a block, an explosion and the hooks a block calls
 - [Block ticks and snow](docs/block-ticks.md): ticking a block on demand, and the snow that lies on it
+- [Animals](docs/animals.md): what an animal breeds, how it grows and what a hen box holds
 - [Configuration](docs/configuration.md): `[WorldConfig]`, `[ServerConfig]` and the configuration matrices, which set a scenario's configuration before the server boots and put it back after a test
 - [CI and Cloud Environments](docs/ci-and-cloud.md): Running the suite in CI and cloud environments, offline or online auth, and a dedicated server in Docker
 - [Client-Server Testing](docs/writing-client-server-scenarios.md): `[ClientServerScenario]`, lockstep stepping, and packet assertions

@@ -127,6 +127,11 @@ public sealed partial class EmbeddedServerHost : IDisposable, IAsyncDisposable
 
     private Zaldaryon.Pharos.Items.ItemDriver? _items;
 
+    /// <summary>The animals of the server: what they breed, how they grow and what a hen box holds.</summary>
+    public AnimalDriver Animals => _animals ??= new AnimalDriver(this);
+
+    private AnimalDriver? _animals;
+
     /// <summary>The random block ticks of the server: the blocks that spread, melt and grow.</summary>
     public BlockTickDriver BlockTicks => _blockTicks ??= new BlockTickDriver(this);
 
