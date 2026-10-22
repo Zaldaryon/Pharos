@@ -127,6 +127,16 @@ public sealed partial class EmbeddedServerHost : IDisposable, IAsyncDisposable
 
     private Zaldaryon.Pharos.Items.ItemDriver? _items;
 
+    /// <summary>The traders of the server: what they offer, what they want and what a trade did.</summary>
+    public TradeDriver Trade => _trade ??= new TradeDriver(this);
+
+    private TradeDriver? _trade;
+
+    /// <summary>The conversations of the server: what a villager says and what the player may answer.</summary>
+    public DialogueDriver Dialogue => _dialogue ??= new DialogueDriver(this);
+
+    private DialogueDriver? _dialogue;
+
     /// <summary>The animals of the server: what they breed, how they grow and what a hen box holds.</summary>
     public AnimalDriver Animals => _animals ??= new AnimalDriver(this);
 

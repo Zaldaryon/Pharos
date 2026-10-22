@@ -11,7 +11,7 @@ namespace Zaldaryon.Pharos.Server;
 /// </summary>
 internal static class GameMembers
 {
-    private const BindingFlags Flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
+    private const BindingFlags Flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static;
 
     /// <summary>Reads a property or a field by name.</summary>
     public static object? Get(object target, string name)
@@ -20,6 +20,15 @@ internal static class GameMembers
         if (type.GetProperty(name, Flags) is { } property) return property.GetValue(target);
         if (type.GetField(name, Flags) is { } field) return field.GetValue(target);
         throw Missing(type, name);
+    }
+
+    /// <summary>Reads a property or a field by name, or null when the member is not there.</summary>
+    public static object? TryGet(object target, string name)
+    {
+        Type type = target.GetType();
+        if (type.GetProperty(name, Flags) is { } property) return property.GetValue(target);
+        if (type.GetField(name, Flags) is { } field) return field.GetValue(target);
+        return null;
     }
 
     /// <summary>Writes a property or a field by name.</summary>
