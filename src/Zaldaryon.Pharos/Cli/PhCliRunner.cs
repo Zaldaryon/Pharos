@@ -83,6 +83,12 @@ public static class PhCliRunner
                 case "report":
                     return ParallelRuns.ReportCommand.Run(args[1..], stdout, stderr);
 
+                case "doctor":
+                    return DoctorCommand.Run(args[1..], stdout, stderr);
+
+                case "init":
+                    return InitCommand.Run(args[1..], stdout, stderr);
+
                 case "compare":
                     return ParallelRuns.Compare.CompareCommand.Run(args[1..], stdout, stderr);
 
@@ -96,6 +102,14 @@ public static class PhCliRunner
 
                 case "help" when args.Length > 1 && args[1] == "report":
                     stdout.WriteLine(ParallelRuns.ReportCommand.HelpText);
+                    return ExitCodeSuccess;
+
+                case "help" when args.Length > 1 && args[1] == "doctor":
+                    stdout.WriteLine(DoctorCommand.HelpText);
+                    return ExitCodeSuccess;
+
+                case "help" when args.Length > 1 && args[1] == "init":
+                    stdout.WriteLine(InitCommand.HelpText);
                     return ExitCodeSuccess;
 
                 case "help" when args.Length > 1 && args[1] == "diff":
@@ -337,6 +351,8 @@ public static class PhCliRunner
           diff              Compare two test runs (TRX files) and gate on regressions
           compare           Compare the same tests against a baseline, per metric
           report            Write an HTML page, a Markdown summary and timings from a run
+          doctor            Check that this machine can run a Pharos suite
+          init              Write a test project for a mod
           fixture           Run a builder scenario and save the world it leaves
           benchmark         Run performance benchmarks and check for regressions
           smoke             Boot, join and play with a mod, failing on errors
