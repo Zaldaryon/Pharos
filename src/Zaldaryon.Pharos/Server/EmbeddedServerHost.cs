@@ -132,6 +132,16 @@ public sealed partial class EmbeddedServerHost : IDisposable, IAsyncDisposable
 
     private TemporalDriver? _temporal;
 
+    /// <summary>The administration of the server: the whitelist, the bans and the kicks.</summary>
+    public AdminDriver Admin => _admin ??= new AdminDriver(this);
+
+    private AdminDriver? _admin;
+
+    /// <summary>The data the server keeps of its players.</summary>
+    public PlayerDataDriver PlayerData => _playerData ??= new PlayerDataDriver(this);
+
+    private PlayerDataDriver? _playerData;
+
     /// <summary>The traders of the server: what they offer, what they want and what a trade did.</summary>
     public TradeDriver Trade => _trade ??= new TradeDriver(this);
 
