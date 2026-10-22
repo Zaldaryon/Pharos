@@ -23,6 +23,7 @@ internal static class VitalsBehaviors
     public const string Hunger = "hunger";
     public const string Breathe = "breathe";
     public const string BodyTemperature = "bodytemperature";
+    public const string TemporalStability = "temporalstabilityaffected";
 
     /// <summary>
     /// Takes a reading of <paramref name="entity"/>. Values whose behaviour the entity does not
@@ -37,6 +38,7 @@ internal static class VitalsBehaviors
         EntityBehavior? hunger = entity.GetBehavior(Hunger);
         EntityBehavior? breathe = entity.GetBehavior(Breathe);
         EntityBehavior? temperature = entity.GetBehavior(BodyTemperature);
+        EntityBehavior? stability = entity.GetBehavior(TemporalStability);
 
         return new VitalsReading(
             Health: Float(health, "Health"),
@@ -56,7 +58,11 @@ internal static class VitalsBehaviors
             NormalBodyTemperature: Float(temperature, "NormalBodyTemperature"),
             Wetness: Float(temperature, "Wetness"),
             IsAlive: entity.Alive,
-            GameMode: GameMode(entity));
+            GameMode: GameMode(entity))
+        {
+            TemporalStability = Double(stability, "OwnStability"),
+            TemporalStabilityVelocity = Double(stability, "TempStabChangeVelocity"),
+        };
     }
 
     /// <summary>The values <see cref="Set"/> can change, each null when the caller did not name it.</summary>
@@ -225,6 +231,8 @@ internal static class VitalsBehaviors
     private static float? Float(object? target, string name) => Member.TryGet(target, name) is { } value ? Convert.ToSingle(value) : null;
 
     private static float? NullableFloat(object? target, string name) => Float(target, name);
+
+    private static double? Double(object? target, string name) => Member.TryGet(target, name) is { } value ? Convert.ToDouble(value) : null;
 
     private static bool? NullableBool(object? target, string name) => Member.TryGet(target, name) is { } value ? Convert.ToBoolean(value) : null;
 

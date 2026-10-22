@@ -98,11 +98,14 @@ public enum VitalsValues
     /// <summary>Compare the five nutrient levels.</summary>
     Nutrition = 1 << 10,
 
+    /// <summary>Compare the temporal stability a player carries.</summary>
+    TemporalStability = 1 << 11,
+
     /// <summary>What the game itself keeps the two sides agreeing on.</summary>
     SyncedByDefault = Health | MaxHealth | Wetness,
 
     /// <summary>Every value, whether the game syncs it or not.</summary>
-    All = Health | MaxHealth | Saturation | MaxSaturation | Oxygen | MaxOxygen | Air | BodyTemperature | NormalBodyTemperature | Wetness | Nutrition,
+    All = Health | MaxHealth | Saturation | MaxSaturation | Oxygen | MaxOxygen | Air | BodyTemperature | NormalBodyTemperature | Wetness | Nutrition | TemporalStability,
 }
 
 /// <summary>
@@ -156,7 +159,17 @@ public sealed record VitalsReading(
 
     /// <summary>Whether the reading holds any value at all.</summary>
     public bool HasValues =>
-        Health is not null || Saturation is not null || Oxygen is not null || BodyTemperature is not null;
+        Health is not null || Saturation is not null || Oxygen is not null || BodyTemperature is not null ||
+        TemporalStability is not null;
+
+    /// <summary>
+    /// The temporal stability the player carries, from zero to one, as the survival mod's own
+    /// behaviour keeps it. Null without the temporal stability behaviour.
+    /// </summary>
+    public double? TemporalStability { get; init; }
+
+    /// <summary>How fast the player's temporal stability changes now.</summary>
+    public double? TemporalStabilityVelocity { get; init; }
 
     /// <summary>
     /// Whether the two readings agree on the values of <paramref name="values"/> both sides carry,
@@ -195,6 +208,18 @@ public sealed record VitalsReading(
             if (Math.Abs(a - b) > tolerance)
             {
                 why = $"{name} {a:0.###} against {b:0.###}";
+                compared = checked_;
+                return false;
+            }
+        }
+
+        if ((values & VitalsValues.TemporalStability) != 0 &&
+            TemporalStability is { } stability && other.TemporalStability is { } otherStability)
+        {
+            checked_.Add("temporal stability");
+            if (Math.Abs(stability - otherStability) > tolerance)
+            {
+                why = $"temporal stability {stability:0.###} against {otherStability:0.###}";
                 compared = checked_;
                 return false;
             }

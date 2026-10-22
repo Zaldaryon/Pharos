@@ -6,8 +6,9 @@ using Zaldaryon.Pharos.Server;
 namespace Zaldaryon.Pharos.XUnit;
 
 /// <summary>
-/// A test player's survival state: health, hunger and the nutrients it feeds, oxygen, and body
-/// temperature. Read it with <see cref="Read"/> or the pass-through properties, change it with
+/// A test player's survival state: health, hunger and the nutrients it feeds, oxygen, body
+/// temperature and temporal stability. Read it with <see cref="Read"/> or the pass-through
+/// properties, change it with
 /// <see cref="Set"/>, and wait for it with <see cref="WaitForAsync"/>.
 /// </summary>
 /// <remarks>
@@ -97,6 +98,15 @@ public sealed class PlayerVitals
 
     /// <summary>How wet the player is, from 0 up. Above 0.1 the player starts to cool.</summary>
     public float? Wetness => Read().Wetness;
+
+    /// <summary>
+    /// The temporal stability the player carries, from zero to one. Null without the survival
+    /// mod's temporal stability behaviour.
+    /// </summary>
+    public double? TemporalStability => Read().TemporalStability;
+
+    /// <summary>How fast the player's temporal stability changes now.</summary>
+    public double? TemporalStabilityVelocity => Read().TemporalStabilityVelocity;
 
     /// <summary>Whether the player is alive.</summary>
     public bool IsAlive => Read().IsAlive;
