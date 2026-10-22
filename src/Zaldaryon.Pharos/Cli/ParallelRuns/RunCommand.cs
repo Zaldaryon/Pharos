@@ -47,6 +47,7 @@ public static partial class RunCommand
           --timings <path>         A TRX or JSON timing file for balancing shards
           --trx <path>             Where the merged TRX goes (default: <results-dir>/pharos.trx)
           --manifest <json>        Where the run manifest JSON goes (also --json <path>)
+          --report <dir>           Write report.html, report.md and timings.json there
           --results-dir <dir>      Worker logs, TRX files and failure artifacts (default: pharos-run)
           --test-timeout <min>     Stop a test host whose test runs longer, keeping the results
                                    so far (default: 30, scaled by PHAROS_TIMEOUT_SCALE)
@@ -441,6 +442,24 @@ public static partial class RunCommand
         ScenarioRunManifest runManifest = ScenarioRunManifestWriter.Write(manifestPath, runId, start, DateTimeOffset.Now, assembly, trxPath, merged,
             outcomes, notStarted, attemptsDirectory, options.LoadedQuarantine);
         output.Note($"Attempt manifest: {manifestPath}");
+
+        if (!string.IsNullOrWhiteSpace(options.ReportDirectory))
+        {
+            string reportDirectory = Path.GetFullPath(options.ReportDirectory);
+            try
+            {
+                ReportPaths report = ReportCommand.Generate(trxPath, manifestPath, artifacts,
+                    Path.Combine(reportDirectory, "report.html"),
+                    Path.Combine(reportDirectory, "report.md"),
+                    Path.Combine(reportDirectory, "timings.json"));
+                output.Note($"Report: {report.Html}");
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or FormatException or System.Xml.XmlException)
+            {
+                // The tests already ran; a report that cannot be written does not change their result.
+                output.Note($"Report could not be written: {ex.Message}");
+            }
+        }
 
         HashSet<(string FullyQualifiedName, string DisplayName)> quarantined = runManifest.Tests
             .Where(test => test.Quarantined)
