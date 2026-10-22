@@ -198,7 +198,7 @@ public sealed class TemporalDriver
             object system = System(RiftsSystem)
                 ?? throw new InvalidOperationException("The rifts system is not loaded.");
 
-            object rifts = GameMembers.Get(system, "ServerRifts");
+            object rifts = GameMembers.Get(system, "ServerRifts")!;
             Type riftType = rifts.GetType().GetGenericArguments()[0];
             object rift = Activator.CreateInstance(riftType)
                 ?? throw new InvalidOperationException("The game's rift type could not be created.");
@@ -211,7 +211,7 @@ public sealed class TemporalDriver
             GameMembers.Set(rift, "DieAtTotalHours", now + hours);
 
             ((System.Collections.IList)rifts).Add(rift);
-            ((System.Collections.IDictionary)GameMembers.Get(system, "riftsById")).Add(id, rift);
+            ((System.Collections.IDictionary)GameMembers.Get(system, "riftsById")!).Add(id, rift);
 
             // The wards listen to the game's own event, so tell them what was opened.
             if (GameMembers.TryGet(system, "OnRiftSpawned") is Delegate spawned)
@@ -231,8 +231,8 @@ public sealed class TemporalDriver
             object? system = System(RiftsSystem);
             if (system == null) return;
 
-            ((System.Collections.IList)GameMembers.Get(system, "ServerRifts")).Clear();
-            ((System.Collections.IDictionary)GameMembers.Get(system, "riftsById")).Clear();
+            ((System.Collections.IList)GameMembers.Get(system, "ServerRifts")!).Clear();
+            ((System.Collections.IDictionary)GameMembers.Get(system, "riftsById")!).Clear();
         });
     }
 
