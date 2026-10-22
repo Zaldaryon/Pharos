@@ -127,6 +127,11 @@ public sealed partial class EmbeddedServerHost : IDisposable, IAsyncDisposable
 
     private Zaldaryon.Pharos.Items.ItemDriver? _items;
 
+    /// <summary>The temporal systems of the world: the stability, the storms, the rifts and the wards.</summary>
+    public TemporalDriver Temporal => _temporal ??= new TemporalDriver(this);
+
+    private TemporalDriver? _temporal;
+
     /// <summary>The traders of the server: what they offer, what they want and what a trade did.</summary>
     public TradeDriver Trade => _trade ??= new TradeDriver(this);
 
