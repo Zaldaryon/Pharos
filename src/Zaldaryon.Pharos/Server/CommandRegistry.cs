@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using HarmonyLib;
 using Vintagestory.API.Common;
 using Vintagestory.Common;
@@ -15,8 +16,11 @@ internal static class CommandRegistry
     private static readonly object s_lock = new();
     private static bool s_installed;
 
-    /// <summary>The commands each mod registered, by the api that holds them.</summary>
-    private static readonly Dictionary<ICoreAPI, Dictionary<string, List<string>>> s_byMod = new(ReferenceEqualityComparer.Instance);
+    /// <summary>
+    /// The commands each mod registered, by the api that holds them. Weak, so a game that ended,
+    /// such as a client's before a reconnect, does not stay in memory for the rest of the process.
+    /// </summary>
+    private static readonly ConditionalWeakTable<ICoreAPI, Dictionary<string, List<string>>> s_byMod = new();
 
     private static readonly FieldInfo? s_parsersField =
         typeof(ChatCommandImpl).GetField("_parsers", BindingFlags.Instance | BindingFlags.NonPublic);
@@ -90,11 +94,7 @@ internal static class CommandRegistry
 
         lock (s_lock)
         {
-            if (!s_byMod.TryGetValue(api, out Dictionary<string, List<string>>? byMod))
-            {
-                byMod = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
-                s_byMod[api] = byMod;
-            }
+            Dictionary<string, List<string>> byMod = s_byMod.GetValue(api, _ => new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase));
 
             if (!byMod.TryGetValue(modId, out List<string>? names))
             {
