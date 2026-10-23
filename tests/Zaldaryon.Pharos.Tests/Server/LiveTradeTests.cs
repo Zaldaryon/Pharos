@@ -49,11 +49,17 @@ public class LiveTradeTests : ServerScenarioBase
         ServerTestPlayer player = await CreateTestPlayerAsync(PlayerNames.Next());
         Entity trader = await Server.Entities.SpawnAsync("game:trader-male-artisan-temperate", player.Entity!.Pos.XYZ.AddCopy(2, 0, 0));
 
-        double before = Server.Trade.Of(trader).NextRefreshDays;
+        // A new trader's countdown starts anywhere up to 7 days, and a restock resets it to about 6,
+        // so comparing countdowns misses a restock. The trader writes down when it last restocked,
+        // and only a restock moves that day: start it 6.5 days before the next restock and watch it.
+        double last = Server.RunOnGameThread(() => trader.World.Calendar.TotalDays) - 0.5;
+        Server.RunOnGameThread(() => trader.WatchedAttributes.SetDouble("lastRefreshTotalDays", last));
         await Server.Trade.RestockAsync(trader);
-        double after = Server.Trade.Of(trader).NextRefreshDays;
 
-        Assert.True(after > before, "The trader did not restock.");
+        double restocked = Server.RunOnGameThread(() => trader.WatchedAttributes.GetDouble("lastRefreshTotalDays"));
+        Assert.True(restocked > last, "The trader did not restock.");
+        double next = Server.Trade.Of(trader).NextRefreshDays;
+        Assert.True(next > 0, $"The trader restocked, but the next restock is {next} days away.");
     }
 
     [ServerScenario]
