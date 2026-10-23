@@ -91,11 +91,18 @@ public class LiveModNetworkTests : ClientServerScenarioBase
         Assert.True(received.Sequence < sent.Sequence);
         Assert.True(received.Frame > 0 && sent.Frame >= received.Frame);
 
-        // The client's own message is answered by the server.
+        // The client's own message is answered by the server, and both directions are observed at the server.
+        using var serverMessages = Server.ModNetwork.Record(Channel);
         long beforeSend = Client.ModNetwork.Mark();
         await Client.Commands.ExecuteSuccessAsync(".pharosnet send 9");
         Assert.Equal(9, (await Client.ModNetwork.WaitForReceivedAsync<SyncAck>(Channel, a => a.Version == 9, since: beforeSend)).Version);
         Assert.Contains(Client.ModNetwork.Sent<SyncPacket>(Channel), p => p.Version == 9 && p.Text == "from client");
+        var request = Assert.Single(serverMessages.Received<SyncPacket>());
+        var response = Assert.Single(serverMessages.Sent<SyncAck>());
+        Assert.Equal(9, request.Message.Version);
+        Assert.Equal(9, response.Message.Version);
+        Assert.Equal(request.Envelope.PlayerUID, response.Envelope.PlayerUID);
+        Assert.True(request.Envelope.Sequence < response.Envelope.Sequence);
     }
 
     [ClientServerScenario]

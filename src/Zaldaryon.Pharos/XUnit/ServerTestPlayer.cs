@@ -56,6 +56,7 @@ public sealed class ServerTestPlayer : IServerTestPlayer, IDisposable
         _playerUid = playerUid;
         Vitals = new PlayerVitals(this, () => _host, () => _player?.Entity);
         Bot = new HeadlessPlayerBot(this);
+        ModNetwork = new BotModNetworkDriver(this);
     }
 
     /// <summary>
@@ -561,6 +562,7 @@ public sealed class ServerTestPlayer : IServerTestPlayer, IDisposable
     {
         _host = host;
         _connection = connection;
+        connection.CapturePacket = packet => host.CaptureBatchPacket(this, packet);
         _player = player;
         _server = server;
         _joinedName = player.PlayerName;
@@ -599,6 +601,9 @@ public sealed class ServerTestPlayer : IServerTestPlayer, IDisposable
     /// </summary>
     /// <exception cref="InvalidOperationException">The player is not joined to an embedded server.</exception>
     public PlayerNetwork Network => new(RequireBotConnection(), this);
+
+    /// <summary>Sends registered mod messages through this player's own client connection.</summary>
+    public BotModNetworkDriver ModNetwork { get; }
 
     /// <summary>
     /// Freezes the player's connection: it stops reading and answering the server's pings. The server then times the player out once the

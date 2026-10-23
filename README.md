@@ -285,6 +285,8 @@ Both Windows and Linux produce identical rendering behavior and report OpenGL 4.
 | `Host.StateHash` | Hash the server's blocks, entities and players after each tick, to find where two runs diverge |
 | `PacketTracer` | Assert that specific packet IDs cross the loopback boundary |
 | `NetworkDegradationSimulator` | Inject latency, packet drop, and jitter |
+| `Server.ModNetwork`, `Server.Visibility` | Record per-player mod messages and inspect actual chunk/entity tracking |
+| `PlayerLayout`, `Server.SameTick` | Join player crowds and queue reproducible same-tick bot actions |
 
 ### Assertions
 
@@ -324,6 +326,7 @@ See the [inspection API reference](docs/inspection-api.md) for method signatures
 - [Animals](docs/animals.md): what an animal breeds, how it grows and what a hen box holds
 - [Traders and villagers](docs/traders.md): what a trader offers, what a trade did and what a villager says
 - [Temporal stability](docs/temporal.md): the stability of a place, storms, rifts, rift wards and temporal gears
+- [Multiplayer](docs/multiplayer.md): player crowds, server mod channels, per-player visibility and same-tick inventory contention
 - [Server administration](docs/admin.md): the whitelist, the bans, the kicks and the data the server keeps of its players
 - [Configuration](docs/configuration.md): `[WorldConfig]`, `[ServerConfig]` and the configuration matrices, which set a scenario's configuration before the server boots and put it back after a test
 - [CI and Cloud Environments](docs/ci-and-cloud.md): Running the suite in CI and cloud environments, offline or online auth, and a dedicated server in Docker

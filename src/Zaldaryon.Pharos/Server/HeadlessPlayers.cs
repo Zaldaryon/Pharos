@@ -127,7 +127,19 @@ internal sealed class HeadlessPlayers
         }
         catch
         {
-            _host.RunOnGameThread(() => connection.Close(server));
+            try
+            {
+                _host.RunOnGameThread(() =>
+                {
+                    try
+                    {
+                        // Removing the socket alone leaves a partially spawned player connected.
+                        if (Find(server, playerName) is { } partial && connection.Socket.Owns(partial)) _host.Disconnect(partial);
+                    }
+                    finally { connection.Close(server); }
+                });
+            }
+            catch (Exception cleanup) { server.Api.Logger.Warning("Failed join cleanup: " + cleanup); }
             throw;
         }
     }

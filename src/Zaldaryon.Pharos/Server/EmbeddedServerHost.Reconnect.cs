@@ -58,7 +58,7 @@ public sealed partial class EmbeddedServerHost
 
     // The engine removes every client it disconnects from the UDP server, which throws for one
     // that never finished its UDP handshake: such a client gets an endpoint first.
-    private void Disconnect(ConnectedClient client)
+    internal void Disconnect(ConnectedClient client)
     {
         if (Server.UdpSockets[0] is DummyUdpNetServer udp && !udp.EndPoints.ContainsValue(client.Id))
         {

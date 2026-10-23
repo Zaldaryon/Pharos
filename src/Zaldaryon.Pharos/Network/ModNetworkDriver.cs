@@ -226,9 +226,11 @@ public sealed class ModNetworkDriver
     }
 
     // The channel's id for T: T itself, else the registered type with T's full name, then its name.
-    private static int MessageId(NetworkChannel channel, Type type, string? messageType)
+    internal static int MessageId(Vintagestory.Common.NetworkChannelBase channel, Type type, string? messageType) =>
+        MessageId(ModChannels.Name(channel), ModChannels.MessageTypes(channel), type, messageType);
+
+    internal static int MessageId(string channel, Dictionary<Type, int> registered, Type type, string? messageType)
     {
-        Dictionary<Type, int> registered = ModChannels.MessageTypes(channel);
         if (messageType == null && registered.TryGetValue(type, out int exact)) return exact;
 
         List<KeyValuePair<Type, int>> matches = messageType != null
@@ -240,9 +242,9 @@ public sealed class ModNetworkDriver
         {
             1 => matches[0].Value,
             0 => throw new ArgumentException(
-                $"The channel '{ModChannels.Name(channel)}' has no message type matching {messageType ?? type.Name}. It has: {string.Join(", ", registered.Keys.Select(k => k.FullName))}."),
+                $"The channel '{channel}' has no message type matching {messageType ?? type.Name}. It has: {string.Join(", ", registered.Keys.Select(k => k.FullName))}."),
             _ => throw new ArgumentException(
-                $"Several message types on '{ModChannels.Name(channel)}' match {messageType ?? type.Name}: {string.Join(", ", matches.Select(m => m.Key.FullName))}. Pass messageType with a full name."),
+                $"Several message types on '{channel}' match {messageType ?? type.Name}: {string.Join(", ", matches.Select(m => m.Key.FullName))}. Pass messageType with a full name."),
         };
     }
 }

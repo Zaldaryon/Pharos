@@ -19,7 +19,7 @@ public sealed record BotResult(bool Accepted, ReceivedIngameMessage? Error = nul
 /// Drives a joined headless player by sending the same client packets as Vintage Story's own
 /// client. The server validates and handles these actions through its normal packet handlers.
 /// </summary>
-public sealed class HeadlessPlayerBot
+public sealed partial class HeadlessPlayerBot
 {
     private const double PositionTolerance = 0.12;
     private const int TicksPerSecond = 20;
@@ -30,6 +30,9 @@ public sealed class HeadlessPlayerBot
     private int _movementTick;
 
     internal HeadlessPlayerBot(ServerTestPlayer owner) => _owner = owner;
+
+    /// <summary>The player's registered mod-channel sender.</summary>
+    public BotModNetworkDriver ModNetwork => _owner.ModNetwork;
 
     /// <summary>Changes one of the player's movement controls through packet 21.</summary>
     public Task<BotResult> SetControlAsync(EnumEntityAction action, bool pressed, int maxTicks = 4, CancellationToken ct = default)
@@ -622,6 +625,7 @@ public sealed class HeadlessPlayerBot
 
     private void Send(Packet_Client packet)
     {
+        _owner.RequireBotHost().RequireOutsideBatch();
         HeadlessPlayerConnection connection = _owner.RequireBotConnection();
         _owner.RunBotOnGameThread(() => connection.SendClientPacket(packet));
     }

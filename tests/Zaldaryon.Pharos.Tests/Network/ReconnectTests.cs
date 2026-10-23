@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using Vintagestory.API.Datastructures;
 using Vintagestory.Server;
 using Xunit;
@@ -160,6 +161,34 @@ public class LiveReconnectTests : ClientServerScenarioBase
             Client.PacketRecorder.Clear();
             Client.NetworkDegradation.Configure(DegradedNetworkProfile.None);
         }
+    }
+
+    [ClientServerScenario]
+    public async Task AfterAReconnect_TheGameTheClientLeftCanBeCollected()
+    {
+        // The test's listener watermark holds the game it began with until the test ends, so
+        // this follows the game after the first reconnect.
+        await Session!.ReconnectAsync();
+        WeakReference left = WeakReferenceTo(Client!.Client);
+
+        await Session.ReconnectAsync();
+
+        Assert.True(IsCollected(left), "The game the client left is still in memory after the reconnect.");
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static WeakReference WeakReferenceTo(object target) => new(target);
+
+    private static bool IsCollected(WeakReference reference)
+    {
+        for (int attempt = 0; attempt < 5 && reference.IsAlive; attempt++)
+        {
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+            GC.Collect();
+        }
+
+        return !reference.IsAlive;
     }
 
     private double ServerPlayerX() => ServerHost!.RunOnGameThread(() =>

@@ -573,6 +573,15 @@ public abstract class ServerScenarioBase : IScenarioLifecycle, IAsyncDisposable
         LoggedErrorGate.ThrowIfAny(LoggedErrorGate.Collect(FailOnLoggedErrors, AllowedLoggedErrors, old.Logs));
     }
 
+    /// <summary>Joins a crowd of normal headless players in an explicit ring or grid, owned by this scenario.</summary>
+    public async Task<ServerTestPlayer[]> CreateTestPlayersAsync(int count, PlayerLayout layout, CancellationToken ct = default)
+    {
+        var host = _host ?? throw new InvalidOperationException("The server is not initialized.");
+        var players = await host.CreateTestPlayersAsync(count, layout, ct: ct).ConfigureAwait(false);
+        _testPlayers.AddRange(players);
+        return players;
+    }
+
     /// <summary>
     /// Joins a headless player into the server and returns it once it is playing. See
     /// <see cref="EmbeddedServerHost.JoinPlayerAsync"/>. The player leaves the server when the

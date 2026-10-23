@@ -3,6 +3,7 @@ using Zaldaryon.Pharos.Bootstrap;
 using Zaldaryon.Pharos.Core;
 using Zaldaryon.Pharos.Network;
 using Zaldaryon.Pharos.Server;
+using Zaldaryon.Pharos.Tests.Server;
 using Zaldaryon.Pharos.XUnit;
 
 namespace Zaldaryon.Pharos.Tests.Network;
@@ -76,6 +77,20 @@ public class NetworkConnectTests : ServerScenarioBase
         var connected = Host.RunOnGameThread(() => Host.Server.GetClientByPlayername("TcpPlayer"));
         Assert.NotNull(connected);
         Assert.False(connected!.IsSinglePlayerClient, "The connection should be a network client, not an in-memory one");
+    }
+
+    [ServerScenario]
+    public async Task HeadlessSendAsync_WaitsForTheListenersPendingUdp()
+    {
+        Assert.IsType<Vintagestory.Server.Network.UdpNetServer>(Server.Server.UdpSockets[1]);
+        var bot = await CreateTestPlayerAsync("ListenerBot");
+        Server.RunOnGameThread(() => Server.Api.Network.RegisterUdpChannel("listener").RegisterMessageType<MultiplayerDepthTests.SyncPacket>());
+        using var log = Server.ModNetwork.Record("listener");
+        MultiplayerDepthTests.EnqueuePendingUdp(Server, bot, "listener", new MultiplayerDepthTests.SyncPacket { Version = 1 });
+        using (bot.Network.Simulator.Filter(p => p.Direction == PacketDirection.Outbound))
+            await Assert.ThrowsAsync<TimeoutException>(() => bot.ModNetwork.SendAsync("listener", new MultiplayerDepthTests.SyncPacket { Version = 1 }, maxTicks: 200));
+        await bot.ModNetwork.SendAsync("listener", new MultiplayerDepthTests.SyncPacket { Version = 2 });
+        Assert.Equal(new[] { 1, 2 }, log.Received<MultiplayerDepthTests.SyncPacket>().Select(m => m.Message.Version));
     }
 
     [ServerScenario]

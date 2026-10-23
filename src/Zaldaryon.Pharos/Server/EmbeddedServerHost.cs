@@ -501,6 +501,8 @@ public sealed partial class EmbeddedServerHost : IDisposable, IAsyncDisposable
         _gameThread = gameThread;
         _players = new HeadlessPlayers(this);
         Server = server;
+        ModNetwork = new ServerModNetworkDriver(this);
+        Visibility = new ServerVisibility(this);
         TcpNetwork = tcpNetwork;
         UdpNetwork = udpNetwork;
         Options = options;
@@ -557,6 +559,7 @@ public sealed partial class EmbeddedServerHost : IDisposable, IAsyncDisposable
         // down later, while this one runs, it would tear that state out from under it. Whoever
         // boots a server now no longer needs the kept one.
         ScenarioHostPool.Clear();
+        ServerModNetworkHooks.Install();
 
         // The server is built on the thread it will tick on, so the per-thread state it creates
         // while booting is there for every later tick.
@@ -848,6 +851,7 @@ public sealed partial class EmbeddedServerHost : IDisposable, IAsyncDisposable
     /// <exception cref="ServerCrashedException">The server previously crashed during tick processing.</exception>
     public void Tick()
     {
+        RequireOutsideBatch();
         if (_disposed) return;
 
         if (!_gameThread.IsCurrent)
@@ -869,7 +873,9 @@ public sealed partial class EmbeddedServerHost : IDisposable, IAsyncDisposable
         {
             _faults?.BeforeTick();
             long processStarted = Stopwatch.GetTimestamp();
+            ModNetwork.Flush();
             Server.Process();
+            ModNetwork.Flush();
             TickTimes?.Add(Stopwatch.GetTimestamp() - processStarted);
             _tickCount++;
             TickProcessed?.Invoke();
@@ -1265,6 +1271,7 @@ public sealed partial class EmbeddedServerHost : IDisposable, IAsyncDisposable
 
     private void DrainAndDisposeCore()
     {
+        ModNetwork.Detach();
         var logger = ServerMain.Logger;
 
         // Wait for background BuildServerAssetsPacket tasks to settle

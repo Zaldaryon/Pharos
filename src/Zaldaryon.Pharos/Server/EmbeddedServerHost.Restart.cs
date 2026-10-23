@@ -96,6 +96,7 @@ public sealed partial class EmbeddedServerHost
 
     private void KillCore()
     {
+        ModNetwork.Detach();
         ServerMain server = Server;
 
         // The exit mode first, so the threads that check it stop sending and parsing packets while they are cancelled.

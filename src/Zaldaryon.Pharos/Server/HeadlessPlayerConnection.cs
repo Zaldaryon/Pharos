@@ -242,8 +242,18 @@ internal sealed class HeadlessPlayerConnection
         }
     }
 
+    internal bool IsBatchReady => !_link.HasPendingClientPackets && Socket.IsDrained(_network);
+
+    // The engine parser thread polls every 10 ms on its own, so bytes already on the socket need no tick to reach the queue.
+    // Packets the link still holds do: they wait for the server clock.
+    internal bool WaitUntilBatchReady(TimeSpan timeout) =>
+        !_link.HasPendingClientPackets && SpinWait.SpinUntil(() => Socket.IsDrained(_network), timeout);
+
+    internal Func<Packet_Client, bool>? CapturePacket { get; set; }
+
     private void Send(Packet_Client packet)
     {
+        if (CapturePacket?.Invoke(packet) == true) return;
         CitoMemoryStream stream = new();
         Packet_ClientSerializer.Serialize(stream, packet);
 

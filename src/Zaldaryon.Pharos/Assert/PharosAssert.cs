@@ -21,6 +21,42 @@ namespace Zaldaryon.Pharos.Assertions;
 /// </summary>
 public static class PharosAssert
 {
+    /// <summary>
+    /// Asserts that a nonempty server broadcast reached only players within an inclusive 3D radius,
+    /// using recipient positions at the game-thread observation boundary. This checks exclusion, not delivery to every nearby player.
+    /// </summary>
+    public static void OnlyNearbyReceived<T>(IEnumerable<ServerModMessage<T>> log, Vec3d center, double radius) =>
+        OnlyNearbyReceived(log?.Select(m => m.Envelope) ?? throw new ArgumentNullException(nameof(log)), center, radius);
+
+    /// <summary>Checks nonempty sent-message evidence against captured recipient positions.</summary>
+    public static void OnlyNearbyReceived(IEnumerable<ServerModMessage> log, Vec3d center, double radius)
+    {
+        ArgumentNullException.ThrowIfNull(log);
+        ArgumentNullException.ThrowIfNull(center);
+        if (!double.IsFinite(radius) || radius < 0 || !double.IsFinite(radius * radius))
+            throw new ArgumentOutOfRangeException(nameof(radius));
+        if (!double.IsFinite(center.X) || !double.IsFinite(center.Y) || !double.IsFinite(center.Z))
+            throw new ArgumentException("Broadcast center must be finite.", nameof(center));
+        int count = 0;
+        foreach (var message in log)
+        {
+            count++;
+            if (message.Direction != Zaldaryon.Pharos.Network.ModMessageDirection.Sent)
+                throw new PharosAssertException("OnlyNearbyReceived requires sent-message evidence, not incoming messages.");
+            var pos = message.Position;
+            if (pos == null || !double.IsFinite(pos.X) || !double.IsFinite(pos.Y) || !double.IsFinite(pos.Z))
+                throw new PharosAssertException($"Recipient {message.PlayerUID} has no finite captured position.");
+            double distanceSquared = pos.SquareDistanceTo(center);
+            if (!double.IsFinite(distanceSquared) || distanceSquared > radius * radius)
+                throw new PharosAssertException($"Recipient {message.PlayerUID} was outside radius {radius} at tick {message.Tick} (position {pos}).");
+        }
+        if (count == 0) throw new PharosAssertException("No sent messages were recorded; a missing broadcast cannot pass a range assertion.");
+    }
+
+    /// <summary>Block-position convenience overload; measures from the exact coordinates, without an implicit center offset.</summary>
+    public static void OnlyNearbyReceived<T>(IEnumerable<ServerModMessage<T>> log, BlockPos center, double radius) =>
+        OnlyNearbyReceived(log, center?.ToVec3d() ?? throw new ArgumentNullException(nameof(center)), radius);
+
     /// <summary>Marks the current Pharos scenario as skipped with the supplied reason.</summary>
     /// <param name="reason">Why the scenario cannot run.</param>
     /// <remarks>The scenario runner reports the current test as skipped with this reason.</remarks>
