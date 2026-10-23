@@ -85,7 +85,7 @@ public sealed partial class EmbeddedServerHost
         if (!ReferenceEquals(player.RequireBotHost(), this) || !player.IsConnected)
             throw new InvalidOperationException("SameTick requires connected bots on this host.");
         if (!player.RequireBotConnection().WaitUntilBatchReady(TimeSpan.FromSeconds(5 * ScenarioTimeouts.Scale)))
-            throw new InvalidOperationException("SameTick requires earlier bot packets to reach the engine queue first; tick the host before batching.");
+            throw new InvalidOperationException("SameTick requires earlier bot packets to reach the engine queue first: a network link still holds some, or the engine's parser did not queue them in time. Tick the host before batching.");
         if (!player.RequireBotConnection().Degradation.IsPristine)
             throw new InvalidOperationException("SameTick cannot bypass degraded, filtered or scripted network links.");
     }

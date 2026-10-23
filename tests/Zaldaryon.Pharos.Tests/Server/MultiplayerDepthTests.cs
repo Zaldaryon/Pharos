@@ -1,6 +1,8 @@
+using HarmonyLib;
 using ProtoBuf;
 using Vintagestory.API.Common;
 using Vintagestory.API.MathTools;
+using Vintagestory.Server;
 using Zaldaryon.Pharos.Assertions;
 using Zaldaryon.Pharos.Network;
 using Zaldaryon.Pharos.Server;
@@ -208,15 +210,77 @@ public sealed class MultiplayerDepthTests : ServerScenarioBase
     {
         var player = await CreateTestPlayerAsync("BatchParser");
         using var log = Server.ModNetwork.Record("pharosnet");
-        for (int round = 0; round < 5; round++)
+        int before = Server.TickCount;
+        using (var parser = ParserGate.Close(Server.Server))
         {
-            int before = Server.TickCount;
-            // The engine parser thread sleeps between reads, so this packet usually sits in its receive buffer.
-            player.ModNetwork.QueueSend("pharosnet", new SyncPacket { Version = 2 * round });
-            await Server.SameTick(() => player.ModNetwork.QueueSend("pharosnet", new SyncPacket { Version = 2 * round + 1 }));
-            Assert.Equal(before + 1, Server.TickCount);
+            player.ModNetwork.QueueSend("pharosnet", new SyncPacket { Version = 0 });
+            Task batch = Task.Run(() => Server.SameTick(() => player.ModNetwork.QueueSend("pharosnet", new SyncPacket { Version = 1 })));
+            await Task.WhenAny(batch, Task.Delay(500));
+            Assert.False(batch.IsCompleted, batch.Exception?.InnerException?.Message);
+            Assert.Equal(before, Server.TickCount);
+            parser.Open();
+            await batch;
         }
-        Assert.Equal(Enumerable.Range(0, 10), log.Received<SyncPacket>().Select(m => m.Message.Version));
+        Assert.Equal(before + 1, Server.TickCount);
+        Assert.Equal(new[] { 0, 1 }, log.Received<SyncPacket>().Select(m => m.Message.Version));
+    }
+
+    [ServerScenario]
+    public async Task SameTick_GivesUpOnBytesTheParserNeverQueues_WithoutTicking()
+    {
+        var player = await CreateTestPlayerAsync("StalledParser");
+        using var log = Server.ModNetwork.Record("pharosnet");
+        int before = Server.TickCount;
+        using (ParserGate.Close(Server.Server))
+        {
+            player.ModNetwork.QueueSend("pharosnet", new SyncPacket { Version = 0 });
+            var error = await Assert.ThrowsAsync<InvalidOperationException>(() => Task.Run(() => Server.SameTick(() => player.ModNetwork.QueueSend("pharosnet", new SyncPacket { Version = 1 }))));
+            Assert.Contains("parser", error.Message);
+            Assert.Equal(before, Server.TickCount);
+        }
+        Assert.True(await Server.TryTickUntilAsync(() => log.Received<SyncPacket>().Any()));
+        await Server.SameTick(() => player.ModNetwork.QueueSend("pharosnet", new SyncPacket { Version = 2 }));
+        Assert.Equal(new[] { 0, 2 }, log.Received<SyncPacket>().Select(m => m.Message.Version));
+    }
+
+    // Holds the engine's packet parser thread before it reads, so bytes a bot sends stay in its receive buffer.
+    private sealed class ParserGate : IDisposable
+    {
+        private static readonly Harmony s_harmony = new("zaldaryon.pharos.tests.parsergate");
+        private static ParserGate? s_current;
+        private readonly ServerMain _server;
+        private readonly ManualResetEventSlim _held = new(), _open = new();
+
+        private ParserGate(ServerMain server) => _server = server;
+
+        public static ParserGate Close(ServerMain server)
+        {
+            var gate = new ParserGate(server);
+            Volatile.Write(ref s_current, gate);
+            s_harmony.Patch(AccessTools.DeclaredMethod(typeof(ServerMain), nameof(ServerMain.PacketParsingLoop)), prefix: new HarmonyMethod(typeof(ParserGate), nameof(Prefix)));
+            if (!gate._held.Wait(TimeSpan.FromSeconds(10))) { gate.Dispose(); throw new InvalidOperationException("The engine's parser thread never reached the gate."); }
+            return gate;
+        }
+
+        private static void Prefix(ServerMain __instance)
+        {
+            var gate = Volatile.Read(ref s_current);
+            if (gate == null || !ReferenceEquals(gate._server, __instance)) return;
+            gate._held.Set();
+            gate._open.Wait();
+        }
+
+        public void Open()
+        {
+            Interlocked.CompareExchange(ref s_current, null, this);
+            _open.Set();
+        }
+
+        public void Dispose()
+        {
+            Open();
+            s_harmony.UnpatchAll(s_harmony.Id);
+        }
     }
 
     [ServerScenario]
