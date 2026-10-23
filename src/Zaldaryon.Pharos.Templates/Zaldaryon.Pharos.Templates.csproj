@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+
+    <!-- A template package: `dotnet new install Zaldaryon.Pharos.Templates`. It carries no assembly. -->
+    <PackageType>Template</PackageType>
+    <IsPackable>true</IsPackable>
+    <IsTestProject>false</IsTestProject>
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <NoDefaultExcludes>true</NoDefaultExcludes>
+    <EnableDefaultItems>false</EnableDefaultItems>
+    <NoWarn>$(NoWarn);NU5128</NoWarn>
+    <PackageId>Zaldaryon.Pharos.Templates</PackageId>
+    <Version>0.7.0</Version>
+    <Authors>Zaldaryon</Authors>
+    <Description>dotnet new templates for Pharos: pharos-mod-tests, a test project for a Vintage Story mod, and pharos-ci, a GitHub Actions workflow that runs it on Linux and Windows.</Description>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <RepositoryUrl>https://github.com/Zaldaryon/Pharos</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageTags>vintagestory;testing;headless;templates;dotnet-new</PackageTags>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="content/**" Exclude="content/**/bin/**;content/**/obj/**" Pack="true" PackagePath="content" />
+    <None Include="..\..\README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+</Project>

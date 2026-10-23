@@ -1,0 +1,88 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+<!--#if (framework == "xunit3") -->
+    <OutputType>Exe</OutputType>
+    <TestingPlatformDotnetTestSupport>true</TestingPlatformDotnetTestSupport>
+<!--#endif -->
+    <RunSettingsFilePath>$(MSBuildThisFileDirectory)pharos.runsettings</RunSettingsFilePath>
+
+    <!-- The Pharos packages; -p:PharosVersion=... or a PharosVersion environment variable overrides it. -->
+<!--#if (framework == "xunit3") -->
+    <PharosVersion Condition="'$(PharosVersion)' == ''">0.7.0-preview</PharosVersion>
+<!--#else -->
+    <PharosVersion Condition="'$(PharosVersion)' == ''">0.7.0</PharosVersion>
+<!--#endif -->
+
+    <!-- The game the tests build against and run: VINTAGE_STORY, or -p:VintageStoryPath=... -->
+    <VintageStoryPath Condition="'$(VintageStoryPath)' == ''">$(VINTAGE_STORY)</VintageStoryPath>
+
+    <!--
+      The mod under test, relative to this folder. Its build output is what the tests load. Set
+      PharosModPath to a mod folder or zip instead to test a mod that is already built, and
+      PharosModId when that mod has no modinfo.json to read the ID from.
+    -->
+    <PharosModProject>MOD_PROJECT_PATH</PharosModProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+<!--#if (framework == "xunit3") -->
+    <PackageReference Include="xunit.v3" Version="3.2.2" />
+    <PackageReference Include="Zaldaryon.Pharos.XUnit.V3" Version="$(PharosVersion)" />
+<!--#else -->
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+    <PackageReference Include="Zaldaryon.Pharos.XUnit" Version="$(PharosVersion)" />
+<!--#endif -->
+  </ItemGroup>
+
+  <!-- Pharos runs the game in the test process, so the tests reference the install's assemblies. -->
+  <ItemGroup>
+    <Reference Include="VintagestoryAPI"><HintPath>$(VintageStoryPath)/VintagestoryAPI.dll</HintPath><Private>true</Private></Reference>
+    <Reference Include="VintagestoryLib"><HintPath>$(VintageStoryPath)/VintagestoryLib.dll</HintPath><Private>true</Private></Reference>
+    <Reference Include="0Harmony"><HintPath>$(VintageStoryPath)/Lib/0Harmony.dll</HintPath><Private>true</Private></Reference>
+    <Reference Include="protobuf-net"><HintPath>$(VintageStoryPath)/Lib/protobuf-net.dll</HintPath><Private>true</Private></Reference>
+  </ItemGroup>
+
+  <!--
+    The mod is built first, but its assembly stays out of the test process: the game loads it
+    from the mod's own output folder, as it would from the Mods folder.
+  -->
+  <ItemGroup Condition="'$(PharosModPath)' == ''">
+    <ProjectReference Include="$(PharosModProject)" ReferenceOutputAssembly="false" Private="false" OutputItemType="PharosModOutput" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <Target Name="PharosCheckSetup" BeforeTargets="ResolveAssemblyReferences">
+    <Error Condition="!Exists('$(VintageStoryPath)/VintagestoryAPI.dll')"
+           Text="No Vintage Story install at '$(VintageStoryPath)'. Set VINTAGE_STORY to the game's folder, the one that holds VintagestoryAPI.dll, or pass -p:VintageStoryPath=..." />
+    <Error Condition="'$(PharosModPath)' == '' And !Exists('$(PharosModProject)')"
+           Text="The mod project '$(PharosModProject)' does not exist. PharosModProject is relative to $(MSBuildProjectDirectory)." />
+  </Target>
+
+  <!-- Writes ModUnderTest.Path and ModUnderTest.Id, which the tests pass to [ServerMods] and check. -->
+  <Target Name="PharosModUnderTest" AfterTargets="ResolveProjectReferences" BeforeTargets="CoreCompile">
+    <PropertyGroup>
+      <PharosModPath Condition="'$(PharosModPath)' == ''">@(PharosModOutput->'%(RootDir)%(Directory)')</PharosModPath>
+      <PharosModPath>$([MSBuild]::NormalizePath('$(MSBuildProjectDirectory)', '$(PharosModPath)'))</PharosModPath>
+      <_PharosModSource>$(IntermediateOutputPath)PharosModUnderTest.g.cs</_PharosModSource>
+    </PropertyGroup>
+    <WriteLinesToFile File="$(_PharosModSource)" Overwrite="true" WriteOnlyWhenDifferent="true"
+                      Lines="// &lt;auto-generated/&gt;;internal static partial class ModUnderTest { public const string Path = @&quot;$(PharosModPath.Replace('&quot;', '&quot;&quot;'))&quot;%3B private const string IdOverride = @&quot;$(PharosModId.Replace('&quot;', '&quot;&quot;'))&quot;%3B }" />
+    <ItemGroup>
+      <Compile Include="$(_PharosModSource)" />
+      <FileWrites Include="$(_PharosModSource)" />
+    </ItemGroup>
+  </Target>
+
+</Project>

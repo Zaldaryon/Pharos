@@ -96,7 +96,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.ci_and_cloud.Snippet_1
         
         public async Task ExecuteSnippetAsync()
         {
-#line 78 "docs/ci-and-cloud.md"
+#line 82 "docs/ci-and-cloud.md"
 using RemoteServerSession session = client.ConnectRemote("127.0.0.1", 42420, ClientAuth.Offline("Tester"));
 Assert.True(await session.WaitForPlayerJoinedAsync(TimeSpan.FromSeconds(180)));
 #line default

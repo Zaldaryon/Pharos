@@ -66,6 +66,19 @@ jobs:
             echo "::error::The bridge mod's ModInfo does not carry version $VERSION."
             exit 1
           fi
+          # The templates write this version into new projects and workflows; they must name the
+          # packages and the tag this release publishes.
+          templates=src/Zaldaryon.Pharos.Templates/content
+          if [ "$(grep -c -E ">$VERSION(-preview)?</PharosVersion>" "$templates/pharos-mod-tests/PharosModTests.csproj")" != 2 ]; then
+            echo "::error::The pharos-mod-tests template does not default to version $VERSION."
+            exit 1
+          fi
+          for workflow in "$templates/pharos-ci/.github/workflows/pharos.yml" .github/workflows/mod-ci.yml; do
+            if ! grep -q "mod-ci.yml@v$VERSION\$" "$workflow"; then
+              echo "::error::$workflow does not call mod-ci.yml@v$VERSION."
+              exit 1
+            fi
+          done
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "Releasing $tag from $GITHUB_SHA"
 
@@ -126,6 +139,7 @@ jobs:
           dotnet pack src/Zaldaryon.Pharos.XUnit.V3/Zaldaryon.Pharos.XUnit.V3.csproj -c Release --no-build -o ./nupkg
           dotnet pack src/Zaldaryon.Pharos.AtlasCompat/Zaldaryon.Pharos.AtlasCompat.csproj -c Release --no-build -o ./nupkg
           dotnet pack src/Zaldaryon.Pharos.Cli/Zaldaryon.Pharos.Cli.csproj -c Release --no-build -o ./nupkg
+          dotnet pack src/Zaldaryon.Pharos.Templates/Zaldaryon.Pharos.Templates.csproj -c Release --no-build -o ./nupkg
 
       - name: Check that no package carries the game
         env:

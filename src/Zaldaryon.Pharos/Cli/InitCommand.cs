@@ -6,7 +6,7 @@ namespace Zaldaryon.Pharos.Cli;
 
 /// <summary>
 /// <c>pharos init</c>: writes a minimal test project for a mod and then runs the doctor on it.
-/// The richer <c>dotnet new</c> templates and the reusable workflow are the subject of #296.
+/// The <c>pharos-mod-tests</c> template of Zaldaryon.Pharos.Templates writes a fuller one.
 /// </summary>
 public static class InitCommand
 {
@@ -24,7 +24,9 @@ public static class InitCommand
           -h, --help            Show this help
 
         The project references Zaldaryon.Pharos.XUnit and holds one server scenario. After writing
-        it, init runs pharos doctor on the new project. The test project number is #296.
+        it, init runs pharos doctor on the new project. For a project that also smoke-tests the mod
+        and joins a client, use the template: dotnet new install Zaldaryon.Pharos.Templates, then
+        dotnet new pharos-mod-tests --mod-project <path>.
         """;
 
     /// <summary>Runs <c>pharos init</c> with the arguments that follow <c>init</c>.</summary>
@@ -138,6 +140,14 @@ public static class InitCommand
         project.AppendLine("    <PackageReference Include=\"xunit\" Version=\"2.9.3\" />");
         project.AppendLine("    <PackageReference Include=\"xunit.runner.visualstudio\" Version=\"2.8.2\" />");
         project.AppendLine("    <PackageReference Include=\"Zaldaryon.Pharos.XUnit\" Version=\"0.7.0\" />");
+        project.AppendLine("  </ItemGroup>");
+        project.AppendLine();
+        project.AppendLine("  <!-- Pharos runs the game in the test process, so the tests reference the install's assemblies. -->");
+        project.AppendLine("  <ItemGroup>");
+        project.AppendLine("    <Reference Include=\"VintagestoryAPI\"><HintPath>$(VintageStoryPath)/VintagestoryAPI.dll</HintPath><Private>true</Private></Reference>");
+        project.AppendLine("    <Reference Include=\"VintagestoryLib\"><HintPath>$(VintageStoryPath)/VintagestoryLib.dll</HintPath><Private>true</Private></Reference>");
+        project.AppendLine("    <Reference Include=\"0Harmony\"><HintPath>$(VintageStoryPath)/Lib/0Harmony.dll</HintPath><Private>true</Private></Reference>");
+        project.AppendLine("    <Reference Include=\"protobuf-net\"><HintPath>$(VintageStoryPath)/Lib/protobuf-net.dll</HintPath><Private>true</Private></Reference>");
         project.AppendLine("  </ItemGroup>");
         if (modProject != null)
         {

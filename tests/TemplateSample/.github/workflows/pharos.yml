@@ -1,0 +1,16 @@
+name: Pharos
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  pharos:
+    # The inputs are listed in docs/templates.md of Zaldaryon/Pharos.
+    uses: Zaldaryon/Pharos/.github/workflows/mod-ci.yml@main
+    with:
+      test-project: 'tests/TemplateSample/ExampleMod.Tests/ExampleMod.Tests.csproj'
+      game-version: "1.22.7"
+      os: '["ubuntu-latest", "windows-latest"]'

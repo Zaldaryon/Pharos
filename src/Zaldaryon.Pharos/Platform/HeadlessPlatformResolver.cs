@@ -106,9 +106,6 @@ public static class HeadlessPlatformResolver
                 Environment.SetEnvironmentVariable("PATH", $"{libDir}{Path.PathSeparator}{currentPath}");
             }
 
-            // Allow GLFW to run from any test runner thread
-            OpenTK.Windowing.Desktop.GLFWProvider.CheckForMainThread = false;
-
             // Force OpenAL Soft to use the null driver backend in headless/CI environments
             if (options.DisableAudio || options.UseNullAudioDevice)
             {
@@ -140,6 +137,10 @@ public static class HeadlessPlatformResolver
 
             // Register Vintage Story managed assembly resolver as fallback
             AppDomain.CurrentDomain.AssemblyResolve += AssemblyResolver.AssemblyResolve;
+
+            // Only now can OpenTK load from the game's Lib folder: a test project need not
+            // reference it.
+            AllowGlfwOnAnyThread();
 
             // Register native library resolver for cairo-sharp on Linux
             void TryRegisterNativeResolvers(Assembly assembly)
@@ -194,6 +195,11 @@ public static class HeadlessPlatformResolver
 
         InstallGameHooks();
     }
+
+    // Lets GLFW run from any test runner thread. A method of its own, so that OpenTK loads when it
+    // runs, after the resolvers, and not when Initialize is compiled.
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+    private static void AllowGlfwOnAnyThread() => OpenTK.Windowing.Desktop.GLFWProvider.CheckForMainThread = false;
 
     /// <summary>
     /// Installs Pharos's hooks on game methods before anything in the process boots. A method the

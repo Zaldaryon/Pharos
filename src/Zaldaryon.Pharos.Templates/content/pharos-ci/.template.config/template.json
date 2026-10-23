@@ -1,0 +1,43 @@
+{
+  "$schema": "http://json.schemastore.org/template",
+  "author": "Zaldaryon",
+  "classifications": ["Test", "CI", "Vintage Story", "Pharos"],
+  "identity": "Zaldaryon.Pharos.Templates.Ci",
+  "name": "Pharos GitHub Actions workflow",
+  "description": "A GitHub Actions workflow that runs a mod's Pharos tests on Linux and Windows with Pharos's reusable workflow.",
+  "shortName": "pharos-ci",
+  "tags": {
+    "language": "",
+    "type": "item"
+  },
+  "forms": {
+    "yamlSingleQuoted": { "identifier": "replace", "pattern": "'", "replacement": "''" }
+  },
+  "symbols": {
+    "test-project": {
+      "type": "parameter",
+      "datatype": "string",
+      "isRequired": true,
+      "description": "The test project, relative to the repository root, such as MyMod.Tests/MyMod.Tests.csproj."
+    },
+    "testProjectYaml": {
+      "type": "derived",
+      "valueSource": "test-project",
+      "valueTransform": "yamlSingleQuoted",
+      "replaces": "TEST_PROJECT_PATH"
+    },
+    "game-version": {
+      "type": "parameter",
+      "datatype": "string",
+      "defaultValue": "1.22.7",
+      "replaces": "GAME_VERSION",
+      "description": "The Vintage Story version the tests run against."
+    },
+    "windows": {
+      "type": "parameter",
+      "datatype": "bool",
+      "defaultValue": "true",
+      "description": "Run on Windows as well as Linux."
+    }
+  }
+}

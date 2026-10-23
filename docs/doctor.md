@@ -77,5 +77,5 @@ overwritten only when it has the names above.
   scenario reports the context it could not create.
 - `--fix` does not install packages, start a display server or write the game. It writes the two
   files named above.
-- `init` writes a minimal project. The `dotnet new` templates, the reusable workflow and the xUnit
-  v3 variant are the subject of #296.
+- `init` writes a minimal project. The `pharos-mod-tests` template writes a fuller one, with an
+  xUnit v3 variant, and `pharos-ci` a workflow that runs it; see [Templates](templates.md).
