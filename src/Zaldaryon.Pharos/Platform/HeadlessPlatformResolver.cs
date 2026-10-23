@@ -138,6 +138,10 @@ public static class HeadlessPlatformResolver
             // Register Vintage Story managed assembly resolver as fallback
             AppDomain.CurrentDomain.AssemblyResolve += AssemblyResolver.AssemblyResolve;
 
+            // Stage software GL before OpenTK can initialize GLFW, including in tool/runner hosts.
+            EnsureStagedBinaries(gamePath);
+            CheckGameMatchesBuild(gamePath, AppContext.BaseDirectory);
+
             // Only now can OpenTK load from the game's Lib folder: a test project need not
             // reference it.
             AllowGlfwOnAnyThread();
@@ -185,10 +189,6 @@ public static class HeadlessPlatformResolver
             {
                 TryRegisterNativeResolvers(args.LoadedAssembly);
             };
-
-            // Ensure Lib and Mods directories are staged in AppContext.BaseDirectory for mod compilation
-            EnsureStagedBinaries(gamePath);
-            CheckGameMatchesBuild(gamePath, AppContext.BaseDirectory);
 
             _initialized = true;
         }
@@ -313,6 +313,12 @@ public static class HeadlessPlatformResolver
             {
             }
         }
+
+        // A tool shim or dotnet.exe can live elsewhere. Keep Mesa loaded for the process lifetime
+        // so GLFW finds it instead of system OpenGL, and resolve its dependencies beside the DLL.
+        NativeLibrary.Load(Path.GetFullPath(Path.Combine(libDir, "opengl32.dll")),
+            typeof(HeadlessPlatformResolver).Assembly,
+            DllImportSearchPath.UseDllDirectoryForDependencies | DllImportSearchPath.SafeDirectories);
     }
 
     internal static void LinkOrCopyDirectory(string sourceDir, string targetDir, string fingerprint)
