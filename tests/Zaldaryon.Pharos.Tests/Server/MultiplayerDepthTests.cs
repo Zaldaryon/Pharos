@@ -204,6 +204,22 @@ public sealed class MultiplayerDepthTests : ServerScenarioBase
     }
 
     [ServerScenario]
+    public async Task SameTick_WaitsForTheParserToQueueBytesTheBotAlreadySent()
+    {
+        var player = await CreateTestPlayerAsync("BatchParser");
+        using var log = Server.ModNetwork.Record("pharosnet");
+        for (int round = 0; round < 5; round++)
+        {
+            int before = Server.TickCount;
+            // The engine parser thread sleeps between reads, so this packet usually sits in its receive buffer.
+            player.ModNetwork.QueueSend("pharosnet", new SyncPacket { Version = 2 * round });
+            await Server.SameTick(() => player.ModNetwork.QueueSend("pharosnet", new SyncPacket { Version = 2 * round + 1 }));
+            Assert.Equal(before + 1, Server.TickCount);
+        }
+        Assert.Equal(Enumerable.Range(0, 10), log.Received<SyncPacket>().Select(m => m.Message.Version));
+    }
+
+    [ServerScenario]
     public async Task Crowds_JoinInLayouts_AndExposeActualServerVisibility()
     {
         Vec3d center = Server.RunOnGameThread(() => Server.DefaultSpawnPosition.XYZ);
