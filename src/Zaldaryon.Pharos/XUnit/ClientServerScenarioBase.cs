@@ -1218,6 +1218,15 @@ public abstract class ClientServerScenarioBase : IScenarioLifecycle, IAsyncDispo
         }
     }
 
+    /// <summary>Joins a crowd of normal headless players in an explicit ring or grid, owned by this scenario.</summary>
+    protected async Task<ServerTestPlayer[]> CreateTestPlayersAsync(int count, PlayerLayout layout, CancellationToken ct = default)
+    {
+        var host = _serverHost ?? throw new InvalidOperationException("The server is not initialized.");
+        var players = await host.CreateTestPlayersAsync(count, layout, ct: ct).ConfigureAwait(false);
+        _testPlayers.AddRange(players);
+        return players;
+    }
+
     /// <summary>
     /// Joins a headless player into the same server as the rendering client, for multiplayer
     /// scenarios. The player is a real multiplayer connection as far as the server can tell; the

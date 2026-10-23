@@ -18,6 +18,8 @@ internal sealed class HeadlessUdpNetServer : UNetServer
 
     public override Dictionary<IPEndPoint, int> EndPoints => _endPoints;
 
+    internal IEnumerable<UdpPacket> Pending => _pending;
+
     public override void SetIpAndPort(string ip, int port)
     {
     }

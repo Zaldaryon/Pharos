@@ -94,6 +94,11 @@ internal sealed class LoopbackLink
         foreach (Packet_UdpPacket packet in udp) deliverUdpToServer(packet);
     }
 
+    internal bool HasPendingClientPackets
+    {
+        get { lock (_lock) return _toServer.Count != 0 || _udpToServer.Count != 0; }
+    }
+
     /// <summary>A packet the client sends over TCP. Returns it when it may go now.</summary>
     public byte[]? ClientSends(byte[] data)
     {

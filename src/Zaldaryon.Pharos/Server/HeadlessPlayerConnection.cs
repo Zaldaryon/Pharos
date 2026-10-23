@@ -242,8 +242,13 @@ internal sealed class HeadlessPlayerConnection
         }
     }
 
+    internal bool IsBatchReady => !_link.HasPendingClientPackets && Socket.IsDrained(_network);
+
+    internal Func<Packet_Client, bool>? CapturePacket { get; set; }
+
     private void Send(Packet_Client packet)
     {
+        if (CapturePacket?.Invoke(packet) == true) return;
         CitoMemoryStream stream = new();
         Packet_ClientSerializer.Serialize(stream, packet);
 

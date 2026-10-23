@@ -318,6 +318,12 @@ public sealed class NetworkDegradationSimulator
         return filter;
     }
 
+    // A future script is also non-pristine even if its first profile has no degradation.
+    internal bool IsPristine
+    {
+        get { lock (_lock) return !_profile.HasDegradation && _filters.Count == 0 && _timeline.Count == 0; }
+    }
+
     /// <summary>Whether a filter drops the packet. A drop counts as a dropped packet, and is logged.</summary>
     internal bool FilterDrops(NetworkPacketInfo info)
     {
