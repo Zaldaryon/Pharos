@@ -1,0 +1,10 @@
+﻿{
+  Calendar: {
+    Date: {Calendar},
+    HoursPerDay: 24.0,
+    DaysPerMonth: 9,
+    DaysPerYear: 108,
+    CalendarSpeedMul: 0.5,
+    SpeedOfTime: 60.0
+  }
+}

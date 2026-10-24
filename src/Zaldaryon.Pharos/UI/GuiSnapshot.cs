@@ -22,6 +22,9 @@ public sealed record GuiSnapshot(
         Array.Empty<string>(),
         false);
 
+    /// <summary>Element layouts captured by the live GUI driver, in dialog draw order.</summary>
+    public IReadOnlyList<DialogLayout> Layouts { get; init; } = Array.Empty<DialogLayout>();
+
     /// <summary>
     /// Returns true if no dialogs or HUD elements are active.
     /// </summary>

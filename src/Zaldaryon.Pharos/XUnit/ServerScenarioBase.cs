@@ -612,6 +612,9 @@ public abstract class ServerScenarioBase : IScenarioLifecycle, IAsyncDisposable
     /// </summary>
     /// <exception cref="InvalidOperationException">The server has not booted yet.</exception>
     /// <exception cref="ArgumentException">No data file of the test has that placeholder.</exception>
+    /// <summary>Port-placeholder names and their assigned ports, for snapshot scrubbing.</summary>
+    protected IReadOnlyDictionary<string, int> DataFilePorts => (_pooled ?? throw new InvalidOperationException("Data file ports are known once the server has booted.")).Files.Ports;
+
     protected int DataFilePort(string name) =>
         (_pooled ?? throw new InvalidOperationException("Data file ports are known once the server has booted.")).Files.Port(name);
 

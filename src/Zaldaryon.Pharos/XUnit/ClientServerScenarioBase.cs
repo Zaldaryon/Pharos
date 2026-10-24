@@ -756,6 +756,9 @@ public abstract class ClientServerScenarioBase : IScenarioLifecycle, IAsyncDispo
     /// on the server and the client. See <see cref="DataFilesAttribute"/>.
     /// </summary>
     /// <exception cref="ArgumentException">No data file of the test has that placeholder.</exception>
+    /// <summary>Port-placeholder names and their assigned ports, for snapshot scrubbing.</summary>
+    protected IReadOnlyDictionary<string, int> DataFilePorts => _files.Ports;
+
     protected int DataFilePort(string name) => _files.Port(name);
 
     /// <summary>

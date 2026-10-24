@@ -121,7 +121,7 @@ public static class Scene
 
     private static bool IsLiquid(Block? block) => block?.ForFluidsLayer == true;
 
-    private static void EnsureLoaded(ICoreServerAPI api, BlockPos min, BlockPos max)
+    internal static void EnsureLoaded(ICoreServerAPI api, BlockPos min, BlockPos max)
     {
         ChunkRegion.CheckInWorld(api, min, max);
         IReadOnlyList<ChunkPos> chunks = ChunkRegion.Covering(min, max);

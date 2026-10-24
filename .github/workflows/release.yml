@@ -137,6 +137,7 @@ jobs:
           dotnet pack src/Zaldaryon.Pharos.Bridge/Zaldaryon.Pharos.Bridge.csproj -c Release --no-build -o ./nupkg
           dotnet pack src/Zaldaryon.Pharos.XUnit/Zaldaryon.Pharos.XUnit.csproj -c Release --no-build -o ./nupkg
           dotnet pack src/Zaldaryon.Pharos.XUnit.V3/Zaldaryon.Pharos.XUnit.V3.csproj -c Release --no-build -o ./nupkg
+          dotnet pack src/Zaldaryon.Pharos.Verify/Zaldaryon.Pharos.Verify.csproj -c Release --no-build -o ./nupkg
           dotnet pack src/Zaldaryon.Pharos.AtlasCompat/Zaldaryon.Pharos.AtlasCompat.csproj -c Release --no-build -o ./nupkg
           dotnet pack src/Zaldaryon.Pharos.Cli/Zaldaryon.Pharos.Cli.csproj -c Release --no-build -o ./nupkg
           dotnet pack src/Zaldaryon.Pharos.Templates/Zaldaryon.Pharos.Templates.csproj -c Release --no-build -o ./nupkg

@@ -6,19 +6,26 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <IsPackable>true</IsPackable>
     <PackageId>Zaldaryon.Pharos.Verify</PackageId>
+    <VintageStoryPath Condition="'$(VintageStoryPath)' == ''">$(VINTAGE_STORY)</VintageStoryPath>
     <Version>0.7.0</Version>
     <Authors>Zaldaryon</Authors>
     <Description>Snapshot testing of Vintage Story game state with Verify, for Pharos.</Description>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
-    <Verify_SponsorshipExemption>SmallRevenue</Verify_SponsorshipExemption>
-    <Verify_SponsorshipExemptionUntil>2026-12</Verify_SponsorshipExemptionUntil>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <RepositoryUrl>https://github.com/Zaldaryon/Pharos</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageTags>vintagestory;testing;snapshots;verify</PackageTags>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="Verify.XunitV3" Version="33.3.4" />
-    <ProjectReference Include="..\Zaldaryon.Pharos\Zaldaryon.Pharos.csproj" />
-    <ProjectReference Include="..\Zaldaryon.Pharos.XUnit.V3\Zaldaryon.Pharos.XUnit.V3.csproj" />
+    <None Include="..\..\docs\snapshots.md" Pack="true" PackagePath="README.md" />
   </ItemGroup>
   <ItemGroup>
-    <Reference Include="VintagestoryAPI"><HintPath>$(VINTAGE_STORY)/VintagestoryAPI.dll</HintPath><Private>true</Private></Reference>
+    <PackageReference Include="Verify" Version="[31.12.5]" />
+    <ProjectReference Include="..\Zaldaryon.Pharos\Zaldaryon.Pharos.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <Reference Include="VintagestoryAPI"><HintPath>$(VintageStoryPath)/VintagestoryAPI.dll</HintPath><Private>true</Private></Reference>
   </ItemGroup>
 </Project>

@@ -70,6 +70,9 @@ public sealed partial class EmbeddedServerHost : IDisposable, IAsyncDisposable
     /// <summary>The underlying Vintage Story server instance.</summary>
     public ServerMain Server { get; }
 
+    /// <summary>Stable text snapshots of loaded block regions.</summary>
+    public RegionSnapshotDriver Snapshot => new(this);
+
     /// <summary>The server-side API for game interactions.</summary>
     public ICoreServerAPI Api => (ICoreServerAPI)Server.Api;
 

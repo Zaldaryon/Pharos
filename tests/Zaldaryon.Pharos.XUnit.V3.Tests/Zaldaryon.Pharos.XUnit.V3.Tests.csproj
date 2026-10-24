@@ -5,6 +5,7 @@
     <TargetFramework>net10.0</TargetFramework>
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
+    <DefineConstants>$(DefineConstants);PHAROS_VERIFY_V3</DefineConstants>
     <ImplicitUsings>enable</ImplicitUsings>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
@@ -16,6 +17,9 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Verify.XunitV3" Version="31.12.5" />
+    <ProjectReference Include="..\..\src\Zaldaryon.Pharos.Verify\Zaldaryon.Pharos.Verify.csproj" />
+    <Compile Include="..\Snapshots\SnapshotTests.cs" Link="Snapshots\SnapshotTests.cs" />
     <PackageReference Include="xunit.v3" Version="3.2.2" />
   </ItemGroup>
 

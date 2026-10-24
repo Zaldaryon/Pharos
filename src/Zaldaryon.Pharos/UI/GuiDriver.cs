@@ -132,30 +132,44 @@ public sealed class GuiDriver
     /// </summary>
     /// <exception cref="InvalidOperationException">No such dialog is open.</exception>
     public DialogLayout Layout(string nameOrType) =>
-        _client.RunOnClientThread(() =>
+        _client.RunOnClientThread(() => LayoutOf(RequireDialog(nameOrType)));
+
+    private DialogLayout LayoutOf(GuiDialog dialog)
+    {
+        // A composer lists an element that takes input among both its interactive and its
+        // static elements: each once here.
+        List<GuiElementInfo> elements = [];
+        HashSet<(string, string)> seen = [];
+        foreach (GuiElementInfo element in ElementsOf(dialog).OrderByDescending(e => e.IsInteractive))
         {
-            GuiDialog dialog = RequireDialog(nameOrType);
+            if (seen.Add((element.Composer, element.Key))) elements.Add(element);
+        }
 
-            // A composer lists an element that takes input among both its interactive and its
-            // static elements: each once here.
-            List<GuiElementInfo> elements = [];
-            HashSet<(string, string)> seen = [];
-            foreach (GuiElementInfo element in ElementsOf(dialog).OrderByDescending(e => e.IsInteractive))
-            {
-                if (seen.Add((element.Composer, element.Key))) elements.Add(element);
-            }
+        List<ComposerBounds> composers = [];
+        foreach (KeyValuePair<string, GuiComposer> entry in ((IEnumerable<KeyValuePair<string, GuiComposer>>)dialog.Composers).ToList())
+        {
+            ElementBounds bounds = entry.Value.Bounds;
+            composers.Add(new ComposerBounds(entry.Key, bounds.absX, bounds.absY, bounds.OuterWidth, bounds.OuterHeight));
+        }
 
-            List<ComposerBounds> composers = [];
-            foreach (KeyValuePair<string, GuiComposer> entry in ((IEnumerable<KeyValuePair<string, GuiComposer>>)dialog.Composers).ToList())
-            {
-                ElementBounds bounds = entry.Value.Bounds;
-                composers.Add(new ComposerBounds(entry.Key, bounds.absX, bounds.absY, bounds.OuterWidth, bounds.OuterHeight));
-            }
+        return new DialogLayout(
+            dialog.GetType().Name, _client.Platform.WindowSize.Width, _client.Platform.WindowSize.Height,
+            RuntimeEnv.GUIScale, composers, elements);
+    }
 
-            return new DialogLayout(
-                dialog.GetType().Name, _client.Platform.WindowSize.Width, _client.Platform.WindowSize.Height,
-                RuntimeEnv.GUIScale, composers, elements);
-        });
+    /// <summary>Captures open dialogs, HUDs and their element trees in one client-thread read.</summary>
+    public GuiSnapshot Snapshot() => _client.RunOnClientThread(() =>
+    {
+        var dialogs = _client.Client.api.Gui.OpenedGuis.ToArray();
+        return new GuiSnapshot(
+            dialogs.Where(d => !d.GetType().Name.StartsWith("Hud", StringComparison.Ordinal)).Select(d => d.GetType().Name).ToArray(),
+            dialogs.Where(d => d.GetType().Name.StartsWith("Hud", StringComparison.Ordinal)).Select(d => d.GetType().Name).ToArray(),
+            dialogs.Any(d => !d.GetType().Name.StartsWith("Hud", StringComparison.Ordinal)))
+        { Layouts = dialogs.Select(LayoutOf).ToArray() };
+    });
+
+    /// <summary>Captures the currently visible HUD's composers, text and element bounds.</summary>
+    public HudReadout HudReadout() => new(Snapshot().Layouts.Where(d => d.Dialog.StartsWith("Hud", StringComparison.Ordinal)).ToArray());
 
     /// <summary>How the open dialog of type <typeparamref name="TDialog"/> is laid out now. See <see cref="Layout(string)"/>.</summary>
     public DialogLayout Layout<TDialog>() where TDialog : GuiDialog => Layout(typeof(TDialog).Name);
