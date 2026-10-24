@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -53,6 +54,23 @@ public sealed partial class ClientServerLoopbackSession : IDisposable
 
     /// <summary>Gets the client's test player interface.</summary>
     public IClientTestPlayer Player => Client.TestPlayer;
+    /// <summary>
+    /// When true (default under a debugger), the server's game thread pauses at its next tick
+    /// boundary while the test thread is stopped on a breakpoint, so breakpoints do not race the
+    /// simulation. Uses <see cref="Debugger.IsAttached"/> plus a heartbeat from the test thread.
+    /// </summary>
+    public bool PauseOnBreak { get; set; } = Debugger.IsAttached
+        || string.Equals(Environment.GetEnvironmentVariable("PHAROS_DEBUG"), "1", StringComparison.Ordinal);
+
+    private long _testThreadHeartbeat = Stopwatch.GetTimestamp();
+    /// <summary>Call from the test thread to keep the heartbeat alive; the server checks it.</summary>
+    public void Heartbeat() => Interlocked.Exchange(ref _testThreadHeartbeat, Stopwatch.GetTimestamp());
+
+    /// <summary>True when the test thread appears stopped (no heartbeat for ~2 seconds).</summary>
+    public bool TestThreadAppearsStopped =>
+        (Stopwatch.GetTimestamp() - Interlocked.Read(ref _testThreadHeartbeat)) >
+        Stopwatch.Frequency * 2;
+
 
     /// <summary>
     /// Breaks, places and uses blocks through the engine-mode client, the way a player does.
