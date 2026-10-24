@@ -103,6 +103,11 @@ public sealed record RunOptions
 
     /// <summary>Variables set in every worker's environment, for tests of the runner.</summary>
     internal IReadOnlyDictionary<string, string> WorkerEnvironment { get; init; } = new Dictionary<string, string>();
+    /// <summary>Runs only the named test class in-process, so a debugger can attach to it.</summary>
+    public string? DebugClass { get; init; }
+
+    /// <summary>Prints the worker PID and waits for a debugger to attach before running.</summary>
+    public bool WaitForDebugger { get; init; }
 
     /// <summary>
     /// The directory each worker runs in; null to inherit the command's. <c>pharos compare</c> sets
@@ -223,6 +228,12 @@ public sealed record RunOptions
                             string other => throw new ArgumentException($"--xvfb takes auto, always or never, not '{other}'."),
                         },
                     };
+                    break;
+                case "--debug-class":
+                    options = options with { DebugClass = Value() };
+                    break;
+                case "--wait-for-debugger":
+                    options = options with { WaitForDebugger = true };
                     break;
                 case "-v" or "--verbose":
                     options = options with { Verbose = true };
