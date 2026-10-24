@@ -35,6 +35,7 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="Zaldaryon.Pharos.Tests" />
+    <InternalsVisibleTo Include="Zaldaryon.Pharos.Verify" />
     <InternalsVisibleTo Include="Zaldaryon.Pharos.XUnit" />
     <InternalsVisibleTo Include="Zaldaryon.Pharos.XUnit.V3" />
     <InternalsVisibleTo Include="Zaldaryon.Pharos.XUnit.V3.Tests" />

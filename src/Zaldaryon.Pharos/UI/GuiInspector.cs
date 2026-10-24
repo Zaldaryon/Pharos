@@ -153,6 +153,7 @@ public sealed class GuiInspector
     /// <returns>Immutable GUI snapshot.</returns>
     public GuiSnapshot Snapshot()
     {
+        if (Driver != null) return Driver.Snapshot();
         lock (_lock)
         {
             var dialogs = GetOpenDialogs();

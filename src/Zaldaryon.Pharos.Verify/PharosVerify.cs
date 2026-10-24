@@ -1,139 +1,92 @@
 using Argon;
-using System;
-using System.Text;
-using System.Linq;
+using VerifyTests;
 using Vintagestory.API.Common;
 using Vintagestory.API.Common.Entities;
-using Zaldaryon.Pharos.Core;
 using Vintagestory.API.Datastructures;
 using Vintagestory.API.MathTools;
+using Zaldaryon.Pharos.Core;
+using Zaldaryon.Pharos.Network;
+using Zaldaryon.Pharos.Server;
 using Zaldaryon.Pharos.UI;
 
 namespace Zaldaryon.Pharos.Verify;
 
+/// <summary>Registers deterministic game-state converters with Verify before the first verification.</summary>
 public static class PharosVerify
 {
+    private static readonly object s_lock = new();
+    private static bool s_initialized;
+
+    /// <summary>Call once at test-assembly initialization. Repeated calls are harmless.</summary>
     public static void Initialize()
     {
-        var settings = new JsonSerializerSettings();
-        settings.Converters.Add(new TreeAttributeConverter());
-        settings.Converters.Add(new ItemStackConverter());
-        settings.Converters.Add(new BlockPosConverter());
-        settings.Converters.Add(new Vec3dConverter());
-        settings.Converters.Add(new EntityConverter());
-        settings.Converters.Add(new GuiSnapshotConverter());
-        settings.Converters.Add(new DialogLayoutConverter());
-        settings.Converters.Add(new ItemTooltipConverter());
-        VerifierSettings.AddExtraSettings(s => { foreach (var c in settings.Converters) s.Converters.Add(c); });
-        VerifierSettings.AddScrubber((StringBuilder sb) =>
+        lock (s_lock)
         {
-            // Round floats to 4 decimals is handled in converters; here scrub obvious ids.
-        });
-    }
-
-    private sealed class TreeAttributeConverter : JsonConverter<ITreeAttribute>
-    {
-        public override void WriteJson(JsonWriter w, ITreeAttribute v, JsonSerializer s)
-        {
-            w.WriteStartObject();
-            foreach (var kv in v.OrderBy(x => x.Key))
+            if (s_initialized) return;
+            VerifierSettings.AddExtraSettings(settings =>
             {
-                w.WritePropertyName(kv.Key);
-                w.WriteValue(kv.Value?.ToString());
-            }
-            w.WriteEndObject();
+                settings.Converters.Insert(0, new GameConverter());
+                settings.Converters.Insert(0, new RoundedNumberConverter());
+            });
+            VerifierSettings.ScrubMembers(name => AttributeSnapshot.IsIdentity(name));
+            s_initialized = true;
         }
-        public override ITreeAttribute ReadJson(JsonReader r, Type t, ITreeAttribute e, bool h, JsonSerializer s) => throw new NotSupportedException();
     }
 
-    private sealed class ItemStackConverter : JsonConverter<ItemStack>
-    {
-        public override void WriteJson(JsonWriter w, ItemStack v, JsonSerializer s)
-        {
-            w.WriteStartObject();
-            w.WritePropertyName("Code"); w.WriteValue(v.Collectible?.Code?.ToString());
-            w.WritePropertyName("Quantity"); w.WriteValue(v.StackSize);
-            w.WriteEndObject();
-        }
-        public override ItemStack ReadJson(JsonReader r, Type t, ItemStack e, bool h, JsonSerializer s) => throw new NotSupportedException();
-    }
-
-    private sealed class BlockPosConverter : JsonConverter<BlockPos>
-    {
-        public override void WriteJson(JsonWriter w, BlockPos v, JsonSerializer s)
-        {
-            w.WriteStartObject();
-            w.WritePropertyName("X"); w.WriteValue(v.X);
-            w.WritePropertyName("Y"); w.WriteValue(v.Y);
-            w.WritePropertyName("Z"); w.WriteValue(v.Z);
-            w.WriteEndObject();
-        }
-        public override BlockPos ReadJson(JsonReader r, Type t, BlockPos e, bool h, JsonSerializer s) => throw new NotSupportedException();
-    }
-
-    private sealed class Vec3dConverter : JsonConverter<Vec3d>
-    {
-        public override void WriteJson(JsonWriter w, Vec3d v, JsonSerializer s)
-        {
-            w.WriteStartObject();
-            w.WritePropertyName("X"); w.WriteValue(Math.Round(v.X, 4));
-            w.WritePropertyName("Y"); w.WriteValue(Math.Round(v.Y, 4));
-            w.WritePropertyName("Z"); w.WriteValue(Math.Round(v.Z, 4));
-            w.WriteEndObject();
-        }
-        public override Vec3d ReadJson(JsonReader r, Type t, Vec3d e, bool h, JsonSerializer s) => throw new NotSupportedException();
-    }
-
-    private sealed class EntityConverter : JsonConverter<Entity>
-    {
-        public override void WriteJson(JsonWriter w, Entity v, JsonSerializer s)
-        {
-            w.WriteStartObject();
-            w.WritePropertyName("Code"); w.WriteValue(v.Code?.ToString());
-            w.WritePropertyName("Position"); w.WriteValue(v.ServerPos?.ToString());
-            w.WriteEndObject();
-        }
-        public override Entity ReadJson(JsonReader r, Type t, Entity e, bool h, JsonSerializer s) => throw new NotSupportedException();
-    }
-
-    private sealed class GuiSnapshotConverter : JsonConverter<GuiSnapshot>
-    {
-        public override void WriteJson(JsonWriter w, GuiSnapshot v, JsonSerializer s)
-        {
-            w.WriteStartObject();
-            w.WritePropertyName("Elements"); w.WriteValue(v.ToString());
-            w.WriteEndObject();
-        }
-        public override GuiSnapshot ReadJson(JsonReader r, Type t, GuiSnapshot e, bool h, JsonSerializer s) => throw new NotSupportedException();
-    }
-
-    private sealed class DialogLayoutConverter : JsonConverter<DialogLayout>
-    {
-        public override void WriteJson(JsonWriter w, DialogLayout v, JsonSerializer s)
-        {
-            w.WriteStartObject();
-            w.WritePropertyName("Dialog"); w.WriteValue(v.Dialog);
-            w.WritePropertyName("ScreenWidth"); w.WriteValue(v.ScreenWidth);
-            w.WritePropertyName("ScreenHeight"); w.WriteValue(v.ScreenHeight);
-            w.WriteEndObject();
-        }
-        public override DialogLayout ReadJson(JsonReader r, Type t, DialogLayout e, bool h, JsonSerializer s) => throw new NotSupportedException();
-    }
-
-    private sealed class ItemTooltipConverter : JsonConverter<ItemTooltip>
-    {
-        public override void WriteJson(JsonWriter w, ItemTooltip v, JsonSerializer s)
-        {
-            w.WriteStartObject();
-            w.WritePropertyName("Title"); w.WriteValue(v.Title);
-            w.WritePropertyName("Text"); w.WriteValue(v.Text);
-            w.WriteEndObject();
-        }
-        public override ItemTooltip ReadJson(JsonReader r, Type t, ItemTooltip e, bool h, JsonSerializer s) => throw new NotSupportedException();
-    }
-
+    /// <summary>The installed game's short version. Kept for callers of the original helper.</summary>
     public static class GameVersion
     {
-        public static string Suffix() => "1.22.7";
+        /// <summary>Reads the game API version, never a hard-coded release.</summary>
+        public static string Suffix() => (string)typeof(Vintagestory.API.Config.GameVersion)
+            .GetField(nameof(Vintagestory.API.Config.GameVersion.ShortGameVersion))!.GetRawConstantValue()!;
+    }
+
+    private sealed class GameConverter : WriteOnlyJsonConverter
+    {
+        public override bool CanConvert(Type type) => typeof(ITreeAttribute).IsAssignableFrom(type)
+            || typeof(ItemStack).IsAssignableFrom(type) || typeof(AssetLocation).IsAssignableFrom(type)
+            || typeof(BlockPos).IsAssignableFrom(type) || typeof(Vec3d).IsAssignableFrom(type)
+            || typeof(Entity).IsAssignableFrom(type) || type == typeof(GuiSnapshot) || type == typeof(DialogLayout)
+            || type == typeof(ItemTooltip) || type == typeof(ModMessage) || type == typeof(ServerModMessage)
+            || type == typeof(HudReadout) || typeof(IGameCalendar).IsAssignableFrom(type);
+
+        public override void Write(VerifyJsonWriter writer, object value)
+        {
+            object? snapshot = value switch
+            {
+                ITreeAttribute tree => AttributeSnapshot.Capture(tree),
+                ItemStack stack => AttributeSnapshot.Capture(stack),
+                AssetLocation code => code.ToString(),
+                BlockPos pos => new { pos.X, pos.Y, pos.Z, Dimension = pos.dimension },
+                Vec3d vec => new { vec.X, vec.Y, vec.Z },
+                Entity entity => new { Code = entity.Code?.ToString(), Position = entity.Pos.XYZ, Attributes = AttributeSnapshot.Capture(entity.WatchedAttributes) },
+                GuiSnapshot gui => new { gui.OpenDialogs, gui.HudElements, gui.HasModal, gui.Layouts },
+                DialogLayout layout => new
+                {
+                    layout.Dialog, layout.ScreenWidth, layout.ScreenHeight, layout.GuiScale,
+                    Composers = layout.Composers.Select(c => new { c.Composer, c.X, c.Y, c.Width, c.Height }).ToArray(),
+                    Elements = layout.Elements.Select(e => new { e.Composer, e.Key, e.Type, e.X, e.Y, e.Width, e.Height, e.Text, e.IsInteractive, e.IsClipped }).ToArray()
+                },
+                ItemTooltip tooltip => new { tooltip.Title, tooltip.Lines },
+                ModMessage message => new { message.Direction, message.Channel, message.Udp, message.MessageId, message.TypeName, Data = Convert.ToHexString(message.Data), message.Injected },
+                ServerModMessage message => new { message.Direction, message.Channel, message.Udp, message.MessageId, message.TypeName, message.Position, Data = Convert.ToHexString(message.Data) },
+                HudReadout hud => new { hud.Dialogs },
+                IGameCalendar calendar => new { Date = "{Calendar}", calendar.HoursPerDay, calendar.DaysPerMonth, calendar.DaysPerYear, calendar.CalendarSpeedMul, calendar.SpeedOfTime, calendar.SeasonOverride },
+                _ => throw new NotSupportedException(value.GetType().FullName)
+            };
+            writer.Serialize(snapshot!);
+        }
+    }
+
+    private sealed class RoundedNumberConverter : JsonConverter
+    {
+        public override bool CanRead => false;
+        public override bool CanConvert(Type type) => type == typeof(float) || type == typeof(double) || type == typeof(decimal);
+        public override void WriteJson(JsonWriter writer, object? value, JsonSerializer serializer)
+        {
+            if (value is decimal number) writer.WriteValue(Math.Round(number, 4));
+            else writer.WriteValue(Math.Round(Convert.ToDouble(value, System.Globalization.CultureInfo.InvariantCulture), 4));
+        }
+        public override object ReadJson(JsonReader reader, Type type, object? value, JsonSerializer serializer) => throw new NotSupportedException();
     }
 }

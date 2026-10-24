@@ -1,0 +1,36 @@
+﻿Region (160,100,160)..(161,101,161)
+Solid Y+0
+game:rock-granite | game:chest-east
+game:air | game:air
+Solid Y+1
+game:air | game:air
+game:air | game:rock-granite
+Fluid Y+0
+game:air | game:air
+game:air | game:air
+Fluid Y+1
+game:air | game:air
+game:water-still-7 | game:air
+BlockEntities
+(1,0,0) BlockEntityGenericTypedContainer
+{
+  "blockCode": "chest-east",
+  "forBlockCode": "chest-east",
+  "inventory": {
+    "qslots": 16,
+    "slots": {
+      "0": {
+        "Code": "game:grain-spelt",
+        "Quantity": 3,
+        "Attributes": {
+          "snapshotCharge": 42
+        }
+      }
+    }
+  },
+  "meshAngle": 0.0,
+  "posx": 161,
+  "posy": 100,
+  "posz": 160,
+  "type": "normal-generic"
+}

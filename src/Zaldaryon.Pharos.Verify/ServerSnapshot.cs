@@ -1,28 +1,15 @@
-using Vintagestory.API.Common;
 using Vintagestory.API.MathTools;
 using Zaldaryon.Pharos.Server;
 
 namespace Zaldaryon.Pharos.Verify;
 
+/// <summary>Compatibility entry point. Prefer <c>host.Snapshot.Region(min, max)</c>.</summary>
 public static class ServerSnapshot
 {
+    /// <summary>Captures the same stable region text as <see cref="RegionSnapshotDriver.Region"/>.</summary>
     public static string Region(EmbeddedServerHost host, BlockPos min, BlockPos max)
     {
-        var ba = host.Api.World.BlockAccessor;
-        var sb = new System.Text.StringBuilder();
-        for (int y = min.Y; y <= max.Y; y++)
-        {
-            sb.AppendLine($"Y={y}");
-            for (int z = min.Z; z <= max.Z; z++)
-            {
-                for (int x = min.X; x <= max.X; x++)
-                {
-                    var block = ba.GetBlock(new BlockPos(x, y, z));
-                    sb.Append((block?.Code?.ToString() ?? "?") + " ");
-                }
-                sb.AppendLine();
-            }
-        }
-        return sb.ToString();
+        ArgumentNullException.ThrowIfNull(host);
+        return host.Snapshot.Region(min, max);
     }
 }

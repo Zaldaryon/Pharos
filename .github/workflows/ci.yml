@@ -444,7 +444,7 @@ jobs:
 
       - name: Pack Pharos
         run: |
-          for package in Zaldaryon.Pharos Zaldaryon.Pharos.XUnit Zaldaryon.Pharos.XUnit.V3 Zaldaryon.Pharos.Cli Zaldaryon.Pharos.Templates; do
+          for package in Zaldaryon.Pharos Zaldaryon.Pharos.XUnit Zaldaryon.Pharos.XUnit.V3 Zaldaryon.Pharos.Verify Zaldaryon.Pharos.Cli Zaldaryon.Pharos.Templates; do
             dotnet pack "src/$package/$package.csproj" -c Release -o "$RestoreAdditionalProjectSources" -p:Version="$PharosVersion"
           done
 

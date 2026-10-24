@@ -304,6 +304,7 @@ See the [inspection API reference](docs/inspection-api.md) for method signatures
 - [Engine Mode](docs/engine-mode.md): Booting a client that joins a real server offline, with character creation and the vanilla render pipeline
 - [Smoke Testing a Mod](docs/smoke-test.md): `pharos smoke` and `ModSmokeTest`, in a terminal or in CI
 - [Doctor and Init](docs/doctor.md): `pharos doctor`, which checks the machine, and `pharos init`, which writes a first test project
+- [Game-state snapshots](docs/snapshots.md): Verify converters, block regions, runtime-value scrubbing and game-version baselines for xUnit v2 and v3
 - [Templates and the Reusable Workflow](docs/templates.md): `dotnet new pharos-mod-tests`, `dotnet new pharos-ci` and `mod-ci.yml`, which runs a mod's tests on Linux and Windows
 - [Boot Diagnostics](docs/boot-diagnostics.md): The warnings a client or server logs while booting, `[StrictBoot]` and `[AllowBootDiagnostic]`
 - [Parallel Runs](docs/parallel-runs.md): `pharos run --parallel`, which runs test classes in worker processes and merges their results

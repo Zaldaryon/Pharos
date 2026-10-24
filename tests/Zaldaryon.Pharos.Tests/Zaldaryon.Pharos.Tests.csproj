@@ -15,6 +15,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Verify.Xunit" Version="31.12.5" />
+    <ProjectReference Include="..\..\src\Zaldaryon.Pharos.Verify\Zaldaryon.Pharos.Verify.csproj" />
+    <Compile Include="..\Snapshots\SnapshotTests.cs" Link="Snapshots\SnapshotTests.cs" />
+    <Compile Include="..\Snapshots\LiveSnapshotTests.cs" Link="Snapshots\LiveSnapshotTests.cs" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
     <PackageReference Include="xunit" Version="2.9.3" />
     <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />

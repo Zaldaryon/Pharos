@@ -1,0 +1,169 @@
+﻿{
+  Tree: {
+    charge: 42,
+    ownerPlayerUID: deliberate-custom-field,
+    temperature: 12.3457
+  },
+  Item: {
+    Code: mod:crystal-blue,
+    Quantity: 3,
+    Attributes: {
+      charge: 42,
+      ownerPlayerUID: deliberate-custom-field,
+      temperature: 12.3457
+    }
+  },
+  Code: mod:crystal-blue,
+  Position: {
+    X: 123456,
+    Y: 12,
+    Z: -4
+  },
+  Vector: {
+    X: 1.2346,
+    Y: -2.3457,
+    Z: 3.0
+  },
+  Entity: {
+    Code: mod:testentity,
+    Position: {
+      X: 1.2346,
+      Y: 2.0,
+      Z: 3.0
+    },
+    Attributes: {
+      health: 20,
+      playerUID: {Scrubbed}
+    }
+  },
+  Gui: {
+    OpenDialogs: [
+      Dialog
+    ],
+    HudElements: [
+      HudStats
+    ],
+    HasModal: true,
+    Layouts: [
+      {
+        Dialog: Dialog,
+        ScreenWidth: 800,
+        ScreenHeight: 600,
+        GuiScale: 1.0,
+        Composers: [
+          {
+            Composer: main,
+            X: 10.0,
+            Y: 20.0,
+            Width: 300.0,
+            Height: 150.0
+          }
+        ],
+        Elements: [
+          {
+            Composer: main,
+            Key: ok,
+            Type: GuiElementTextButton,
+            X: 12.3457,
+            Y: 25.0,
+            Width: 100.0,
+            Height: 30.0,
+            Text: Accept,
+            IsInteractive: true,
+            IsClipped: false
+          }
+        ]
+      }
+    ]
+  },
+  Dialog: {
+    Dialog: Dialog,
+    ScreenWidth: 800,
+    ScreenHeight: 600,
+    GuiScale: 1.0,
+    Composers: [
+      {
+        Composer: main,
+        X: 10.0,
+        Y: 20.0,
+        Width: 300.0,
+        Height: 150.0
+      }
+    ],
+    Elements: [
+      {
+        Composer: main,
+        Key: ok,
+        Type: GuiElementTextButton,
+        X: 12.3457,
+        Y: 25.0,
+        Width: 100.0,
+        Height: 30.0,
+        Text: Accept,
+        IsInteractive: true,
+        IsClipped: false
+      }
+    ]
+  },
+  Tooltip: {
+    Title: Crystal,
+    Lines: [
+      Charge,
+      42 & stable
+    ]
+  },
+  Network: {
+    Direction: Received,
+    Channel: sync,
+    Udp: false,
+    MessageId: 1,
+    TypeName: CrystalSync,
+    Data: 082A,
+    Injected: false
+  },
+  ServerNetwork: {
+    Channel: sync,
+    Udp: false,
+    MessageId: 1,
+    TypeName: CrystalSync,
+    Position: {
+      X: 1.0,
+      Y: 2.0,
+      Z: 3.0
+    },
+    Data: 082A
+  },
+  Hud: {
+    Dialogs: [
+      {
+        Dialog: HudStats,
+        ScreenWidth: 800,
+        ScreenHeight: 600,
+        GuiScale: 1.0,
+        Composers: [
+          {
+            Composer: main,
+            X: 10.0,
+            Y: 20.0,
+            Width: 300.0,
+            Height: 150.0
+          }
+        ],
+        Elements: [
+          {
+            Composer: main,
+            Key: ok,
+            Type: GuiElementTextButton,
+            X: 12.3457,
+            Y: 25.0,
+            Width: 100.0,
+            Height: 30.0,
+            Text: Accept,
+            IsInteractive: true,
+            IsClipped: false
+          }
+        ]
+      }
+    ]
+  }
+}

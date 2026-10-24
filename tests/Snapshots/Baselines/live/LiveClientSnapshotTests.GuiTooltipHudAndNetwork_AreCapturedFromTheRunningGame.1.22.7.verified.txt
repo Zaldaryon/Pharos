@@ -1,0 +1,70 @@
+﻿{
+  Dialog: {
+    Dialog: PharosLayoutDialog,
+    ScreenWidth: 800,
+    ScreenHeight: 600,
+    GuiScale: 1.0,
+    Composers: [
+      {
+        Composer: single,
+        X: 200.0,
+        Y: 220.0,
+        Width: 400.0,
+        Height: 160.0
+      }
+    ],
+    Elements: [
+      {
+        Composer: single,
+        Key: first,
+        Type: GuiElementTextButton,
+        X: 220.0,
+        Y: 240.0,
+        Width: 150.0,
+        Height: 30.0,
+        Text: First,
+        IsInteractive: true,
+        IsClipped: false
+      },
+      {
+        Composer: single,
+        Key: second,
+        Type: GuiElementTextButton,
+        X: 220.0,
+        Y: 300.0,
+        Width: 150.0,
+        Height: 30.0,
+        Text: Second,
+        IsInteractive: true,
+        IsClipped: false
+      },
+      {
+        Composer: single,
+        Key: element-1,
+        Type: GuiElementDialogBackground,
+        X: 200.0,
+        Y: 220.0,
+        Width: 400.0,
+        Height: 160.0,
+        IsInteractive: false,
+        IsClipped: false
+      }
+    ]
+  },
+  Tooltip: {
+    Title: Spelt grain,
+    Lines: [
+      Perishable. Fresh for 90 days,
+      When eaten: 60 sat,
+      Food Category: Grain,
+      When ground: Turns into 1x Spelt flour
+    ]
+  },
+  Network: {
+    Channel: pharosnet,
+    Udp: false,
+    TypeName: PharosNetMod.SyncPacket,
+    Data: 0809120B66726F6D20636C69656E74,
+    Injected: false
+  }
+}
