@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>true</IsPackable>
+    <PackageId>Zaldaryon.Pharos.Verify</PackageId>
+    <Version>0.7.0</Version>
+    <Authors>Zaldaryon</Authors>
+    <Description>Snapshot testing of Vintage Story game state with Verify, for Pharos.</Description>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <Verify_SponsorshipExemption>SmallRevenue</Verify_SponsorshipExemption>
+    <Verify_SponsorshipExemptionUntil>2026-12</Verify_SponsorshipExemptionUntil>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Verify.XunitV3" Version="33.3.4" />
+    <ProjectReference Include="..\Zaldaryon.Pharos\Zaldaryon.Pharos.csproj" />
+    <ProjectReference Include="..\Zaldaryon.Pharos.XUnit.V3\Zaldaryon.Pharos.XUnit.V3.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <Reference Include="VintagestoryAPI"><HintPath>$(VINTAGE_STORY)/VintagestoryAPI.dll</HintPath><Private>true</Private></Reference>
+  </ItemGroup>
+</Project>
