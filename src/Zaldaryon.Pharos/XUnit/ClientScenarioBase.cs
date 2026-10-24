@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Zaldaryon.Pharos.Bootstrap;
 using Zaldaryon.Pharos.Core;
 using Zaldaryon.Pharos.Metrics;
@@ -110,7 +111,7 @@ public abstract class ClientScenarioBase : IScenarioLifecycle, IAsyncDisposable
     /// <summary>
     /// Gets how long a test waits for another scenario to release the host before it fails.
     /// </summary>
-    protected virtual TimeSpan HostWaitTimeout => TimeSpan.FromMinutes(10);
+    protected virtual TimeSpan HostWaitTimeout => (Debugger.IsAttached || string.Equals(Environment.GetEnvironmentVariable("PHAROS_DEBUG"), "1", StringComparison.Ordinal)) ? Timeout.InfiniteTimeSpan : TimeSpan.FromMinutes(10);
 
     /// <summary>
     /// Whether the test fails when the client logged an error during it that
