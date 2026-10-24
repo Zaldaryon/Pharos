@@ -120,6 +120,13 @@ public static partial class RunCommand
 
     internal static async Task<int> RunAsync(RunOptions options, TextWriter stdout, TextWriter stderr, CancellationToken ct)
     {
+        if (options.WaitForDebugger)
+        {
+            stdout.WriteLine($"[pharos] waiting for debugger, PID {Environment.ProcessId}");
+            stdout.Flush();
+            while (!Debugger.IsAttached) Thread.Sleep(250);
+            stdout.WriteLine("[pharos] debugger attached.");
+        }
         if (options.Repeat < 1 || (options.UntilFail && options.Max is null or < 1) || (!options.UntilFail && options.Max != null) || (options.UntilFail && options.Repeat != 1))
         {
             stderr.WriteLine("Error: --repeat must be positive; --until-fail requires positive --max and cannot be combined with --repeat.");

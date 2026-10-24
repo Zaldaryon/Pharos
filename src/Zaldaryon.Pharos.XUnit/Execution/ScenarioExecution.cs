@@ -58,6 +58,7 @@ internal static class XunitScenarioTimeouts
     /// </summary>
     public static int Of(ITestMethod testMethod)
     {
+        if (Debugger.IsAttached || string.Equals(Environment.GetEnvironmentVariable("PHAROS_DEBUG"), "1", StringComparison.Ordinal)) return 0;
         if (ScenarioTimeouts.Override is { } overridden) return overridden;
 
         IAttributeInfo? attribute = testMethod.Method.GetCustomAttributes(typeof(FactAttribute)).FirstOrDefault();
@@ -82,6 +83,14 @@ internal static class XunitScenarioTimeouts
             return 0;
         }
     }
+}
+
+
+
+internal static class PharosDebug
+{
+    public static bool IsAttached => Debugger.IsAttached
+        || string.Equals(Environment.GetEnvironmentVariable("PHAROS_DEBUG"), "1", StringComparison.Ordinal);
 }
 
 /// <summary>Discovers <c>[ClientScenario]</c>, <c>[ServerScenario]</c> and <c>[ClientServerScenario]</c> tests.</summary>

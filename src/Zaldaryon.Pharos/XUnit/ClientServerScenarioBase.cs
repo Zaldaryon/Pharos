@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Vintagestory.API.Common;
 using Vintagestory.API.Common.Entities;
 using Vintagestory.API.Config;
@@ -392,7 +393,7 @@ public abstract class ClientServerScenarioBase : IScenarioLifecycle, IAsyncDispo
     /// <summary>
     /// Gets how long a test waits for another scenario to release the host before it fails.
     /// </summary>
-    protected virtual TimeSpan HostWaitTimeout => TimeSpan.FromMinutes(10);
+    protected virtual TimeSpan HostWaitTimeout => (Debugger.IsAttached || string.Equals(Environment.GetEnvironmentVariable("PHAROS_DEBUG"), "1", StringComparison.Ordinal)) ? Timeout.InfiniteTimeSpan : TimeSpan.FromMinutes(10);
 
     /// <summary>
     /// Whether the test fails when the client or the server logged an error during it that

@@ -23,6 +23,12 @@ public sealed class ServerModsAttribute : Attribute
     /// </summary>
     public IReadOnlyList<string> ModPaths { get; }
 
+    /// <summary>Loads the mod from a project file's build output (with PDB) instead of staging a zip, enabling Edit and Continue.</summary>
+    public string? FromProject { get; set; }
+
+    /// <summary>When true with <see cref="FromProject"/>, reloads asset-only changes without a full rebuild/boot.</summary>
+    public bool HotReload { get; set; }
+
     /// <summary>
     /// Initializes a new instance declaring one or more mod paths to stage.
     /// </summary>
