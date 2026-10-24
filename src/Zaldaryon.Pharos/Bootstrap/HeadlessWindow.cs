@@ -131,7 +131,9 @@ public sealed class HeadlessWindow : IDisposable
         GLFW.WindowHint(WindowHintBool.Visible, false);
         GLFW.WindowHint(WindowHintBool.Focused, false);
         GLFW.WindowHint(WindowHintBool.FocusOnShow, false);
-        GLFW.WindowHint(WindowHintBool.Resizable, false);
+        // Resizable is required for SetWindowSize/ClientSize to take effect under X11/Xvfb;
+        // an offscreen window that cannot be resized never changes its framebuffer size.
+        GLFW.WindowHint(WindowHintBool.Resizable, true);
         GLFW.WindowHint(WindowHintBool.Decorated, false);
         GLFW.WindowHint(WindowHintBool.Floating, false);
 
