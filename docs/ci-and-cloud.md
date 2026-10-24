@@ -16,6 +16,10 @@ Pharos runs the real Vintage Story client headlessly, so a test machine needs no
 
 ## Using Pharos in your mod's CI
 
+`dotnet new pharos-ci` writes a workflow that calls `mod-ci.yml`, which does all of the steps below
+for a test project on Linux and Windows and uploads the results; see [Templates](templates.md).
+To write the steps yourself:
+
 The `setup-vintage-story` action downloads the game, caches it, sets `VINTAGE_STORY`, and readies software rendering. On Linux that means Mesa and a virtual display that later steps use; on Windows it means Mesa, which Pharos copies next to your tests:
 
 ```yaml

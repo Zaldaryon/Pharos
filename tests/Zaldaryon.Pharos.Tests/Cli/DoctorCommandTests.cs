@@ -130,6 +130,8 @@ public sealed class DoctorCommandTests : IDisposable
         string project = File.ReadAllText(csproj);
         Assert.Contains("Zaldaryon.Pharos.XUnit", project, StringComparison.Ordinal);
         Assert.Contains("<ProjectReference Include=\"../MyMod/MyMod.csproj\" />", project, StringComparison.Ordinal);
+        Assert.Contains("<HintPath>$(VintageStoryPath)/VintagestoryAPI.dll</HintPath>", project, StringComparison.Ordinal);
+        Assert.Contains("<HintPath>$(VintageStoryPath)/VintagestoryLib.dll</HintPath>", project, StringComparison.Ordinal);
         Assert.Contains("namespace MyMod.Tests;", File.ReadAllText(Path.Combine(target, "SmokeTests.cs")), StringComparison.Ordinal);
         Assert.True(File.Exists(Path.Combine(target, "xunit.runner.json")));
         Assert.Contains("Created", stdout.ToString(), StringComparison.Ordinal);

@@ -114,7 +114,9 @@ every mod. Each run boots fresh hosts (`WorldIsolation.Restart`).
 
 ## In CI
 
-A job that smoke-tests a mod on every push, on GitHub Actions:
+The reusable workflow runs `pharos smoke` before a mod's tests when its `smoke` input is true; see
+[Templates](templates.md#the-reusable-workflow). A job that smoke-tests a mod on its own, on every
+push, on GitHub Actions:
 
 ```yaml
 smoke:

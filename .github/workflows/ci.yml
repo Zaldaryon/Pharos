@@ -43,6 +43,7 @@ jobs:
       full: ${{ steps.plan.outputs.full }}
       filter: ${{ steps.plan.outputs.filter }}
       matrix: ${{ steps.plan.outputs.matrix }}
+      game: ${{ env.VS_VERSION }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -408,6 +409,75 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
+  # The dotnet new templates: the samples in tests/TemplateSample must be what the templates
+  # generate, and they must build against this commit's packages without a warning. The full lane
+  # then runs them with the reusable workflow, on Linux and Windows.
+  templates:
+    name: Templates
+    needs: plan
+    if: needs.plan.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      PharosVersion: 0.0.0-ci.${{ github.run_id }}.${{ github.run_attempt }}
+      RestoreAdditionalProjectSources: ${{ github.workspace }}/pharos-packages
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Set up Vintage Story
+        uses: ./.github/actions/setup-vintage-story
+        with:
+          version: ${{ env.VS_VERSION }}
+          mesa: "false"
+          xvfb: "false"
+
+      - name: Check the template samples
+        run: |
+          mkdir -p "$RestoreAdditionalProjectSources"
+          scripts/update-template-samples.sh --check
+
+      - name: Pack Pharos
+        run: |
+          for package in Zaldaryon.Pharos Zaldaryon.Pharos.XUnit Zaldaryon.Pharos.XUnit.V3 Zaldaryon.Pharos.Cli Zaldaryon.Pharos.Templates; do
+            dotnet pack "src/$package/$package.csproj" -c Release -o "$RestoreAdditionalProjectSources" -p:Version="$PharosVersion"
+          done
+
+      - name: Build the samples
+        run: |
+          dotnet build tests/TemplateSample/ExampleMod.Tests -c Release -warnaserror
+          dotnet build tests/TemplateSample/ExampleMod.Tests.V3 -c Release -warnaserror
+
+      - name: Upload the packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: pharos-packages-${{ github.run_attempt }}
+          path: ${{ github.workspace }}/pharos-packages/*.nupkg
+          retention-days: 7
+
+  templates-run:
+    name: Template sample (${{ matrix.project }})
+    needs: [plan, templates]
+    if: needs.plan.outputs.run == 'true' && needs.plan.outputs.full == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        project: [ExampleMod.Tests, ExampleMod.Tests.V3]
+    uses: ./.github/workflows/mod-ci.yml
+    with:
+      test-project: tests/TemplateSample/${{ matrix.project }}/${{ matrix.project }}.csproj
+      game-version: ${{ needs.plan.outputs.game }}
+      os: '["ubuntu-latest", "windows-latest"]'
+      smoke: ${{ matrix.project == 'ExampleMod.Tests' }}
+      packages: pharos-packages-${{ github.run_attempt }}
+      pharos-version: 0.0.0-ci.${{ github.run_id }}.${{ github.run_attempt }}
+      artifact-name: pharos-sample-${{ matrix.project }}
+
   benchmark-baselines:
     name: Validate Benchmark Baselines
     runs-on: ubuntu-latest
@@ -483,7 +553,7 @@ jobs:
 
   summary:
     name: Summary and Diff
-    needs: [plan, test-linux, test-windows]
+    needs: [plan, test-linux, test-windows, templates, templates-run]
     if: always() && needs.plan.outputs.run == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -580,5 +650,13 @@ jobs:
           fi
           if [ "${{ needs.plan.outputs.full }}" = "true" ] && [ "${{ needs.test-windows.result }}" != "success" ]; then
             echo "::error::Windows tests failed"
+            exit 1
+          fi
+          if [ "${{ needs.templates.result }}" != "success" ]; then
+            echo "::error::The templates check failed"
+            exit 1
+          fi
+          if [ "${{ needs.plan.outputs.full }}" = "true" ] && [ "${{ needs.templates-run.result }}" != "success" ]; then
+            echo "::error::The template samples failed"
             exit 1
           fi

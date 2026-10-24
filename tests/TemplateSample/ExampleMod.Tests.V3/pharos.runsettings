@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The environment dotnet test and the IDEs give the tests; the project file points them here. -->
+<RunSettings>
+  <RunConfiguration>
+    <EnvironmentVariables>
+      <!-- Software rendering and no sound device, for a machine without a GPU or a desktop. -->
+      <LIBGL_ALWAYS_SOFTWARE>1</LIBGL_ALWAYS_SOFTWARE>
+      <ALSOFT_DRIVERS>null</ALSOFT_DRIVERS>
+      <!-- Uncomment to point the tests at an install other than VINTAGE_STORY's. -->
+      <!-- <VINTAGE_STORY>/path/to/vintagestory</VINTAGE_STORY> -->
+      <!-- Where a failing test saves its logs, screenshots and world; see docs/failure-artifacts.md. -->
+      <!-- <PHAROS_ARTIFACTS>TestResults/pharos</PHAROS_ARTIFACTS> -->
+      <!-- Multiplies every Pharos timeout, for a slow machine. -->
+      <!-- <PHAROS_TIMEOUT_SCALE>2</PHAROS_TIMEOUT_SCALE> -->
+    </EnvironmentVariables>
+  </RunConfiguration>
+</RunSettings>

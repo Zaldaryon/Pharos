@@ -106,9 +106,6 @@ public static class HeadlessPlatformResolver
                 Environment.SetEnvironmentVariable("PATH", $"{libDir}{Path.PathSeparator}{currentPath}");
             }
 
-            // Allow GLFW to run from any test runner thread
-            OpenTK.Windowing.Desktop.GLFWProvider.CheckForMainThread = false;
-
             // Force OpenAL Soft to use the null driver backend in headless/CI environments
             if (options.DisableAudio || options.UseNullAudioDevice)
             {
@@ -140,6 +137,14 @@ public static class HeadlessPlatformResolver
 
             // Register Vintage Story managed assembly resolver as fallback
             AppDomain.CurrentDomain.AssemblyResolve += AssemblyResolver.AssemblyResolve;
+
+            // Stage software GL before OpenTK can initialize GLFW, including in tool/runner hosts.
+            EnsureStagedBinaries(gamePath);
+            CheckGameMatchesBuild(gamePath, AppContext.BaseDirectory);
+
+            // Only now can OpenTK load from the game's Lib folder: a test project need not
+            // reference it.
+            AllowGlfwOnAnyThread();
 
             // Register native library resolver for cairo-sharp on Linux
             void TryRegisterNativeResolvers(Assembly assembly)
@@ -185,15 +190,16 @@ public static class HeadlessPlatformResolver
                 TryRegisterNativeResolvers(args.LoadedAssembly);
             };
 
-            // Ensure Lib and Mods directories are staged in AppContext.BaseDirectory for mod compilation
-            EnsureStagedBinaries(gamePath);
-            CheckGameMatchesBuild(gamePath, AppContext.BaseDirectory);
-
             _initialized = true;
         }
 
         InstallGameHooks();
     }
+
+    // Lets GLFW run from any test runner thread. A method of its own, so that OpenTK loads when it
+    // runs, after the resolvers, and not when Initialize is compiled.
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+    private static void AllowGlfwOnAnyThread() => OpenTK.Windowing.Desktop.GLFWProvider.CheckForMainThread = false;
 
     /// <summary>
     /// Installs Pharos's hooks on game methods before anything in the process boots. A method the
@@ -307,6 +313,12 @@ public static class HeadlessPlatformResolver
             {
             }
         }
+
+        // A tool shim or dotnet.exe can live elsewhere. Keep Mesa loaded for the process lifetime
+        // so GLFW finds it instead of system OpenGL, and resolve its dependencies beside the DLL.
+        NativeLibrary.Load(Path.GetFullPath(Path.Combine(libDir, "opengl32.dll")),
+            typeof(HeadlessPlatformResolver).Assembly,
+            DllImportSearchPath.UseDllDirectoryForDependencies | DllImportSearchPath.SafeDirectories);
     }
 
     internal static void LinkOrCopyDirectory(string sourceDir, string targetDir, string fingerprint)

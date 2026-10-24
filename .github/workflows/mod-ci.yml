@@ -1,0 +1,209 @@
+name: Pharos mod CI
+
+# A reusable workflow that runs a mod's Pharos tests. A mod's repository calls it:
+#
+#   jobs:
+#     pharos:
+#       uses: Zaldaryon/Pharos/.github/workflows/mod-ci.yml@main
+#       with:
+#         test-project: MyMod.Tests/MyMod.Tests.csproj
+#
+# `dotnet new pharos-ci` writes that file. Each OS in `os` gets a job: it installs the game, builds
+# the test project, optionally smoke-tests the mod, runs the tests with `pharos run --parallel`, and
+# uploads the results, the report and the failure artifacts. See docs/templates.md.
+
+on:
+  workflow_call:
+    inputs:
+      test-project:
+        description: The test project, relative to the repository root.
+        type: string
+        required: true
+      game-version:
+        description: The Vintage Story version to install, such as 1.22.7.
+        type: string
+        default: "1.22.7"
+      os:
+        description: A JSON list of runners, such as '["ubuntu-latest", "windows-latest"]'.
+        type: string
+        default: '["ubuntu-latest"]'
+      parallel:
+        description: How many test workers pharos run starts at once.
+        type: number
+        default: 2
+      filter:
+        description: A dotnet test filter, such as Category=Live. Empty runs every test.
+        type: string
+        default: ""
+      smoke:
+        description: Whether to run pharos smoke on the mod before the tests.
+        type: boolean
+        default: false
+      smoke-mod:
+        description: The mod folder or zip pharos smoke loads. Empty takes the test project's PharosModPath.
+        type: string
+        default: ""
+      upload-artifacts:
+        description: Whether to upload the results, the report and the failure artifacts.
+        type: boolean
+        default: true
+      artifact-name:
+        description: The start of the uploaded artifact's name, to which the OS and the attempt are added.
+        type: string
+        default: pharos
+      timeout-scale:
+        description: PHAROS_TIMEOUT_SCALE for the tests. Empty means 1 on Linux and 2 on Windows.
+        type: string
+        default: ""
+      dotnet-version:
+        description: The .NET SDK to install.
+        type: string
+        default: "10.0.x"
+      pharos-version:
+        description: The version of the pharos tool. Empty takes the version of Zaldaryon.Pharos the test project restores.
+        type: string
+        default: ""
+      packages:
+        description: >-
+          The name of an artifact of the calling run that holds Pharos .nupkg files of version
+          pharos-version. The test project restores them, as the PharosVersion property, and the tool
+          comes from them. For testing Pharos builds that are not released.
+        type: string
+        default: ""
+
+jobs:
+  test:
+    name: Pharos (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ${{ fromJSON(inputs.os) }}
+    defaults:
+      run:
+        shell: bash
+    env:
+      DOTNET_NOLOGO: true
+      DOTNET_CLI_TELEMETRY_OPTOUT: true
+      TEST_PROJECT: ${{ inputs.test-project }}
+      RESULTS: ${{ github.workspace }}/pharos-results
+      # Where a failing test saves its logs, screenshots and world; uploaded with the results.
+      PHAROS_ARTIFACTS: ${{ github.workspace }}/pharos-results/artifacts
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # The game setup action lives next to this workflow; take it from the same commit. The job
+      # context names this file's repository and commit, not the caller's (not on GitHub Enterprise
+      # Server; older actionlint releases do not know these properties yet).
+      - name: Require the reusable workflow's identity
+        env:
+          WORKFLOW_REPOSITORY: ${{ job.workflow_repository }}
+          WORKFLOW_SHA: ${{ job.workflow_sha }}
+        run: |
+          if [ -z "$WORKFLOW_REPOSITORY" ] || [ -z "$WORKFLOW_SHA" ]; then
+            echo "::error::This runner does not expose the reusable workflow identity (GitHub Enterprise Server is unsupported)."
+            exit 1
+          fi
+          echo "Setup action source: $WORKFLOW_REPOSITORY@$WORKFLOW_SHA"
+
+      - name: Checkout Pharos's actions
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: .pharos-ci
+          sparse-checkout: .github/actions
+          persist-credentials: false
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ inputs.dotnet-version }}
+
+      - name: Set up Vintage Story
+        uses: ./.pharos-ci/.github/actions/setup-vintage-story
+        with:
+          version: ${{ inputs.game-version }}
+
+      - name: Download Pharos packages
+        if: inputs.packages != ''
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.packages }}
+          path: ${{ runner.temp }}/pharos-packages
+
+      - name: Use the downloaded Pharos packages
+        if: inputs.packages != ''
+        env:
+          PACKAGES_VERSION: ${{ inputs.pharos-version }}
+        run: |
+          if [ -z "$PACKAGES_VERSION" ]; then
+            echo "::error::Set pharos-version to the version of the packages in ${{ inputs.packages }}."
+            exit 1
+          fi
+          echo "PharosVersion=$PACKAGES_VERSION" >> "$GITHUB_ENV"
+          echo "RestoreAdditionalProjectSources=$RUNNER_TEMP/pharos-packages" >> "$GITHUB_ENV"
+
+      - name: Build
+        run: dotnet build "$TEST_PROJECT" -c Release
+
+      - name: Install the pharos tool
+        env:
+          PHAROS_TOOL_VERSION: ${{ inputs.pharos-version }}
+        run: |
+          version="$PHAROS_TOOL_VERSION"
+          if [ -z "$version" ]; then
+            version=$(dotnet list "$TEST_PROJECT" package --include-transitive --format json \
+              | jq -r '[.. | objects | select(.id? == "Zaldaryon.Pharos") | .resolvedVersion] | first // empty')
+          fi
+          if [ -z "$version" ]; then
+            echo "::error::$TEST_PROJECT does not restore Zaldaryon.Pharos; set the pharos-version input."
+            exit 1
+          fi
+          source_arg=()
+          [ -z "${RestoreAdditionalProjectSources:-}" ] || source_arg=(--add-source "$RestoreAdditionalProjectSources")
+          dotnet tool install Zaldaryon.Pharos.Cli --tool-path "$RUNNER_TEMP/pharos-tool" --version "$version" "${source_arg[@]}"
+          echo "$RUNNER_TEMP/pharos-tool" >> "$GITHUB_PATH"
+
+      - name: Smoke-test the mod
+        if: inputs.smoke
+        env:
+          SMOKE_MOD: ${{ inputs.smoke-mod }}
+        run: |
+          mod="$SMOKE_MOD"
+          if [ -z "$mod" ]; then
+            mod=$(dotnet msbuild "$TEST_PROJECT" -p:Configuration=Release "-t:ResolveProjectReferences;PharosModUnderTest" -getProperty:PharosModPath)
+          fi
+          if [ -z "$mod" ]; then
+            echo "::error::Found no mod to smoke-test: set the smoke-mod input."
+            exit 1
+          fi
+          pharos smoke --mod "$mod" --artifacts "$RESULTS/smoke"
+
+      - name: Test
+        env:
+          TEST_FILTER: ${{ inputs.filter }}
+          PHAROS_TIMEOUT_SCALE: ${{ inputs.timeout-scale != '' && inputs.timeout-scale || (runner.os == 'Windows' && '2' || '1') }}
+        run: |
+          filter_arg=()
+          [ -z "$TEST_FILTER" ] || filter_arg=(--filter "$TEST_FILTER")
+          pharos run "$TEST_PROJECT" --no-build --parallel ${{ inputs.parallel }} "${filter_arg[@]}" \
+            --results-dir "$RESULTS" --report "$RESULTS/report"
+
+      - name: Summary
+        if: always()
+        run: |
+          if [ -f "$RESULTS/report/report.md" ]; then
+            cat "$RESULTS/report/report.md" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload results
+        if: always() && inputs.upload-artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.artifact-name }}-${{ matrix.os }}-${{ github.run_attempt }}
+          path: ${{ github.workspace }}/pharos-results
+          if-no-files-found: ignore
+          retention-days: 14

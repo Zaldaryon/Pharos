@@ -1,0 +1,56 @@
+{
+  "$schema": "http://json.schemastore.org/template",
+  "author": "Zaldaryon",
+  "classifications": ["Test", "Vintage Story", "Pharos"],
+  "identity": "Zaldaryon.Pharos.Templates.ModTests",
+  "name": "Pharos mod tests",
+  "description": "A test project that boots a Vintage Story server, and a client, with your mod and checks that it loads and plays.",
+  "shortName": "pharos-mod-tests",
+  "sourceName": "PharosModTests",
+  "preferNameDirectory": true,
+  "tags": {
+    "language": "C#",
+    "type": "project"
+  },
+  "forms": {
+    "xmlEncode": { "identifier": "xmlEncode" }
+  },
+  "symbols": {
+    "mod-project": {
+      "type": "parameter",
+      "datatype": "string",
+      "isRequired": true,
+      "description": "The mod's .csproj, relative to the new project's folder, such as ../MyMod/MyMod.csproj."
+    },
+    "modProjectXml": {
+      "type": "derived",
+      "valueSource": "mod-project",
+      "valueTransform": "xmlEncode",
+      "replaces": "MOD_PROJECT_PATH"
+    },
+    "framework": {
+      "type": "parameter",
+      "datatype": "choice",
+      "defaultValue": "xunit2",
+      "choices": [
+        { "choice": "xunit2", "description": "xUnit v2 and Zaldaryon.Pharos.XUnit." },
+        { "choice": "xunit3", "description": "xUnit v3 and Zaldaryon.Pharos.XUnit.V3 (preview)." }
+      ],
+      "description": "The test framework."
+    },
+    "client": {
+      "type": "parameter",
+      "datatype": "bool",
+      "defaultValue": "false",
+      "description": "Add a test in which an engine-mode client joins the server with the mod."
+    }
+  },
+  "sources": [
+    {
+      "modifiers": [
+        { "condition": "(!client)", "exclude": ["ClientServerTests.cs"] }
+      ]
+    }
+  ],
+  "postActions": []
+}

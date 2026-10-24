@@ -1,0 +1,9 @@
+{
+  "type": "code",
+  "metadata": { "modid": "not-the-mod-id" },
+  "ModID": "pharosexample",
+  "name": "Pharos example mod",
+  "version": "1.0.0",
+  "side": "Universal",
+  "dependencies": { "game": "" }
+}
