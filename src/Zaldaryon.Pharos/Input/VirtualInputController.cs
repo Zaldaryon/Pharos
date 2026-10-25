@@ -21,6 +21,9 @@ public sealed class VirtualInputController
     private readonly HashSet<GlKeys> _pressedGlKeys = new();
     private readonly HashSet<VirtualMouseButton> _pressedButtons = new();
 
+    /// <summary>Pharos-owned clipboard for headless Ctrl+C/Ctrl+V.</summary>
+    public ClipboardDriver Clipboard { get; } = new();
+
     /// <summary>
     /// Where injected input goes besides this controller's own state. An engine-mode client sets
     /// it so every injected event reaches the game the way real input does; without one, the
@@ -191,12 +194,23 @@ public sealed class VirtualInputController
     }
 
     /// <summary>
-    /// Types <paramref name="text"/> character by character, as text input into whatever has the
-    /// keyboard focus, a chat line or a text field.
+    /// Types <paramref name="text"/> as text input into whatever has the keyboard focus, a chat line
+    /// or a text field. <see cref="TextInputMode.PerCodePoint"/> sends one key press per code unit,
+    /// as a keyboard does; <see cref="TextInputMode.ImeCommit"/> commits the whole string at once,
+    /// as an input method does.
     /// </summary>
-    public void TypeText(string text)
+    public void TypeText(string text, TextInputMode mode = TextInputMode.PerCodePoint)
     {
         ArgumentNullException.ThrowIfNull(text);
+        if (mode == TextInputMode.ImeCommit)
+        {
+            foreach (char c in text)
+            {
+                Sink?.KeyPress(c);
+            }
+            return;
+        }
+
         foreach (char c in text)
         {
             Sink?.KeyPress(c);
