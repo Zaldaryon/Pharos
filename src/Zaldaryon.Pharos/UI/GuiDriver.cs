@@ -97,6 +97,11 @@ public sealed class GuiDriver
     /// <summary>A generic driver for the block-entity dialog at <paramref name="pos"/>, if open.</summary>
     public BlockEntityDialogDriver BlockEntity(BlockPos pos) => new BlockEntityDialogDriver(_client, pos);
 
+    /// <summary>Drives inventory slot gestures through real mouse input.</summary>
+    public SlotsDriver Slots => _slots ??= new SlotsDriver(_client);
+
+    private SlotsDriver? _slots;
+
     /// <summary>The dialogs currently open, HUD elements included.</summary>
     public IReadOnlyList<GuiDialogInfo> OpenDialogs() => _client.RunOnClientThread(() =>
         _client.Client.api.Gui.OpenedGuis
