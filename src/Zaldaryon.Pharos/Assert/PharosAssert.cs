@@ -2105,4 +2105,12 @@ public static class PharosAssert
         if (!string.Equals(typed, stored, StringComparison.Ordinal))
             throw new PharosAssertException($"Text did not round-trip: typed '{typed}', stored '{stored}'.");
     }
+
+    /// <summary>Fails if any recorded sound is still playing (leaked loop).</summary>
+    public static void NoLeakedSounds(HeadlessClient client)
+    {
+        var leaked = client.Sounds.StillPlaying;
+        if (leaked.Count > 0)
+            throw new PharosAssertException($"{leaked.Count} sound(s) still playing: {string.Join(", ", leaked.Select(s => s.Location))}.");
+    }
 }

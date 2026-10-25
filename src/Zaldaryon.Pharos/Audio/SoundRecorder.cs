@@ -68,6 +68,25 @@ public sealed class SoundRecorder
     public IReadOnlyList<RecordedSound> Played(string locationFragment) =>
         Started.Where(s => s.Location.Contains(locationFragment, StringComparison.OrdinalIgnoreCase)).ToList();
 
+    /// <summary>
+    /// Computes the gain a listener at <paramref name="listener"/> would hear for <paramref name="sound"/>,
+    /// using OpenAL's inverse-distance-clamped model: gain = volume * clamp(range / distance, 0, 1) * level.
+    /// </summary>
+    public float Audibility(RecordedSound sound, Vec3f listener, float level = 1f)
+    {
+        if (sound.Position == null) return sound.Volume * level;
+        float dx = sound.Position.X - listener.X;
+        float dy = sound.Position.Y - listener.Y;
+        float dz = sound.Position.Z - listener.Z;
+        float distance = MathF.Sqrt(dx * dx + dy * dy + dz * dz);
+        if (distance <= 0f) return sound.Volume * level;
+        float gain = sound.Volume * Math.Clamp(sound.Range / distance, 0f, 1f) * level;
+        return gain;
+    }
+
+    /// <summary>Sounds that are still playing (loops never stopped). Empty when none leaked.</summary>
+    public IReadOnlyList<RecordedSound> StillPlaying => Started.Where(s => s.Loop).ToList();
+
     /// <summary>Forgets everything recorded so far.</summary>
     public void Clear()
     {
