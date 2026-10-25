@@ -54,7 +54,7 @@ using WorldOptions = global::Atlas.Api.WorldOptions;
 
 namespace Zaldaryon.Pharos.Docs.Generated.mod_loading.Snippet_1
 {
-    using Zaldaryon.Pharos.Mods;
+using Zaldaryon.Pharos.Mods;
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -93,7 +93,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.mod_loading.Snippet_1
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 7 "docs/mod-loading.md"
@@ -111,7 +111,7 @@ PharosAssert.NoModErrors(Server);
 
 namespace Zaldaryon.Pharos.Docs.Generated.mod_loading.Snippet_2
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -150,7 +150,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.mod_loading.Snippet_2
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 28 "docs/mod-loading.md"
@@ -165,7 +165,7 @@ Assert.Empty(Server.Mods.MissingDependencies);
 
 namespace Zaldaryon.Pharos.Docs.Generated.mod_loading.Snippet_3
 {
-    using Zaldaryon.Pharos.Mods;
+using Zaldaryon.Pharos.Mods;
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -204,7 +204,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.mod_loading.Snippet_3
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 46 "docs/mod-loading.md"
@@ -219,7 +219,7 @@ Assert.True(late.PhaseMs.ContainsKey(ModRunPhase.Start));
 
 namespace Zaldaryon.Pharos.Docs.Generated.mod_loading.Snippet_4
 {
-    using Zaldaryon.Pharos.Mods;
+using Zaldaryon.Pharos.Mods;
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -258,7 +258,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.mod_loading.Snippet_4
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 75 "docs/mod-loading.md"
@@ -272,7 +272,7 @@ Assert.Contains(mine, patch => patch.Outcome == PatchOutcome.NotFound && patch.T
 
 namespace Zaldaryon.Pharos.Docs.Generated.mod_loading.Snippet_5
 {
-    using Zaldaryon.Pharos.Mods;
+using Zaldaryon.Pharos.Mods;
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -311,7 +311,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.mod_loading.Snippet_5
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 101 "docs/mod-loading.md"

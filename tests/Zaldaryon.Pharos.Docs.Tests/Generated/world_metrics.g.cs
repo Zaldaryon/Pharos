@@ -54,7 +54,7 @@ using WorldOptions = global::Atlas.Api.WorldOptions;
 
 namespace Zaldaryon.Pharos.Docs.Generated.world_metrics.Snippet_1
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -93,7 +93,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.world_metrics.Snippet_1
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 8 "docs/world-metrics.md"
@@ -108,7 +108,7 @@ Assert.True(worldgen.Mod("mymod").MeanMsPerColumn < 20);
 
 namespace Zaldaryon.Pharos.Docs.Generated.world_metrics.Snippet_2
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -147,7 +147,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.world_metrics.Snippet_2
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 22 "docs/world-metrics.md"
@@ -162,7 +162,7 @@ Console.WriteLine($"{expensive.Stage} {expensive.Owner} {expensive.Handler}: {ex
 
 namespace Zaldaryon.Pharos.Docs.Generated.world_metrics.Snippet_3
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -201,7 +201,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.world_metrics.Snippet_3
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 62 "docs/world-metrics.md"
@@ -217,7 +217,7 @@ save.Publish();
 
 namespace Zaldaryon.Pharos.Docs.Generated.world_metrics.Snippet_4
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -256,7 +256,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.world_metrics.Snippet_4
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 98 "docs/world-metrics.md"
@@ -271,7 +271,7 @@ Assert.Equal(stats.BlockEntitiesByType.Values.Sum(), stats.BlockEntities);
 
 namespace Zaldaryon.Pharos.Docs.Generated.world_metrics.Snippet_5
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -310,7 +310,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.world_metrics.Snippet_5
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 122 "docs/world-metrics.md"

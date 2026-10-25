@@ -54,7 +54,7 @@ using WorldOptions = global::Atlas.Api.WorldOptions;
 
 namespace Zaldaryon.Pharos.Docs.Generated.spoilage.Snippet_1
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -93,7 +93,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.spoilage.Snippet_1
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 11 "docs/spoilage.md"
@@ -110,7 +110,7 @@ Assert.Equal(0, perish!.TransitionLevel, 3);
 
 namespace Zaldaryon.Pharos.Docs.Generated.spoilage.Snippet_2
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -149,7 +149,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.spoilage.Snippet_2
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 28 "docs/spoilage.md"
@@ -165,7 +165,7 @@ Assert.Equal("game:rot", slot.Itemstack?.Collectible.Code.ToString());
 
 namespace Zaldaryon.Pharos.Docs.Generated.spoilage.Snippet_3
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -204,7 +204,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.spoilage.Snippet_3
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 43 "docs/spoilage.md"
@@ -219,7 +219,7 @@ float container = Server.Items.ContainerTransitionRate(slot, EnumTransitionType.
 
 namespace Zaldaryon.Pharos.Docs.Generated.spoilage.Snippet_4
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -258,7 +258,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.spoilage.Snippet_4
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 52 "docs/spoilage.md"
@@ -272,7 +272,7 @@ PharosAssert.SpoilsWithin(Server, slot, days: 5, tolerance: 0.5);
 
 namespace Zaldaryon.Pharos.Docs.Generated.spoilage.Snippet_5
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -311,7 +311,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.spoilage.Snippet_5
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 62 "docs/spoilage.md"

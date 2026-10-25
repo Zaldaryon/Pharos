@@ -54,7 +54,7 @@ using WorldOptions = global::Atlas.Api.WorldOptions;
 
 namespace Zaldaryon.Pharos.Docs.Generated.engine_mode.Snippet_1
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -93,7 +93,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.engine_mode.Snippet_1
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 7 "docs/engine-mode.md"
@@ -116,7 +116,7 @@ FramebufferSnapshot frame = client.CaptureFrame();
 
 namespace Zaldaryon.Pharos.Docs.Generated.engine_mode.Snippet_2
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -155,7 +155,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.engine_mode.Snippet_2
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 66 "docs/engine-mode.md"
@@ -175,7 +175,7 @@ client.Input.Click(320, 180);                        // move the cursor and clic
 
 namespace Zaldaryon.Pharos.Docs.Generated.engine_mode.Snippet_3
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -214,7 +214,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.engine_mode.Snippet_3
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 83 "docs/engine-mode.md"
@@ -229,7 +229,7 @@ client.Controls.Release(PlayerAction.Jump);
 
 namespace Zaldaryon.Pharos.Docs.Generated.engine_mode.Snippet_4
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -268,7 +268,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.engine_mode.Snippet_4
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 91 "docs/engine-mode.md"
@@ -284,7 +284,7 @@ await session.Blocks.AimAtAsync(pos, BlockFacing.NORTH); // just aim
 
 namespace Zaldaryon.Pharos.Docs.Generated.engine_mode.Snippet_5
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -323,7 +323,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.engine_mode.Snippet_5
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 108 "docs/engine-mode.md"
@@ -343,7 +343,7 @@ bool open = client.Ui.IsOpen("GuiDialogCharacter");
 
 namespace Zaldaryon.Pharos.Docs.Generated.engine_mode.Snippet_6
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -382,7 +382,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.engine_mode.Snippet_6
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 123 "docs/engine-mode.md"
@@ -397,7 +397,7 @@ await session.StepUntilAsync(() => /* server sees the stack in slot 3 */ true);
 
 namespace Zaldaryon.Pharos.Docs.Generated.engine_mode.Snippet_7
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -436,7 +436,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.engine_mode.Snippet_7
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 136 "docs/engine-mode.md"
@@ -467,7 +467,7 @@ await character.EquipAsync(hotbarSlot: 2, EnumCharacterDressType.ArmorBody);
 
 namespace Zaldaryon.Pharos.Docs.Generated.engine_mode.Snippet_8
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -506,7 +506,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.engine_mode.Snippet_8
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 254 "docs/engine-mode.md"
@@ -524,7 +524,7 @@ Assert.NotNull(planks.Position);
 
 namespace Zaldaryon.Pharos.Docs.Generated.engine_mode.Snippet_9
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -563,7 +563,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.engine_mode.Snippet_9
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 269 "docs/engine-mode.md"
@@ -581,7 +581,7 @@ client.NetworkDegradation.Configure(new DegradedNetworkProfile(LatencyMs: 200, J
 
 namespace Zaldaryon.Pharos.Docs.Generated.engine_mode.Snippet_10
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -620,7 +620,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.engine_mode.Snippet_10
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 294 "docs/engine-mode.md"
@@ -635,7 +635,7 @@ Assert.True(Client!.IsJoined);
 
 namespace Zaldaryon.Pharos.Docs.Generated.engine_mode.Snippet_11
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -674,7 +674,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.engine_mode.Snippet_11
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 319 "docs/engine-mode.md"
@@ -690,7 +690,7 @@ Assert.Contains(BridgeChannel.Active.DrainAll(), e => e.ScreenName == "GuiDialog
 
 namespace Zaldaryon.Pharos.Docs.Generated.engine_mode.Snippet_12
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -729,7 +729,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.engine_mode.Snippet_12
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 332 "docs/engine-mode.md"
@@ -743,7 +743,7 @@ Assert.Empty(serverHost.Logs.UnexpectedErrors(["known vanilla noise"]));
 
 namespace Zaldaryon.Pharos.Docs.Generated.engine_mode.Snippet_13
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -792,7 +792,7 @@ protected override IEnumerable<string> AllowedLoggedErrors => ["Failed to load o
 
 namespace Zaldaryon.Pharos.Docs.Generated.engine_mode.Snippet_14
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -831,7 +831,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.engine_mode.Snippet_14
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 350 "docs/engine-mode.md"
@@ -847,7 +847,7 @@ using (client.Settings.Apply(ClientSettingsProfile.Of("far", ("viewDistance", 25
 
 namespace Zaldaryon.Pharos.Docs.Generated.engine_mode.Snippet_15
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -900,7 +900,7 @@ public async Task WorldRenders(ClientSettingsProfile profile)
 
 namespace Zaldaryon.Pharos.Docs.Generated.engine_mode.Snippet_16
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -939,7 +939,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.engine_mode.Snippet_16
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 374 "docs/engine-mode.md"
@@ -957,7 +957,7 @@ Assert.Null(Client.Hotkeys.ConflictWith("mymod:openpanel"));
 
 namespace Zaldaryon.Pharos.Docs.Generated.engine_mode.Snippet_17
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -996,7 +996,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.engine_mode.Snippet_17
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 398 "docs/engine-mode.md"
@@ -1014,7 +1014,7 @@ Assert.True(Client.Commands.Exists("mymod"));
 
 namespace Zaldaryon.Pharos.Docs.Generated.engine_mode.Snippet_18
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -1053,7 +1053,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.engine_mode.Snippet_18
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 428 "docs/engine-mode.md"
@@ -1067,7 +1067,7 @@ Assert.Equal(1280, client.CaptureFrame().Width);
 
 namespace Zaldaryon.Pharos.Docs.Generated.engine_mode.Snippet_19
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -1126,7 +1126,7 @@ public async Task PanelFitsOnScreen(WindowLayout layout)
 
 namespace Zaldaryon.Pharos.Docs.Generated.engine_mode.Snippet_20
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -1165,7 +1165,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.engine_mode.Snippet_20
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 485 "docs/engine-mode.md"
@@ -1179,7 +1179,7 @@ Assert.Equal("ok", (await client.Commands.ExecuteSuccessAsync(".mymod shaderstat
 
 namespace Zaldaryon.Pharos.Docs.Generated.engine_mode.Snippet_21
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -1218,7 +1218,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.engine_mode.Snippet_21
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 505 "docs/engine-mode.md"
@@ -1237,7 +1237,7 @@ Assert.Empty(client.Lang.MissingKeysOf("mymod"));
 
 namespace Zaldaryon.Pharos.Docs.Generated.engine_mode.Snippet_22
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -1276,7 +1276,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.engine_mode.Snippet_22
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 538 "docs/engine-mode.md"

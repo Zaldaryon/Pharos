@@ -54,7 +54,7 @@ using WorldOptions = global::Atlas.Api.WorldOptions;
 
 namespace Zaldaryon.Pharos.Docs.Generated.migrating_from_atlas.Snippet_1
 {
-    using Atlas.Api;
+using Atlas.Api;
 using Atlas.XUnit;
 using WorldOptions = global::Atlas.Api.WorldOptions;
 using global::Atlas.Api;
@@ -94,7 +94,7 @@ public class InventoryTests : AtlasScenarioBase
 
 namespace Zaldaryon.Pharos.Docs.Generated.migrating_from_atlas.Snippet_2
 {
-    using Zaldaryon.Pharos.Server;
+using Zaldaryon.Pharos.Server;
 using Zaldaryon.Pharos.XUnit;
 using WorldOptions = global::Atlas.Api.WorldOptions;
 using global::Atlas.Api;
@@ -134,7 +134,7 @@ public class InventoryTests : ServerScenarioBase
 
 namespace Zaldaryon.Pharos.Docs.Generated.migrating_from_atlas.Snippet_3_Outer
 {
-    
+
 using WorldOptions = global::Atlas.Api.WorldOptions;
 using global::Atlas.Api;
 using global::Atlas.XUnit;
@@ -144,14 +144,14 @@ namespace Atlas.Api
     // Wraps EmbeddedServerHost
     public interface IWorldSession { }
     public class WorldSession : IWorldSession { }
-    
+
     // Alias for ServerWorldOptions
     public record WorldOptions { }
-    
+
     // Wraps IServerTestPlayer  
     public interface ITestPlayer { }
     public class TestPlayerAdapter : ITestPlayer { }
-    
+
     // Wraps Pharos CommandResult
     public class CommandResult { }
 }
@@ -161,7 +161,7 @@ namespace Atlas.Api
 
 namespace Zaldaryon.Pharos.Docs.Generated.migrating_from_atlas.Snippet_4_Outer
 {
-    
+
 using WorldOptions = global::Atlas.Api.WorldOptions;
 using global::Atlas.Api;
 using global::Atlas.XUnit;
@@ -171,18 +171,18 @@ namespace Atlas.XUnit
     // Equivalent to ServerScenarioAttribute
     [AttributeUsage(AttributeTargets.Method)]
     public class AtlasScenarioAttribute : FactAttribute { }
-    
+
     // Equivalent to ServerTheoryAttribute
     [AttributeUsage(AttributeTargets.Method)]
     public class AtlasTheoryAttribute : TheoryAttribute { }
-    
+
     // Equivalent to ServerScenarioBase
     public abstract class AtlasScenarioBase : ServerScenarioBase { }
-    
+
     // Equivalent to ServerWorldAttribute
     [AttributeUsage(AttributeTargets.Class | AttributeTargets.Method)]
     public class AtlasWorldAttribute : Attribute { }
-    
+
     // Equivalent to ServerModsAttribute
     [AttributeUsage(AttributeTargets.Class | AttributeTargets.Assembly)]
     public class AtlasModsAttribute : Attribute { }
@@ -193,7 +193,7 @@ namespace Atlas.XUnit
 
 namespace Zaldaryon.Pharos.Docs.Generated.migrating_from_atlas.Snippet_5
 {
-    using Atlas.Api;
+using Atlas.Api;
 using Zaldaryon.Pharos.Server;
 using Zaldaryon.Pharos.XUnit;
 using WorldOptions = global::Atlas.Api.WorldOptions;
@@ -202,7 +202,7 @@ using global::Atlas.XUnit;
     public class ScenarioContainer
     {
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 262 "docs/migrating-from-atlas.md"

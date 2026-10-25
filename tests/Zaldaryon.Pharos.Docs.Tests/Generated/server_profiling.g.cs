@@ -54,7 +54,7 @@ using WorldOptions = global::Atlas.Api.WorldOptions;
 
 namespace Zaldaryon.Pharos.Docs.Generated.server_profiling.Snippet_1
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -110,7 +110,7 @@ public async Task TheQuernDoesNotCostMoreThanHalfAMillisecond()
 
 namespace Zaldaryon.Pharos.Docs.Generated.server_profiling.Snippet_2
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -149,7 +149,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.server_profiling.Snippet_2
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 123 "docs/server-profiling.md"
@@ -163,7 +163,7 @@ PharosAssert.TickCostBelow(profile, "mymod", 0.5);
 
 namespace Zaldaryon.Pharos.Docs.Generated.server_profiling.Snippet_3
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -202,7 +202,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.server_profiling.Snippet_3
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 133 "docs/server-profiling.md"

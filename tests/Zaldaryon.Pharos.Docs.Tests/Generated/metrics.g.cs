@@ -54,7 +54,7 @@ using WorldOptions = global::Atlas.Api.WorldOptions;
 
 namespace Zaldaryon.Pharos.Docs.Generated.metrics.Snippet_1
 {
-    using Zaldaryon.Pharos.Metrics;
+using Zaldaryon.Pharos.Metrics;
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -114,7 +114,7 @@ public void Forge_smelts_a_stack()
 
 namespace Zaldaryon.Pharos.Docs.Generated.metrics.Snippet_2
 {
-    using Zaldaryon.Pharos.Metrics;
+using Zaldaryon.Pharos.Metrics;
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -167,7 +167,7 @@ public void Forge_smelts_a_stack()
 
 namespace Zaldaryon.Pharos.Docs.Generated.metrics.Snippet_3
 {
-    using Zaldaryon.Pharos.Bridge;
+using Zaldaryon.Pharos.Bridge;
     public class ScenarioContainer : ClientServerScenarioBase
     {
 

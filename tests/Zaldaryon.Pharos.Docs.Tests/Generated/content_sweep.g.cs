@@ -54,7 +54,7 @@ using WorldOptions = global::Atlas.Api.WorldOptions;
 
 namespace Zaldaryon.Pharos.Docs.Generated.content_sweep.Snippet_1
 {
-    using Zaldaryon.Pharos.Content;
+using Zaldaryon.Pharos.Content;
 #line 7 "docs/content-sweep.md"
 [ServerWorld(Preset = WorldPreset.SurvivalFlat)]
 [ServerMods("mods/MyMod")]
@@ -75,7 +75,7 @@ public class MyModContentTests : ServerScenarioBase
 
 namespace Zaldaryon.Pharos.Docs.Generated.content_sweep.Snippet_2
 {
-    using Zaldaryon.Pharos.Content;
+using Zaldaryon.Pharos.Content;
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -114,7 +114,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.content_sweep.Snippet_2
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 35 "docs/content-sweep.md"
@@ -132,7 +132,7 @@ Assert.Equal(
 
 namespace Zaldaryon.Pharos.Docs.Generated.content_sweep.Snippet_3
 {
-    using Zaldaryon.Pharos.Content;
+using Zaldaryon.Pharos.Content;
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -171,7 +171,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.content_sweep.Snippet_3
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 86 "docs/content-sweep.md"

@@ -54,7 +54,7 @@ using WorldOptions = global::Atlas.Api.WorldOptions;
 
 namespace Zaldaryon.Pharos.Docs.Generated.admin.Snippet_1
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -93,7 +93,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.admin.Snippet_1
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 12 "docs/admin.md"
@@ -108,7 +108,7 @@ Assert.True(Server.Admin.IsWhitelisted("Bob"));
 
 namespace Zaldaryon.Pharos.Docs.Generated.admin.Snippet_2
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -147,7 +147,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.admin.Snippet_2
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 25 "docs/admin.md"
@@ -162,7 +162,7 @@ Assert.NotNull(Server.Admin.BanOf("Mallory"));
 
 namespace Zaldaryon.Pharos.Docs.Generated.admin.Snippet_3
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -201,7 +201,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.admin.Snippet_3
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 35 "docs/admin.md"
@@ -216,7 +216,7 @@ await SucceedWhenAsync(() => Assert.False(player.IsConnected), maxTicks: 200);
 
 namespace Zaldaryon.Pharos.Docs.Generated.admin.Snippet_4
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -255,7 +255,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.admin.Snippet_4
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 46 "docs/admin.md"
@@ -270,7 +270,7 @@ Assert.False(outcome.Accepted);
 
 namespace Zaldaryon.Pharos.Docs.Generated.admin.Snippet_5
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -309,7 +309,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.admin.Snippet_5
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 57 "docs/admin.md"

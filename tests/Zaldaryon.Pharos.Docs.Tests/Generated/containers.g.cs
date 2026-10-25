@@ -54,7 +54,7 @@ using WorldOptions = global::Atlas.Api.WorldOptions;
 
 namespace Zaldaryon.Pharos.Docs.Generated.containers.Snippet_1
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -93,7 +93,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.containers.Snippet_1
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 12 "docs/containers.md"
@@ -110,7 +110,7 @@ Assert.Equal(64, container.Count("game:ingot-copper"));
 
 namespace Zaldaryon.Pharos.Docs.Generated.containers.Snippet_2
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -149,7 +149,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.containers.Snippet_2
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 30 "docs/containers.md"
@@ -165,7 +165,7 @@ Assert.Equal(64, before.Count("game:ingot-copper"));
 
 namespace Zaldaryon.Pharos.Docs.Generated.containers.Snippet_3
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -204,7 +204,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.containers.Snippet_3
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 39 "docs/containers.md"
@@ -220,7 +220,7 @@ PharosAssert.ItemsConserved(before, Server.Inventories.Totals(chest, radius: 8))
 
 namespace Zaldaryon.Pharos.Docs.Generated.containers.Snippet_4
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -259,7 +259,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.containers.Snippet_4
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 51 "docs/containers.md"
@@ -275,7 +275,7 @@ Assert.Contains(report.Moves, move => move.Code == "game:ingot-copper" && move.Q
 
 namespace Zaldaryon.Pharos.Docs.Generated.containers.Snippet_5
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -314,7 +314,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.containers.Snippet_5
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 66 "docs/containers.md"

@@ -54,7 +54,7 @@ using WorldOptions = global::Atlas.Api.WorldOptions;
 
 namespace Zaldaryon.Pharos.Docs.Generated.animals.Snippet_1
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -93,7 +93,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.animals.Snippet_1
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 12 "docs/animals.md"
@@ -109,7 +109,7 @@ Assert.False(state.Breeding!.IsPregnant);
 
 namespace Zaldaryon.Pharos.Docs.Generated.animals.Snippet_2
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -148,7 +148,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.animals.Snippet_2
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 26 "docs/animals.md"
@@ -162,7 +162,7 @@ Server.Animals.Feed(hen, portions: 3);
 
 namespace Zaldaryon.Pharos.Docs.Generated.animals.Snippet_3
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -201,7 +201,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.animals.Snippet_3
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 37 "docs/animals.md"
@@ -218,7 +218,7 @@ Assert.NotEmpty(chicks);
 
 namespace Zaldaryon.Pharos.Docs.Generated.animals.Snippet_4
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -257,7 +257,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.animals.Snippet_4
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 50 "docs/animals.md"
@@ -273,7 +273,7 @@ Assert.NotNull(adult);
 
 namespace Zaldaryon.Pharos.Docs.Generated.animals.Snippet_5
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -312,7 +312,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.animals.Snippet_5
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 62 "docs/animals.md"

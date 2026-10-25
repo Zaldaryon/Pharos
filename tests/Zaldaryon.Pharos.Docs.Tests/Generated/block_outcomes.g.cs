@@ -54,7 +54,7 @@ using WorldOptions = global::Atlas.Api.WorldOptions;
 
 namespace Zaldaryon.Pharos.Docs.Generated.block_outcomes.Snippet_1
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -93,7 +93,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.block_outcomes.Snippet_1
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 11 "docs/block-outcomes.md"
@@ -108,7 +108,7 @@ Assert.True(drops.Total("game:plantdebris-leafy") > 0);
 
 namespace Zaldaryon.Pharos.Docs.Generated.block_outcomes.Snippet_2
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -147,7 +147,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.block_outcomes.Snippet_2
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 29 "docs/block-outcomes.md"
@@ -162,7 +162,7 @@ Assert.NotEmpty(dropped);
 
 namespace Zaldaryon.Pharos.Docs.Generated.block_outcomes.Snippet_3
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -201,7 +201,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.block_outcomes.Snippet_3
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 40 "docs/block-outcomes.md"
@@ -217,7 +217,7 @@ Assert.NotEmpty(report.Destroyed);
 
 namespace Zaldaryon.Pharos.Docs.Generated.block_outcomes.Snippet_4
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -256,7 +256,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.block_outcomes.Snippet_4
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 55 "docs/block-outcomes.md"
@@ -272,7 +272,7 @@ Assert.True(contact.EntityId > 0);
 
 namespace Zaldaryon.Pharos.Docs.Generated.block_outcomes.Snippet_5
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -311,7 +311,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.block_outcomes.Snippet_5
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 68 "docs/block-outcomes.md"

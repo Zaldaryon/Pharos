@@ -54,7 +54,7 @@ using WorldOptions = global::Atlas.Api.WorldOptions;
 
 namespace Zaldaryon.Pharos.Docs.Generated.multiplayer.Snippet_1
 {
-    using Zaldaryon.Pharos.Server;
+using Zaldaryon.Pharos.Server;
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -93,7 +93,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.multiplayer.Snippet_1
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 5 "docs/multiplayer.md"
@@ -108,7 +108,7 @@ ServerTestPlayer[] crowd = await CreateTestPlayersAsync(12, PlayerLayout.Ring(ce
 
 namespace Zaldaryon.Pharos.Docs.Generated.multiplayer.Snippet_2
 {
-    using ProtoBuf;
+using ProtoBuf;
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -148,23 +148,22 @@ namespace Zaldaryon.Pharos.Docs.Generated.multiplayer.Snippet_2
         protected HeadlessClient client => Client;
 
         [ProtoContract] public class ClaimRequest { [ProtoMember(1)] public int X { get; set; } [ProtoMember(2)] public int Z { get; set; } }
-[ProtoContract] public class ClaimReply { [ProtoMember(1)] public int Result { get; set; } }
+        [ProtoContract] public class ClaimReply { [ProtoMember(1)] public int Result { get; set; } }
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 19 "docs/multiplayer.md"
-            
-var crowd = await CreateTestPlayersAsync(2, PlayerLayout.Ring(Server.DefaultSpawnPosition.XYZ, 8));
-using ServerModMessageLog messages = Server.ModNetwork.Record("mymod");
-await crowd[0].ModNetwork.SendAsync("mymod", new ClaimRequest { X = 5, Z = 5 });
+            var crowd = await CreateTestPlayersAsync(2, PlayerLayout.Ring(Server.DefaultSpawnPosition.XYZ, 8));
+            using ServerModMessageLog messages = Server.ModNetwork.Record("mymod");
+            await crowd[0].ModNetwork.SendAsync("mymod", new ClaimRequest { X = 5, Z = 5 });
 
-var request = messages.Received<ClaimRequest>().Single();
-Assert.Equal(crowd[0].PlayerUID, request.Envelope.PlayerUID);
-Assert.Equal(5, request.Message.X);
+            var request = messages.Received<ClaimRequest>().Single();
+            Assert.Equal(crowd[0].PlayerUID, request.Envelope.PlayerUID);
+            Assert.Equal(5, request.Message.X);
 
-foreach (var reply in messages.Sent<ClaimReply>())
-    Assert.True(reply.Envelope.Sequence > request.Envelope.Sequence);
+            foreach (var reply in messages.Sent<ClaimReply>())
+                Assert.True(reply.Envelope.Sequence > request.Envelope.Sequence);
 #line default
         }
     }
@@ -173,7 +172,7 @@ foreach (var reply in messages.Sent<ClaimReply>())
 
 namespace Zaldaryon.Pharos.Docs.Generated.multiplayer.Snippet_3
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -212,7 +211,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.multiplayer.Snippet_3
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 47 "docs/multiplayer.md"
@@ -228,7 +227,7 @@ Assert.Contains(entities, entity => entity.EntityId == crowd[1].Entity!.EntityId
 
 namespace Zaldaryon.Pharos.Docs.Generated.multiplayer.Snippet_4
 {
-    using ProtoBuf;
+using ProtoBuf;
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -269,16 +268,15 @@ namespace Zaldaryon.Pharos.Docs.Generated.multiplayer.Snippet_4
 
         [ProtoContract] public class BellRung { [ProtoMember(1)] public int Value { get; set; } }
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 58 "docs/multiplayer.md"
-            
-var crowd = await CreateTestPlayersAsync(2, PlayerLayout.Ring(Server.DefaultSpawnPosition.XYZ, 8));
-var bellPos = Server.DefaultSpawnPosition.AsBlockPos;
-using var messages = Server.ModNetwork.Record("mymod");
-await crowd[0].Bot.UseBlockAsync(bellPos);
-PharosAssert.OnlyNearbyReceived(messages.Sent<BellRung>(), center: bellPos, radius: 32);
+            var crowd = await CreateTestPlayersAsync(2, PlayerLayout.Ring(Server.DefaultSpawnPosition.XYZ, 8));
+            var bellPos = Server.DefaultSpawnPosition.AsBlockPos;
+            using var messages = Server.ModNetwork.Record("mymod");
+            await crowd[0].Bot.UseBlockAsync(bellPos);
+            PharosAssert.OnlyNearbyReceived(messages.Sent<BellRung>(), center: bellPos, radius: 32);
 #line default
         }
     }
@@ -287,7 +285,7 @@ PharosAssert.OnlyNearbyReceived(messages.Sent<BellRung>(), center: bellPos, radi
 
 namespace Zaldaryon.Pharos.Docs.Generated.multiplayer.Snippet_5
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -326,7 +324,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.multiplayer.Snippet_5
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 76 "docs/multiplayer.md"

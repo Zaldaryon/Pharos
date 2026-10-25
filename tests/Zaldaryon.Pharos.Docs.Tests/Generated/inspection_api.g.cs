@@ -54,7 +54,7 @@ using WorldOptions = global::Atlas.Api.WorldOptions;
 
 namespace Zaldaryon.Pharos.Docs.Generated.inspection_api.Snippet_1
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -93,7 +93,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.inspection_api.Snippet_1
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 16 "docs/inspection-api.md"
@@ -108,7 +108,7 @@ Assert.Equal(30, await Client.Renderers.CountCallsAsync(mine, frames: 30));
 
 namespace Zaldaryon.Pharos.Docs.Generated.inspection_api.Snippet_2
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -147,7 +147,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.inspection_api.Snippet_2
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 39 "docs/inspection-api.md"
@@ -162,7 +162,7 @@ int calls = await Client.TickListeners.CountCallsAsync(listener, frames: 120);
 
 namespace Zaldaryon.Pharos.Docs.Generated.inspection_api.Snippet_3
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -201,7 +201,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.inspection_api.Snippet_3
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 59 "docs/inspection-api.md"
@@ -221,7 +221,7 @@ Assert.True(Client.Particles.Alive(EnumParticleModel.Quad) > 0);
 
 namespace Zaldaryon.Pharos.Docs.Generated.inspection_api.Snippet_4
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -260,7 +260,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.inspection_api.Snippet_4
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 84 "docs/inspection-api.md"
@@ -274,7 +274,7 @@ Assert.Equal(expectedBlocks, marked.Positions);
 
 namespace Zaldaryon.Pharos.Docs.Generated.inspection_api.Snippet_5
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -313,7 +313,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.inspection_api.Snippet_5
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 102 "docs/inspection-api.md"
@@ -331,7 +331,7 @@ PharosAssert.EventOrder(log, typeof(BlockPlaced), EventMatch.Of<EntityDied>(e =>
 
 namespace Zaldaryon.Pharos.Docs.Generated.inspection_api.Snippet_6
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -370,7 +370,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.inspection_api.Snippet_6
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 210 "docs/inspection-api.md"
@@ -385,7 +385,7 @@ GoldenImageAssertion.Assert(client.Items.RenderIcon(sword, 64), "Goldens/sword-i
 
 namespace Zaldaryon.Pharos.Docs.Generated.inspection_api.Snippet_7
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -424,7 +424,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.inspection_api.Snippet_7
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 243 "docs/inspection-api.md"
@@ -441,7 +441,7 @@ Assert.True(with.Median - before.Median < TimeSpan.FromMilliseconds(2), with.ToS
 
 namespace Zaldaryon.Pharos.Docs.Generated.inspection_api.Snippet_8
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -480,7 +480,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.inspection_api.Snippet_8
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 280 "docs/inspection-api.md"
@@ -495,7 +495,7 @@ FrameBaseline.Assert(measured, "pharos-baselines.json", "mymod.village.median", 
 
 namespace Zaldaryon.Pharos.Docs.Generated.inspection_api.Snippet_9
 {
-    
+
 #line 333 "docs/inspection-api.md"
 public class DrawCallTests : ClientScenarioBase
 {
@@ -504,16 +504,16 @@ public class DrawCallTests : ClientScenarioBase
     {
         var proxy = new GlCommandProxy();
         proxy.Enable();
-        
+
         // Let the client stabilize
         FrameController!.Frames(60);
-        
+
         proxy.Reset();
         FrameController.Frames(10);
         var record = proxy.Snapshot();
-        
+
         proxy.Disable();
-        
+
         Assert.True(record.IndirectDrawCalls > 0, "Expected indirect draw calls");
         Assert.Equal(0, record.BufferAllocations);
     }
@@ -524,7 +524,7 @@ public class DrawCallTests : ClientScenarioBase
 
 namespace Zaldaryon.Pharos.Docs.Generated.inspection_api.Snippet_10
 {
-    
+
 #line 385 "docs/inspection-api.md"
 public class CullingTests : ClientScenarioBase
 {
@@ -532,14 +532,14 @@ public class CullingTests : ClientScenarioBase
     public void ChunksOutsideFrustumAreCulled()
     {
         var inspector = new CullingInspector(Client!.ClientMain);
-        
+
         // Position camera looking at specific area
         Player!.SetPosition(0, 100, 0);
         Player.LookAt(32, 64, 32);
         FrameController!.Frames(30);
-        
+
         var snapshot = inspector.Snapshot();
-        
+
         Assert.True(snapshot.CulledChunks.Count > 0, "Expected some chunks to be culled");
         Assert.True(snapshot.VisibleChunks.Count > 0, "Expected some chunks to be visible");
     }
@@ -550,7 +550,7 @@ public class CullingTests : ClientScenarioBase
 
 namespace Zaldaryon.Pharos.Docs.Generated.inspection_api.Snippet_11
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -589,7 +589,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.inspection_api.Snippet_11
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 429 "docs/inspection-api.md"
@@ -609,7 +609,7 @@ PharosAssert.NoGlLeaks(scope, GlResourceKind.VertexArray | GlResourceKind.Textur
 
 namespace Zaldaryon.Pharos.Docs.Generated.inspection_api.Snippet_12
 {
-    
+
 #line 470 "docs/inspection-api.md"
 public class AllocationTests : ClientScenarioBase
 {
@@ -618,19 +618,19 @@ public class AllocationTests : ClientScenarioBase
     {
         var inspector = new MemoryInspector();
         inspector.Enable();
-        
+
         // Warm up
         FrameController!.Frames(120);
-        
+
         inspector.Reset();
         long bytes = MemoryInspector.MeasureAllocations(() =>
         {
             FrameController.Frames(60);
         });
-        
+
         var allocs = inspector.AllocationSnapshot();
         inspector.Disable();
-        
+
         Assert.Equal(0, allocs.MeshDataAllocations);
         Assert.True(bytes < 1024, $"Allocated {bytes} bytes during steady state");
     }
@@ -641,7 +641,7 @@ public class AllocationTests : ClientScenarioBase
 
 namespace Zaldaryon.Pharos.Docs.Generated.inspection_api.Snippet_13
 {
-    
+
 #line 524 "docs/inspection-api.md"
 public class ShaderTests : ClientScenarioBase
 {
@@ -650,12 +650,12 @@ public class ShaderTests : ClientScenarioBase
     {
         var inspector = new ShaderInspector();
         inspector.Enable();
-        
+
         FrameController!.Frames(60);
-        
+
         int redundant = inspector.GetRedundantUploadCount();
         inspector.Disable();
-        
+
         Assert.True(redundant < 100, $"Found {redundant} redundant uniform uploads");
     }
 }
@@ -665,7 +665,7 @@ public class ShaderTests : ClientScenarioBase
 
 namespace Zaldaryon.Pharos.Docs.Generated.inspection_api.Snippet_14
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -704,7 +704,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.inspection_api.Snippet_14
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 577 "docs/inspection-api.md"
@@ -717,7 +717,7 @@ var snapshot = Client!.Framebuffer.Capture();
 
 namespace Zaldaryon.Pharos.Docs.Generated.inspection_api.Snippet_15
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -756,7 +756,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.inspection_api.Snippet_15
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 583 "docs/inspection-api.md"
@@ -769,7 +769,7 @@ var baseline = FramebufferSnapshot.FromFile("baseline.png");
 
 namespace Zaldaryon.Pharos.Docs.Generated.inspection_api.Snippet_16
 {
-    
+
 #line 615 "docs/inspection-api.md"
 public class VisualRegressionTests : ClientScenarioBase
 {
@@ -779,17 +779,17 @@ public class VisualRegressionTests : ClientScenarioBase
         Player!.SetPosition(0, 100, 0);
         Player.LookAt(0, 64, 100);
         FrameController!.Frames(60);
-        
+
         var snapshot = Client!.Framebuffer.Capture();
         var baseline = FramebufferSnapshot.FromFile("baselines/view-north.png");
-        
+
         var result = snapshot.Compare(baseline, tolerance: 0.02f);
-        
+
         if (result.DiffPixelCount > 0)
         {
             snapshot.SaveToPng("artifacts/view-north-actual.png");
         }
-        
+
         Assert.True(result.DiffPixelCount < 100, 
             $"Visual regression: {result.DiffPixelCount} pixels differ");
     }

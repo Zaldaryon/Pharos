@@ -54,7 +54,7 @@ using WorldOptions = global::Atlas.Api.WorldOptions;
 
 namespace Zaldaryon.Pharos.Docs.Generated.boot_diagnostics.Snippet_1
 {
-    
+
 #line 45 "docs/boot-diagnostics.md"
 [StrictBoot]
 [AllowBootDiagnostic("Texture asset 'mymod:.*' not found")]
@@ -69,7 +69,7 @@ public class MyModLoadsCleanly : ClientServerScenarioBase
 
 namespace Zaldaryon.Pharos.Docs.Generated.boot_diagnostics.Snippet_2
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -108,7 +108,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.boot_diagnostics.Snippet_2
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 96 "docs/boot-diagnostics.md"

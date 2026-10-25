@@ -54,7 +54,7 @@ using WorldOptions = global::Atlas.Api.WorldOptions;
 
 namespace Zaldaryon.Pharos.Docs.Generated.held_items.Snippet_1
 {
-    using Zaldaryon.Pharos.Items;
+using Zaldaryon.Pharos.Items;
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -115,7 +115,7 @@ public async Task TheItemIsUsedWhileTheButtonIsHeld()
 
 namespace Zaldaryon.Pharos.Docs.Generated.held_items.Snippet_2
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -154,7 +154,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.held_items.Snippet_2
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 42 "docs/held-items.md"
@@ -167,7 +167,7 @@ BotResult result = await alice.Bot.UseHeldAsync(40, alice.Entity!.Pos.AsBlockPos
 
 namespace Zaldaryon.Pharos.Docs.Generated.held_items.Snippet_3
 {
-    using Zaldaryon.Pharos.Items;
+using Zaldaryon.Pharos.Items;
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -206,7 +206,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.held_items.Snippet_3
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 49 "docs/held-items.md"
@@ -221,7 +221,7 @@ Assert.Contains(scope.Trace.Calls, call => call.Side == EnumAppSide.Client);
 
 namespace Zaldaryon.Pharos.Docs.Generated.held_items.Snippet_4
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -278,7 +278,7 @@ public async Task TheIronPickaxeMinesStoneQuickly()
 
 namespace Zaldaryon.Pharos.Docs.Generated.held_items.Snippet_5
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -317,7 +317,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.held_items.Snippet_5
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 86 "docs/held-items.md"

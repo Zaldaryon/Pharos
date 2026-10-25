@@ -54,7 +54,7 @@ using WorldOptions = global::Atlas.Api.WorldOptions;
 
 namespace Zaldaryon.Pharos.Docs.Generated.smoke_test.Snippet_1
 {
-    using Zaldaryon.Pharos.XUnit;
+using Zaldaryon.Pharos.XUnit;
 #line 95 "docs/smoke-test.md"
 [ServerMods("../../../../MyMod/bin/Release/mymod.zip")]
 [StrictBoot]

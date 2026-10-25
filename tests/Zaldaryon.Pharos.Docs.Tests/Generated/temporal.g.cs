@@ -54,7 +54,7 @@ using WorldOptions = global::Atlas.Api.WorldOptions;
 
 namespace Zaldaryon.Pharos.Docs.Generated.temporal.Snippet_1
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -93,7 +93,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.temporal.Snippet_1
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 11 "docs/temporal.md"
@@ -108,7 +108,7 @@ Assert.InRange(stability, 0f, 1f);
 
 namespace Zaldaryon.Pharos.Docs.Generated.temporal.Snippet_2
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -147,7 +147,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.temporal.Snippet_2
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 26 "docs/temporal.md"
@@ -162,7 +162,7 @@ Assert.True(storm.Active);
 
 namespace Zaldaryon.Pharos.Docs.Generated.temporal.Snippet_3
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -201,7 +201,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.temporal.Snippet_3
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 35 "docs/temporal.md"
@@ -216,7 +216,7 @@ Assert.True(Server.Temporal.Storm.Active);
 
 namespace Zaldaryon.Pharos.Docs.Generated.temporal.Snippet_4
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -255,7 +255,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.temporal.Snippet_4
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 46 "docs/temporal.md"
@@ -270,7 +270,7 @@ Assert.NotNull(rifts);
 
 namespace Zaldaryon.Pharos.Docs.Generated.temporal.Snippet_5
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -309,7 +309,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.temporal.Snippet_5
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 55 "docs/temporal.md"
@@ -324,7 +324,7 @@ Assert.Contains(Server.Temporal.Rifts, r => r.RiftId == rift.RiftId);
 
 namespace Zaldaryon.Pharos.Docs.Generated.temporal.Snippet_6
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -363,7 +363,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.temporal.Snippet_6
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 66 "docs/temporal.md"
@@ -378,7 +378,7 @@ Assert.True(Server.Temporal.Ward(pos).On);
 
 namespace Zaldaryon.Pharos.Docs.Generated.temporal.Snippet_7
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -417,7 +417,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.temporal.Snippet_7
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 77 "docs/temporal.md"

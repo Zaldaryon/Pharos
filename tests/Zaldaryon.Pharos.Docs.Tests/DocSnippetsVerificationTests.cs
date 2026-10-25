@@ -50,5 +50,19 @@ public class DocSnippetsVerificationTests
         }
 
         Assert.True(totalSnippets > 100, $"Expected over 100 snippets extracted across docs, found {totalSnippets}");
+
+        foreach (string docFile in docFiles)
+        {
+            string slug = Path.GetFileNameWithoutExtension(docFile).Replace('-', '_');
+            string generatedFile = Path.Combine(generatedDir, $"{slug}.g.cs");
+            if (!File.Exists(generatedFile)) continue;
+            string[] generatedLines = File.ReadAllLines(generatedFile);
+            for (int lineIndex = 0; lineIndex < generatedLines.Length; lineIndex++)
+            {
+                string line = generatedLines[lineIndex];
+                Assert.True(line.Length == 0 || line.Trim().Length > 0,
+                    $"Whitespace-only line {lineIndex + 1} in generated file {generatedFile}");
+            }
+        }
     }
 }
