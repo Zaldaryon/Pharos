@@ -2078,4 +2078,31 @@ public static class PharosAssert
             at = found + 1;
         }
     }
+
+    /// <summary>Asserts that <paramref name="value"/> contains no broken surrogate pairs.</summary>
+    public static void NoBrokenSurrogates(string value)
+    {
+        ArgumentNullException.ThrowIfNull(value);
+        for (int i = 0; i < value.Length; i++)
+        {
+            char c = value[i];
+            if (char.IsHighSurrogate(c))
+            {
+                if (i + 1 >= value.Length || !char.IsLowSurrogate(value[i + 1]))
+                    throw new PharosAssertException($"Broken surrogate at index {i} in '{value}'.");
+                i++;
+            }
+            else if (char.IsLowSurrogate(c))
+            {
+                throw new PharosAssertException($"Unpaired low surrogate at index {i} in '{value}'.");
+            }
+        }
+    }
+
+    /// <summary>Asserts that <paramref name="typed"/> equals <paramref name="stored"/>.</summary>
+    public static void TextRoundTrips(string typed, string stored)
+    {
+        if (!string.Equals(typed, stored, StringComparison.Ordinal))
+            throw new PharosAssertException($"Text did not round-trip: typed '{typed}', stored '{stored}'.");
+    }
 }

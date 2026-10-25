@@ -90,6 +90,9 @@ public sealed class GuiDriver
     /// <summary>Reads the actual composed HUD state on the client thread.</summary>
     public HudDriver Hud { get; }
 
+    /// <summary>Reads and drives the text field <paramref name="key"/> in the open dialog <paramref name="nameOrType"/>.</summary>
+    public TextDriver Text(string nameOrType, string key) => new TextDriver(_client, nameOrType, key);
+
     /// <summary>The dialogs currently open, HUD elements included.</summary>
     public IReadOnlyList<GuiDialogInfo> OpenDialogs() => _client.RunOnClientThread(() =>
         _client.Client.api.Gui.OpenedGuis
