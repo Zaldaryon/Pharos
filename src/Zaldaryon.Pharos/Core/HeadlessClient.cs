@@ -332,6 +332,21 @@ public sealed class HeadlessClient : IDisposable
 
     private ItemDriver? _items;
 
+    /// <summary>The client's blended ambient state: fog, ambient colour, clouds and scene brightness, plus every active modifier. See <see cref="AmbientDriver"/>.</summary>
+    public AmbientDriver Ambient => _ambient ??= new AmbientDriver(this);
+
+    private AmbientDriver? _ambient;
+
+    /// <summary>The client's weather render state: precipitation, wind, particles and lightning. See <see cref="WeatherDriver"/>.</summary>
+    public ClientWeatherDriver Weather => _weather ??= new ClientWeatherDriver(this);
+
+    private ClientWeatherDriver? _weather;
+
+    /// <summary>The client's sky render state: sun, moon and sky colour. See <see cref="SkyDriver"/>.</summary>
+    public SkyDriver Sky => _sky ??= new SkyDriver(this);
+
+    private SkyDriver? _sky;
+
     /// <summary>
     /// The client's hotkeys, its own and its mods': what they are bound to, and firing them by code.
     /// See <see cref="HotkeyDriver"/>.

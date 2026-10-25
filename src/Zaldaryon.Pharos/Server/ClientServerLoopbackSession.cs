@@ -516,6 +516,20 @@ public sealed partial class ClientServerLoopbackSession : IDisposable
         }
     }
 
+    /// <summary>
+    /// Freezes the sky for reproducible goldens: stops the calendar, stops weather changes, stills
+    /// the wind and waits for the ambient blend to settle.
+    /// </summary>
+    public async Task FreezeSkyAsync(int maxFrames = 240, CancellationToken ct = default)
+    {
+        if (NativeServer != null)
+        {
+            NativeServer.Calendar.Freeze();
+            NativeServer.Weather.StopChanges();
+        }
+        await Client.Ambient.WaitForBlendAsync(maxFrames, ct).ConfigureAwait(false);
+    }
+
     /// <summary>A calendar's time and speed, read on its own thread.</summary>
     private readonly record struct CalendarReading(double Seconds, double Rate, float HoursPerDay, int DaysPerMonth)
     {
