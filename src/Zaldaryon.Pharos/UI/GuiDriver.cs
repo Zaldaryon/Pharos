@@ -1,5 +1,6 @@
 using System.Reflection;
 using Vintagestory.API.Client;
+using Vintagestory.API.MathTools;
 using Vintagestory.API.Config;
 using Zaldaryon.Pharos.Core;
 using Zaldaryon.Pharos.Input;
@@ -92,6 +93,9 @@ public sealed class GuiDriver
 
     /// <summary>Reads and drives the text field <paramref name="key"/> in the open dialog <paramref name="nameOrType"/>.</summary>
     public TextDriver Text(string nameOrType, string key) => new TextDriver(_client, nameOrType, key);
+
+    /// <summary>A generic driver for the block-entity dialog at <paramref name="pos"/>, if open.</summary>
+    public BlockEntityDialogDriver BlockEntity(BlockPos pos) => new BlockEntityDialogDriver(_client, pos);
 
     /// <summary>The dialogs currently open, HUD elements included.</summary>
     public IReadOnlyList<GuiDialogInfo> OpenDialogs() => _client.RunOnClientThread(() =>
