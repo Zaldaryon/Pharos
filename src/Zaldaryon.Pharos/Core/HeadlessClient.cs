@@ -70,6 +70,7 @@ public sealed class HeadlessClient : IDisposable
     {
         ClientMain previous = _game;
         Network.ModNetworkLog.Carry(previous, game);
+        UI.HudCapture.Register(game, () => FrameController.TotalFrames);
         _events?.MoveTo(game);
         _game = game;
         _screen = screen;
@@ -538,7 +539,11 @@ public sealed class HeadlessClient : IDisposable
             CharacterClass = options.CompleteCharacterSelection ? options.CharacterClass : null,
         };
         // Mod messages are recorded from before the client connects.
-        if (bootMode == ClientBootMode.Engine) Network.ModNetworkLog.Register(client, () => FrameController.TotalFrames);
+        if (bootMode == ClientBootMode.Engine)
+        {
+            Network.ModNetworkLog.Register(client, () => FrameController.TotalFrames);
+            UI.HudCapture.Register(client, () => FrameController.TotalFrames);
+        }
         Gui = new GuiInspector(screenManager);
         Memory.Owner = this;
         TestPlayer = new ClientTestPlayer(() => Client);

@@ -4,6 +4,7 @@ using Vintagestory.API.Server;
 using Vintagestory.Client.NoObf;
 using Xunit;
 using Zaldaryon.Pharos.Bootstrap;
+using Zaldaryon.Pharos.Assertions;
 using Zaldaryon.Pharos.UI;
 using Zaldaryon.Pharos.XUnit;
 
@@ -188,6 +189,7 @@ public class HudTests : ClientServerScenarioBase
             element.TryOpen();
             return element;
         });
+        CompassForTest? duplicate = null;
         try
         {
             await Session!.StepFramesAsync(1);
@@ -198,20 +200,40 @@ public class HudTests : ClientServerScenarioBase
             Client.RunOnClientThread(() => compass.SingleComposer.GetDynamicText("bearing").SetNewText("East"));
             Assert.Contains(Hud.Element<CompassForTest>().Layout.Elements, e => e.Text == "East");
             Assert.Contains(snapshot.Layout.Elements, e => e.Text == "North");
+            PharosAssert.NoOverlappingElements(snapshot.Layout, Hud.Hotbar.Layout);
+            PharosAssert.NoOverlappingElements(snapshot.Layout, Hud.Element<HudStatbar>().Layout);
+            var slots = Hud.Hotbar.Layout.Elements.First(e => e.Type.StartsWith("GuiElementItemSlotGrid"));
+            duplicate = Client.RunOnClientThread(() =>
+            {
+                var element = new CompassForTest(Client.Client.api, slots.X / Vintagestory.API.Config.RuntimeEnv.GUIScale,
+                    slots.Y / Vintagestory.API.Config.RuntimeEnv.GUIScale);
+                element.TryOpen();
+                return element;
+            });
+            await Session.StepFramesAsync(1);
+            Assert.Throws<InvalidOperationException>(() => Hud.Element<CompassForTest>());
+            var colliding = Hud.Elements().Last(e => e.Type == typeof(CompassForTest).FullName);
+            Assert.Throws<PharosAssertException>(() => PharosAssert.NoOverlappingElements(colliding.Layout, Hud.Hotbar.Layout));
+            Client.RunOnClientThread(() => { duplicate.TryClose(); Client.Client.api.Gui.LoadedGuis.Remove(duplicate); duplicate.Dispose(); });
+            duplicate = null;
             Client.RunOnClientThread(() => compass.TryClose());
             Assert.False(Hud.Element<CompassForTest>().Visible);
         }
         finally
         {
-            Client.RunOnClientThread(() => { compass.TryClose(); Client.Client.api.Gui.LoadedGuis.Remove(compass); compass.Dispose(); });
+            Client.RunOnClientThread(() =>
+            {
+                if (duplicate != null) { duplicate.TryClose(); Client.Client.api.Gui.LoadedGuis.Remove(duplicate); duplicate.Dispose(); }
+                compass.TryClose(); Client.Client.api.Gui.LoadedGuis.Remove(compass); compass.Dispose();
+            });
         }
     }
 
     private sealed class CompassForTest : HudElement
     {
-        public CompassForTest(ICoreClientAPI api) : base(api)
+        public CompassForTest(ICoreClientAPI api, double x = 20, double y = 20) : base(api)
         {
-            SingleComposer = api.Gui.CreateCompo("pharos-compass", ElementBounds.Fixed(20, 20, 180, 40))
+            SingleComposer = api.Gui.CreateCompo("pharos-compass", ElementBounds.Fixed(x, y, 180, 40))
                 .AddDynamicText("North", CairoFont.WhiteSmallText(), ElementBounds.Fixed(0, 0, 180, 40), "bearing")
                 .Compose();
         }

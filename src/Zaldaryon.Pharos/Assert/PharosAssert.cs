@@ -1880,6 +1880,37 @@ public static class PharosAssert
         }
     }
 
+    /// <summary>
+    /// Asserts that readable/interactive elements from two HUD layouts do not overlap, regardless
+    /// of composer names. Includes stat bars and nonempty rich text; excludes containers/backgrounds.
+    /// Snapshots must use the same window dimensions and GUI scale.
+    /// </summary>
+    public static void NoOverlappingElements(UI.DialogLayout first, UI.DialogLayout second, double tolerance = 1, Func<UI.GuiElementInfo, bool>? include = null)
+    {
+        ArgumentNullException.ThrowIfNull(first);
+        ArgumentNullException.ThrowIfNull(second);
+        if (!double.IsFinite(tolerance) || tolerance < 0) throw new ArgumentOutOfRangeException(nameof(tolerance));
+        if (first.ScreenWidth != second.ScreenWidth || first.ScreenHeight != second.ScreenHeight || first.GuiScale != second.GuiScale)
+            throw new ArgumentException("HUD layouts must use the same window dimensions and GUI scale.", nameof(second));
+        include ??= e => UI.DialogLayout.ChecksOverlap(e) || e.Type == "GuiElementStatbar"
+            || (e.Type == "GuiElementRichtext" && !string.IsNullOrWhiteSpace(e.Text));
+        UI.GuiElementInfo[] a = [.. first.Elements.Where(e => e.Width > 0 && e.Height > 0 && include(e))];
+        UI.GuiElementInfo[] b = [.. second.Elements.Where(e => e.Width > 0 && e.Height > 0 && include(e))];
+        List<string> overlaps = [];
+        // ponytail: HUD trees are small; spatial indexing only if large layouts make pair checks measurable.
+        foreach (var left in a)
+        foreach (var right in b)
+        {
+            double width = Math.Min(left.X + left.Width, right.X + right.Width) - Math.Max(left.X, right.X);
+            double height = Math.Min(left.Y + left.Height, right.Y + right.Height) - Math.Max(left.Y, right.Y);
+            if (width > tolerance && height > tolerance)
+                overlaps.Add(Invariant($"{first.Dialog}.{left.Composer} '{left.Key}' and {second.Dialog}.{right.Composer} '{right.Key}' overlap by {width:0.#}x{height:0.#} px"));
+        }
+        if (overlaps.Count > 0)
+            throw new PharosAssertException("HUD layouts have overlapping elements:\n  " + string.Join("\n  ", overlaps.Take(30))
+                + (overlaps.Count > 30 ? $"\n  ... and {overlaps.Count - 30} more" : ""));
+    }
+
     /// <summary>Asserts that no two elements of the open dialog overlap. See <see cref="NoOverlappingElements(UI.DialogLayout, double, Func{UI.GuiElementInfo, bool})"/>.</summary>
     public static void NoOverlappingElements(Core.HeadlessClient client, string nameOrType, double tolerance = 1, Func<UI.GuiElementInfo, bool>? include = null)
     {

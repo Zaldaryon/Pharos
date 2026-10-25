@@ -1,6 +1,8 @@
 using System.Reflection;
 using Vintagestory.API.Client;
 using Vintagestory.API.Common;
+using Vintagestory.API.Common.Entities;
+using Vintagestory.API.MathTools;
 using Vintagestory.Client.NoObf;
 using Zaldaryon.Pharos.Core;
 using Zaldaryon.Pharos.Player;
@@ -36,6 +38,30 @@ public sealed record HudHotbarSnapshot(int ActiveSlot, IReadOnlyList<SlotSnapsho
 /// <param name="Visible">Whether the HUD is rendered.</param>
 /// <param name="HiddenBySetting">Whether ShowCoordinateHud is disabled.</param>
 public sealed record HudCoordinatesSnapshot(string Text, bool Visible, bool HiddenBySetting);
+
+/// <summary>A detached reference to the entity described by the HUD.</summary>
+public sealed record HudEntityReference(long EntityId, string Code, Vec3d Position, int Dimension);
+
+/// <summary>Composed block/entity information; an empty snapshot means nothing is currently displayed.</summary>
+public sealed record HudBlockInfoSnapshot(string Title, IReadOnlyList<string> Lines, bool Visible,
+    string? BlockCode, BlockPos? BlockPosition, HudEntityReference? Entity, DialogLayout Layout);
+
+/// <summary>A hotkey's code and the label/icon actually used when interaction help was composed.</summary>
+public sealed record HudHotkeySnapshot(string Code, string Label);
+
+/// <summary>One rendered interaction-help row after the game's/mod's applicability filters.</summary>
+public sealed record HudInteractionEntry(string? HotkeyCode, IReadOnlyList<string> HotkeyCodes,
+    IReadOnlyList<HudHotkeySnapshot> Hotkeys, string Text, EnumMouseButton MouseButton,
+    IReadOnlyList<string> ItemCodes, bool RequireFreeHand);
+
+/// <summary>Interaction-help entries drawn in the latest client frame.</summary>
+public sealed record HudInteractionHelpSnapshot(IReadOnlyList<HudInteractionEntry> Entries, bool Visible, DialogLayout Layout);
+
+/// <summary>A currently displayed message and the frame in which this occurrence first appeared.</summary>
+public sealed record HudMessageSnapshot(string Text, long Frame);
+
+/// <summary>A visible survival boss bar's composed name and health fraction.</summary>
+public sealed record HudBossbarSnapshot(long EntityId, string Name, float Fraction, DialogLayout Layout);
 
 /// <summary>
 /// Reads detached snapshots of the engine-mode client's HUD. Call after stepping the frame that
@@ -90,6 +116,58 @@ public sealed class HudDriver
             visible, !ClientSettings.ShowCoordinateHud);
     });
 
+    /// <summary>The game's currently composed block/entity information, with copied selection coordinates.</summary>
+    public HudBlockInfoSnapshot BlockInfo => _client.RunOnClientThread(() =>
+    {
+        var hud = Require<HudElementBlockAndEntityInfo>();
+        DialogLayout layout = _gui.LayoutOf(hud);
+        if (!Visible(hud) || hud.Composers["blockinfohud"] is not { Enabled: true } composer)
+            return new HudBlockInfoSnapshot("", [], false, null, null, null, layout);
+        Block? block = RequiredField<Block?>(hud, "currentBlock", allowNull: true);
+        Entity? entity = RequiredField<Entity?>(hud, "currentEntity", allowNull: true);
+        BlockPos? pos = RequiredField<BlockPos?>(hud, "currentPos", allowNull: true);
+        string title = layout.Elements.FirstOrDefault(e => e.Type == nameof(GuiElementStaticText))?.Text ?? "";
+        string text = GuiDriver.RichText(composer.GetRichtext("rt").Components);
+        return new HudBlockInfoSnapshot(title, text.Replace("\r", "").Split('\n'), true,
+            block?.Code.ToString(), block == null ? null : pos?.Copy(), entity == null ? null : new HudEntityReference(
+                entity.EntityId, entity.Code.ToString(), entity.Pos.XYZ.Clone(), entity.Pos.Dimension), layout);
+    });
+
+    /// <summary>Actual composed help after filtering and hotkey remapping; never invokes applicability callbacks.</summary>
+    public HudInteractionHelpSnapshot InteractionHelp => _client.RunOnClientThread(() =>
+    {
+        var hud = Require<HudElementInteractionHelp>();
+        var util = RequiredField<DrawWorldInteractionUtil>(hud, "wiUtil");
+        var entries = Visible(hud) ? HudCapture.Help(util, _client.FrameController.TotalFrames) : [];
+        return new HudInteractionHelpSnapshot(entries, entries.Count > 0, _gui.LayoutOf(hud));
+    });
+
+    /// <summary>Errors displayed in the latest frame; repeated events receive a new first-frame stamp.</summary>
+    public IReadOnlyList<HudMessageSnapshot> Errors => _client.RunOnClientThread(() => Messages<HudIngameError>());
+
+    /// <summary>Discoveries displayed in the latest frame, including queued repeat occurrences.</summary>
+    public IReadOnlyList<HudMessageSnapshot> Discoveries => _client.RunOnClientThread(() => Messages<HudIngameDiscovery>());
+
+    /// <summary>Visible survival boss bars, or an empty list when no boss bar is registered and rendered.</summary>
+    public IReadOnlyList<HudBossbarSnapshot> BossBars => _client.RunOnClientThread(() =>
+        _client.Client.api.Gui.LoadedGuis.OfType<HudElement>()
+            .Where(h => h.GetType().FullName == "Vintagestory.Client.NoObf.HudBosshealthBars" && Visible(h))
+            .Select(h =>
+            {
+                var bar = RequiredField<GuiElementStatbar>(h, "healthbar");
+                float max = RequiredField<float>(bar, "maxValue");
+                var layout = _gui.LayoutOf(h);
+                string name = layout.Elements.FirstOrDefault(e => e.Type == nameof(GuiElementStaticText))?.Text ?? "";
+                var entity = RequiredField<Entity>(h, "TargetEntity");
+                return new HudBossbarSnapshot(entity.EntityId, name, max > 0 ? Math.Clamp(bar.GetValue() / max, 0, 1) : 0, layout);
+            }).ToArray());
+
+    private IReadOnlyList<HudMessageSnapshot> Messages<T>() where T : HudElement
+    {
+        T hud = Require<T>();
+        return Visible(hud) ? HudCapture.Messages(hud, _client.FrameController.TotalFrames) : [];
+    }
+
     /// <summary>Reads one registered HUD of the given type, including closed elements.</summary>
     /// <exception cref="InvalidOperationException">No such HUD is registered, or several match; use Elements for duplicates.</exception>
     public HudElementSnapshot Element<T>() where T : HudElement => _client.RunOnClientThread(() => Snapshot(Require<T>()));
@@ -140,7 +218,7 @@ public sealed class HudDriver
     private static SlotSnapshot Slot(ItemSlot? slot, int index) => slot?.Itemstack is { } stack
         ? SlotSnapshot.WithItem(index, stack.Collectible.Code.ToString(), stack.StackSize) : SlotSnapshot.Empty(index);
 
-    internal static T RequiredField<T>(object instance, string name)
+    internal static T RequiredField<T>(object instance, string name, bool allowNull = false)
     {
         for (Type? type = instance.GetType(); type != null; type = type.BaseType)
         {
@@ -149,7 +227,7 @@ public sealed class HudDriver
                 throw Changed($"{type.FullName}.{name} ({field.FieldType.FullName})");
             object? value = field.GetValue(instance);
             if (value is T result) return result;
-            if (value == null && Nullable.GetUnderlyingType(typeof(T)) != null) return default!;
+            if (value == null && (allowNull || Nullable.GetUnderlyingType(typeof(T)) != null)) return default!;
             throw Changed($"{type.FullName}.{name} ({field.FieldType.FullName})");
         }
         throw Changed($"{instance.GetType().FullName}.{name}");

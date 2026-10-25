@@ -333,6 +333,7 @@ See the [inspection API reference](docs/inspection-api.md) for method signatures
 - [Configuration](docs/configuration.md): `[WorldConfig]`, `[ServerConfig]` and the configuration matrices, which set a scenario's configuration before the server boots and put it back after a test
 - [CI and Cloud Environments](docs/ci-and-cloud.md): Running the suite in CI and cloud environments, offline or online auth, and a dedicated server in Docker
 - [Client-Server Testing](docs/writing-client-server-scenarios.md): `[ClientServerScenario]`, lockstep stepping, and packet assertions
+- [HUD inspection](docs/hud.md): composed stat bars, hotbar, block/entity info, interaction help, messages, boss bars and custom HUD layouts
 - [Inspection API Reference](docs/inspection-api.md): Detailed API for all inspector classes
 - [Compatibility Matrix](docs/compatibility.md): Supported VS versions, OpenGL requirements, and platform notes
 - [Migrating from Atlas](docs/migrating-from-atlas.md): Drop-in shim and step-by-step migration guide
