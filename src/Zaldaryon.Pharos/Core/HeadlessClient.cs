@@ -347,6 +347,11 @@ public sealed class HeadlessClient : IDisposable
 
     private SkyDriver? _sky;
 
+    /// <summary>The client's camera: mode, FOV, position and projection. See <see cref="CameraDriver"/>.</summary>
+    public CameraDriver Camera => _camera ??= new CameraDriver(this);
+
+    private CameraDriver? _camera;
+
     /// <summary>
     /// The client's hotkeys, its own and its mods': what they are bound to, and firing them by code.
     /// See <see cref="HotkeyDriver"/>.
