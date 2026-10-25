@@ -1,0 +1,10 @@
+{
+  code: "probe",
+  class: "PharosHudProbe",
+  shape: { base: "game:block/basic/cube" },
+  drawtype: "cube",
+  blockmaterial: "Stone",
+  textures: { all: { base: "game:block/stone/rock/granite1" } },
+  creativeinventory: { "general": ["*"] },
+  resistance: 3
+}

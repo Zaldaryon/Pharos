@@ -54,7 +54,7 @@ using WorldOptions = global::Atlas.Api.WorldOptions;
 
 namespace Zaldaryon.Pharos.Docs.Generated.test_worlds.Snippet_1
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -93,7 +93,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.test_worlds.Snippet_1
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 19 "docs/test-worlds.md"
@@ -107,7 +107,7 @@ SchematicPlacement placed = await this.PlaceSchematicAsync("Fixtures/furnace-roo
 
 namespace Zaldaryon.Pharos.Docs.Generated.test_worlds.Snippet_2
 {
-    
+
 #line 55 "docs/test-worlds.md"
 [ServerWorld(SaveFile = "Fixtures/village.vcdbs")]
 public class VillageTests : ServerScenarioBase
@@ -126,7 +126,7 @@ public class VillageTests : ServerScenarioBase
 
 namespace Zaldaryon.Pharos.Docs.Generated.test_worlds.Snippet_3
 {
-    
+
 #line 105 "docs/test-worlds.md"
 public class VillageBuilder : ServerScenarioBase
 {

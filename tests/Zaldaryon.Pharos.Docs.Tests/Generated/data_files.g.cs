@@ -54,7 +54,7 @@ using WorldOptions = global::Atlas.Api.WorldOptions;
 
 namespace Zaldaryon.Pharos.Docs.Generated.data_files.Snippet_1
 {
-    
+
 #line 7 "docs/data-files.md"
 [ServerWorld(seed: 42)]
 [ServerMods("mods/mymod.zip")]

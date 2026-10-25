@@ -1,0 +1,15 @@
+{
+  "type": "code",
+  "modid": "pharoshudmod",
+  "name": "Pharos HUD Test Mod",
+  "version": "1.0.0",
+  "side": "Universal",
+  "requiredOnClient": true,
+  "description": "Block information and filtered interaction-help regression fixture.",
+  "authors": [
+    "Pharos"
+  ],
+  "dependencies": {
+    "game": ""
+  }
+}

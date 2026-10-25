@@ -54,7 +54,7 @@ using WorldOptions = global::Atlas.Api.WorldOptions;
 
 namespace Zaldaryon.Pharos.Docs.Generated.traders.Snippet_1
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -93,7 +93,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.traders.Snippet_1
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 11 "docs/traders.md"
@@ -109,7 +109,7 @@ Assert.True(view.NextRefreshDays > 0);
 
 namespace Zaldaryon.Pharos.Docs.Generated.traders.Snippet_2
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -148,7 +148,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.traders.Snippet_2
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 24 "docs/traders.md"
@@ -166,7 +166,7 @@ Assert.Equal("Success", result.Result);
 
 namespace Zaldaryon.Pharos.Docs.Generated.traders.Snippet_3
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -205,7 +205,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.traders.Snippet_3
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 41 "docs/traders.md"
@@ -219,7 +219,7 @@ await Server.Trade.RestockAsync(trader);
 
 namespace Zaldaryon.Pharos.Docs.Generated.traders.Snippet_4
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -258,7 +258,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.traders.Snippet_4
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 52 "docs/traders.md"

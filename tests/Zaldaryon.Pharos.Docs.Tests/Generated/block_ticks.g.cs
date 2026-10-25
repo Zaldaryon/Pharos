@@ -54,7 +54,7 @@ using WorldOptions = global::Atlas.Api.WorldOptions;
 
 namespace Zaldaryon.Pharos.Docs.Generated.block_ticks.Snippet_1
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -93,7 +93,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.block_ticks.Snippet_1
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 12 "docs/block-ticks.md"
@@ -108,7 +108,7 @@ Assert.False(wanted);
 
 namespace Zaldaryon.Pharos.Docs.Generated.block_ticks.Snippet_2
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -147,7 +147,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.block_ticks.Snippet_2
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 26 "docs/block-ticks.md"
@@ -162,7 +162,7 @@ Assert.True(changes > 0);
 
 namespace Zaldaryon.Pharos.Docs.Generated.block_ticks.Snippet_3
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -201,7 +201,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.block_ticks.Snippet_3
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 40 "docs/block-ticks.md"
@@ -218,7 +218,7 @@ Server.BlockTicks.Resume();
 
 namespace Zaldaryon.Pharos.Docs.Generated.block_ticks.Snippet_4
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -257,7 +257,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.block_ticks.Snippet_4
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 53 "docs/block-ticks.md"
@@ -272,7 +272,7 @@ Assert.True(snow >= 0);
 
 namespace Zaldaryon.Pharos.Docs.Generated.block_ticks.Snippet_5
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -311,7 +311,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.block_ticks.Snippet_5
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 63 "docs/block-ticks.md"

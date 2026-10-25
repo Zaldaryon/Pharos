@@ -54,7 +54,7 @@ using WorldOptions = global::Atlas.Api.WorldOptions;
 
 namespace Zaldaryon.Pharos.Docs.Generated.writing_server_scenarios.Snippet_1
 {
-    using Zaldaryon.Pharos.XUnit;
+using Zaldaryon.Pharos.XUnit;
 using Xunit;
 #line 17 "docs/writing-server-scenarios.md"
 [ServerWorld(seed: 12345, playStyle: "creativebuilding", worldType: "superflat")]
@@ -76,7 +76,7 @@ public class BlockPlacementTests : ServerScenarioBase
 
 namespace Zaldaryon.Pharos.Docs.Generated.writing_server_scenarios.Snippet_2
 {
-    using Vintagestory.API.MathTools;
+using Vintagestory.API.MathTools;
 using Zaldaryon.Pharos.World;
     public class ScenarioContainer : ClientServerScenarioBase
     {
@@ -140,7 +140,7 @@ public async Task BuildAndCheckAWall()
 
 namespace Zaldaryon.Pharos.Docs.Generated.writing_server_scenarios.Snippet_3
 {
-    
+
     public interface IApiReference
     {
 #line 78 "docs/writing-server-scenarios.md"
@@ -159,7 +159,7 @@ Entity SpawnEntity(string entityCode, Vec3d pos);
 
 namespace Zaldaryon.Pharos.Docs.Generated.writing_server_scenarios.Snippet_4
 {
-    
+
     public interface IApiReference
     {
 #line 91 "docs/writing-server-scenarios.md"
@@ -177,7 +177,7 @@ Task ExecuteSuccessAsPlayer(IServerTestPlayer player, string command);
 
 namespace Zaldaryon.Pharos.Docs.Generated.writing_server_scenarios.Snippet_5
 {
-    
+
     public interface IApiReference
     {
 #line 105 "docs/writing-server-scenarios.md"
@@ -191,7 +191,7 @@ Task WaitForConditionAsync(Func<bool> condition, int maxTicks = 300);
 
 namespace Zaldaryon.Pharos.Docs.Generated.writing_server_scenarios.Snippet_6
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -230,7 +230,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.writing_server_scenarios.Snippet_6
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 121 "docs/writing-server-scenarios.md"
@@ -250,7 +250,7 @@ await Sequence()
 
 namespace Zaldaryon.Pharos.Docs.Generated.writing_server_scenarios.Snippet_7
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -289,7 +289,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.writing_server_scenarios.Snippet_7
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 151 "docs/writing-server-scenarios.md"
@@ -311,7 +311,7 @@ EntityDespawned despawn = await Host.Entities.WaitForDespawnAsync(wolf, maxTicks
 
 namespace Zaldaryon.Pharos.Docs.Generated.writing_server_scenarios.Snippet_8
 {
-    
+
 #line 217 "docs/writing-server-scenarios.md"
 [ServerWorld(seed: 42, Isolation = Isolation.Recycle)]
 public class ReadOnlyTests : ServerScenarioBase { }
@@ -321,7 +321,7 @@ public class ReadOnlyTests : ServerScenarioBase { }
 
 namespace Zaldaryon.Pharos.Docs.Generated.writing_server_scenarios.Snippet_9
 {
-    
+
 #line 258 "docs/writing-server-scenarios.md"
 [ServerWorld(Isolation = Isolation.Rollback)]
 public class EconomyTests : ClientServerScenarioBase
@@ -338,7 +338,7 @@ public class EconomyTests : ClientServerScenarioBase
 
 namespace Zaldaryon.Pharos.Docs.Generated.writing_server_scenarios.Snippet_10
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -377,7 +377,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.writing_server_scenarios.Snippet_10
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 292 "docs/writing-server-scenarios.md"
@@ -393,7 +393,7 @@ api.Event.RegisterEventBusListener((string name, ref EnumHandling handling, IAtt
 
 namespace Zaldaryon.Pharos.Docs.Generated.writing_server_scenarios.Snippet_11
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -432,7 +432,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.writing_server_scenarios.Snippet_11
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 326 "docs/writing-server-scenarios.md"
@@ -447,7 +447,7 @@ int restoredChunks = host.RestoreSnapshot(snapshot);
 
 namespace Zaldaryon.Pharos.Docs.Generated.writing_server_scenarios.Snippet_12
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -506,7 +506,7 @@ public async Task Player_CanReceiveItems()
 
 namespace Zaldaryon.Pharos.Docs.Generated.writing_server_scenarios.Snippet_13
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -545,7 +545,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.writing_server_scenarios.Snippet_13
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 361 "docs/writing-server-scenarios.md"
@@ -560,7 +560,7 @@ Assert.Equal(2, Host.TestPlayers.Count);
 
 namespace Zaldaryon.Pharos.Docs.Generated.writing_server_scenarios.Snippet_14
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -599,7 +599,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.writing_server_scenarios.Snippet_14
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 377 "docs/writing-server-scenarios.md"
@@ -625,7 +625,7 @@ var pings = Host.ModPackets<MyPing>(alice, "mymod");
 
 namespace Zaldaryon.Pharos.Docs.Generated.writing_server_scenarios.Snippet_15
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -664,7 +664,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.writing_server_scenarios.Snippet_15
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 415 "docs/writing-server-scenarios.md"
@@ -680,7 +680,7 @@ Assert.False(bob.IsConnected);
 
 namespace Zaldaryon.Pharos.Docs.Generated.writing_server_scenarios.Snippet_16
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -719,7 +719,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.writing_server_scenarios.Snippet_16
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 433 "docs/writing-server-scenarios.md"
@@ -745,7 +745,7 @@ Assert.True(used.Accepted && moved.Accepted);
 
 namespace Zaldaryon.Pharos.Docs.Generated.writing_server_scenarios.Snippet_17
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -784,7 +784,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.writing_server_scenarios.Snippet_17
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 467 "docs/writing-server-scenarios.md"
@@ -801,7 +801,7 @@ Assert.True(await Session.StepUntilAsync(
 
 namespace Zaldaryon.Pharos.Docs.Generated.writing_server_scenarios.Snippet_18
 {
-    
+
 #line 479 "docs/writing-server-scenarios.md"
 [ServerWorld(seed: 4242, playStyle: "surviveandbuild")]
 public class HungerTests : ServerScenarioBase
@@ -833,7 +833,7 @@ public class HungerTests : ServerScenarioBase
 
 namespace Zaldaryon.Pharos.Docs.Generated.writing_server_scenarios.Snippet_19
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -872,7 +872,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.writing_server_scenarios.Snippet_19
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 521 "docs/writing-server-scenarios.md"
@@ -887,7 +887,7 @@ Assert.Equal(1500, before.Saturation);
 
 namespace Zaldaryon.Pharos.Docs.Generated.writing_server_scenarios.Snippet_20
 {
-    
+
 #line 541 "docs/writing-server-scenarios.md"
 [ServerWorld(seed: 4242, playStyle: "surviveandbuild")]
 public class ArmorTests : ServerScenarioBase
@@ -910,7 +910,7 @@ public class ArmorTests : ServerScenarioBase
 
 namespace Zaldaryon.Pharos.Docs.Generated.writing_server_scenarios.Snippet_21
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -965,7 +965,7 @@ public async Task EntityMovesToTarget()
 
 namespace Zaldaryon.Pharos.Docs.Generated.writing_server_scenarios.Snippet_22
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -1004,7 +1004,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.writing_server_scenarios.Snippet_22
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 599 "docs/writing-server-scenarios.md"
@@ -1020,7 +1020,7 @@ await Host.WaitForBackgroundWorkAsync();      // relight, random ticks, spawner,
 
 namespace Zaldaryon.Pharos.Docs.Generated.writing_server_scenarios.Snippet_23
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -1079,7 +1079,7 @@ public async Task ThreeDays_NoLeaks()
 
 namespace Zaldaryon.Pharos.Docs.Generated.writing_server_scenarios.Snippet_24
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -1118,7 +1118,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.writing_server_scenarios.Snippet_24
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 690 "docs/writing-server-scenarios.md"
@@ -1150,7 +1150,7 @@ using (Host.Faults.DelayChunkLoads(ticks: 100))
 
 namespace Zaldaryon.Pharos.Docs.Generated.writing_server_scenarios.Snippet_25
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -1189,7 +1189,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.writing_server_scenarios.Snippet_25
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 729 "docs/writing-server-scenarios.md"
@@ -1206,7 +1206,7 @@ EnumSeason season = Host.Calendar.Season;          // at the spawn point
 
 namespace Zaldaryon.Pharos.Docs.Generated.writing_server_scenarios.Snippet_26
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -1245,7 +1245,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.writing_server_scenarios.Snippet_26
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 744 "docs/writing-server-scenarios.md"
@@ -1261,7 +1261,7 @@ Host.Weather.StopChanges();                        // no new patterns, winds or 
 
 namespace Zaldaryon.Pharos.Docs.Generated.writing_server_scenarios.Snippet_27
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -1300,7 +1300,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.writing_server_scenarios.Snippet_27
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 761 "docs/writing-server-scenarios.md"
@@ -1320,7 +1320,7 @@ PharosAssert.NoTickListenersAt(Host, pos);
 
 namespace Zaldaryon.Pharos.Docs.Generated.writing_server_scenarios.Snippet_28
 {
-    
+
 #line 847 "docs/writing-server-scenarios.md"
 [Seeded]                                 // a stable hash of each test's name
 public class DropTests : ServerScenarioBase
@@ -1334,7 +1334,7 @@ public class DropTests : ServerScenarioBase
 
 namespace Zaldaryon.Pharos.Docs.Generated.writing_server_scenarios.Snippet_29
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -1373,7 +1373,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.writing_server_scenarios.Snippet_29
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 868 "docs/writing-server-scenarios.md"
@@ -1390,7 +1390,7 @@ Assert.Empty(Host.Random.Unseeded.Where(u => u.Assembly == typeof(MyMod).Assembl
 
 namespace Zaldaryon.Pharos.Docs.Generated.writing_server_scenarios.Snippet_30
 {
-    
+
 #line 909 "docs/writing-server-scenarios.md"
 [ServerWorld(seed: 42)]
 [ServerMods("path/to/mymod.zip")]
@@ -1409,7 +1409,7 @@ public class ModIntegrationTests : ServerScenarioBase
 
 namespace Zaldaryon.Pharos.Docs.Generated.writing_server_scenarios.Snippet_31
 {
-    
+
 #line 927 "docs/writing-server-scenarios.md"
 [ServerMods("mods/mymod.zip")]
 [DataFiles("Fixtures/mymod.json", To = "ModConfig/mymod.json", Side = EnumAppSide.Server)]
@@ -1428,7 +1428,7 @@ public class MyModConfigTests : ServerScenarioBase
 
 namespace Zaldaryon.Pharos.Docs.Generated.writing_server_scenarios.Snippet_32
 {
-    
+
 #line 947 "docs/writing-server-scenarios.md"
 [ServerWorld(seed: 1)]
 public class QuickTests : ServerScenarioBase

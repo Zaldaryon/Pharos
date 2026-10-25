@@ -54,7 +54,7 @@ using WorldOptions = global::Atlas.Api.WorldOptions;
 
 namespace Zaldaryon.Pharos.Docs.Generated.optimum.Snippet_1
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -111,7 +111,7 @@ public async Task Vanilla_Tessellator() => await Task.CompletedTask;
 
 namespace Zaldaryon.Pharos.Docs.Generated.optimum.Snippet_2
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 

@@ -137,6 +137,7 @@ for doc_path in docs:
                 clean_lines.append(l)
 
         cleaned_code = '\n'.join(clean_lines).strip()
+        cleaned_code = '\n'.join(l if l.strip() else '' for l in cleaned_code.split('\n'))
         if not is_live_run:
             def replace_bracket(match):
                 inner = match.group(1)
@@ -156,6 +157,7 @@ for doc_path in docs:
 
         ns = f"namespace Zaldaryon.Pharos.Docs.Generated.{file_slug}.Snippet_{i+1}"
         using_prefix = '\n'.join(usings_in_snippet)
+        using_prefix = using_prefix.strip('\n')
         if 'migrating' in file_slug:
             using_prefix += '\nusing WorldOptions = global::Atlas.Api.WorldOptions;\nusing global::Atlas.Api;\nusing global::Atlas.XUnit;'
 
@@ -168,13 +170,13 @@ for doc_path in docs:
         has_classes = any(re.match(r'^(public|internal)?\s*(\[ProtoContract\]\s*)?(public\s+)?class\b', l) for l in non_comment_lines)
         has_statements = any(';' in l and not re.match(r'^(public|protected|private|internal)?\s*(class|void|Task|override)', l) for l in non_comment_lines)
 
-        run_trait = '[Trait("Category", "Live")]' if is_live_run else ''
+        run_trait = '        [Trait("Category", "Live")]' if is_live_run else ''
 
         if 'namespace ' in cleaned_code:
             snippet_body = f"""
 namespace Zaldaryon.Pharos.Docs.Generated.{file_slug}.Snippet_{i+1}_Outer
 {{
-    {using_prefix}
+{using_prefix}
 #line {line_num} "{doc_path}"
 {cleaned_code}
 #line default
@@ -184,7 +186,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.{file_slug}.Snippet_{i+1}_Outer
             snippet_body = f"""
 {ns}
 {{
-    {using_prefix}
+{using_prefix}
     public interface IApiReference
     {{
 #line {line_num} "{doc_path}"
@@ -197,7 +199,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.{file_slug}.Snippet_{i+1}_Outer
             snippet_body = f"""
 {ns}
 {{
-    {using_prefix}
+{using_prefix}
 #line {line_num} "{doc_path}"
 {cleaned_code}
     public class ScenarioContainer : ClientServerScenarioBase {{ }}
@@ -208,7 +210,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.{file_slug}.Snippet_{i+1}_Outer
             snippet_body = f"""
 {ns}
 {{
-    {using_prefix}
+{using_prefix}
 #line {line_num} "{doc_path}"
 {cleaned_code}
 #line default
@@ -222,21 +224,26 @@ namespace Zaldaryon.Pharos.Docs.Generated.{file_slug}.Snippet_{i+1}_Outer
                     class_lines.append(l)
                 else:
                     stmt_lines.append(l)
+            # Strip boundary empty lines from stmt_lines
+            while stmt_lines and not stmt_lines[0].strip():
+                stmt_lines.pop(0)
+            while stmt_lines and not stmt_lines[-1].strip():
+                stmt_lines.pop()
 
             snippet_body = f"""
 {ns}
 {{
-    {using_prefix}
+{using_prefix}
     public class ScenarioContainer : ClientServerScenarioBase
     {{
 {container_members}
-        {chr(10).join(class_lines)}
+{chr(10).join('        ' + l if l.strip() else '' for l in class_lines)}
 
-        {run_trait}
+{run_trait}
         public async Task ExecuteSnippetAsync()
         {{
 #line {line_num} "{doc_path}"
-            {chr(10).join(stmt_lines)}
+{chr(10).join('            ' + l if l.strip() else '' for l in stmt_lines)}
 #line default
         }}
     }}
@@ -246,7 +253,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.{file_slug}.Snippet_{i+1}_Outer
             snippet_body = f"""
 {ns}
 {{
-    {using_prefix}
+{using_prefix}
     public class ScenarioContainer : ClientServerScenarioBase
     {{
 {container_members}
@@ -263,11 +270,11 @@ namespace Zaldaryon.Pharos.Docs.Generated.{file_slug}.Snippet_{i+1}_Outer
             snippet_body = f"""
 {ns}
 {{
-    {using_prefix}
+{using_prefix}
     public class ScenarioContainer{base_spec}
     {{
 {members}
-        {run_trait}
+{run_trait}
         public async Task ExecuteSnippetAsync()
         {{
 #line {line_num} "{doc_path}"

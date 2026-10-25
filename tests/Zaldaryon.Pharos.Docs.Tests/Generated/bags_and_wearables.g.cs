@@ -54,7 +54,7 @@ using WorldOptions = global::Atlas.Api.WorldOptions;
 
 namespace Zaldaryon.Pharos.Docs.Generated.bags_and_wearables.Snippet_1
 {
-    using Zaldaryon.Pharos.Items;
+using Zaldaryon.Pharos.Items;
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -93,7 +93,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.bags_and_wearables.Snippet_1
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 12 "docs/bags-and-wearables.md"
@@ -110,7 +110,7 @@ Assert.Equal(12, bag.Count("game:flint"));
 
 namespace Zaldaryon.Pharos.Docs.Generated.bags_and_wearables.Snippet_2
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -149,7 +149,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.bags_and_wearables.Snippet_2
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 29 "docs/bags-and-wearables.md"
@@ -163,7 +163,7 @@ PharosAssert.BagContentsPreserved(Server, 12, deathPos, "game:flint");
 
 namespace Zaldaryon.Pharos.Docs.Generated.bags_and_wearables.Snippet_3
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -202,7 +202,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.bags_and_wearables.Snippet_3
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 39 "docs/bags-and-wearables.md"
@@ -218,7 +218,7 @@ Assert.True(alice.Gear.Stats.Warmth >= 0);
 
 namespace Zaldaryon.Pharos.Docs.Generated.bags_and_wearables.Snippet_4
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -257,7 +257,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.bags_and_wearables.Snippet_4
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 57 "docs/bags-and-wearables.md"

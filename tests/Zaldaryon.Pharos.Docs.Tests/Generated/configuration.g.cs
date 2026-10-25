@@ -54,7 +54,7 @@ using WorldOptions = global::Atlas.Api.WorldOptions;
 
 namespace Zaldaryon.Pharos.Docs.Generated.configuration.Snippet_1
 {
-    
+
 #line 7 "docs/configuration.md"
 [ServerWorld(Preset = WorldPreset.SurvivalFlat)]
 [ServerMods("mods/mymod")]
@@ -75,7 +75,7 @@ public class MyModConfigTests : ServerScenarioBase
 
 namespace Zaldaryon.Pharos.Docs.Generated.configuration.Snippet_2
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -128,7 +128,7 @@ public void EachHostilityRunsWithItsValue(string value)
 
 namespace Zaldaryon.Pharos.Docs.Generated.configuration.Snippet_3
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -181,7 +181,7 @@ public void EachChunkRadiusRunsWithItsValue(string value)
 
 namespace Zaldaryon.Pharos.Docs.Generated.configuration.Snippet_4
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -235,7 +235,7 @@ public async Task EachModConfigRunsWithItsFile(string fixture)
 
 namespace Zaldaryon.Pharos.Docs.Generated.configuration.Snippet_5
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -288,7 +288,7 @@ public void TheWeatherChangesLive()
 
 namespace Zaldaryon.Pharos.Docs.Generated.configuration.Snippet_6
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -341,7 +341,7 @@ public void TheChunkRadiusChangesLive()
 
 namespace Zaldaryon.Pharos.Docs.Generated.configuration.Snippet_7
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 

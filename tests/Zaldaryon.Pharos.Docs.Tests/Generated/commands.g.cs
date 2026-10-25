@@ -54,7 +54,7 @@ using WorldOptions = global::Atlas.Api.WorldOptions;
 
 namespace Zaldaryon.Pharos.Docs.Generated.commands.Snippet_1
 {
-    
+
 #line 7 "docs/commands.md"
 [ServerMods("mods/mymod")]
 public class MyModCommandTests : ServerScenarioBase
@@ -75,7 +75,7 @@ public class MyModCommandTests : ServerScenarioBase
 
 namespace Zaldaryon.Pharos.Docs.Generated.commands.Snippet_2
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -127,7 +127,7 @@ public void MyModsCommandsAreValid()
 
 namespace Zaldaryon.Pharos.Docs.Generated.commands.Snippet_3
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -185,7 +185,7 @@ public async Task ThePositionIsRelativeToTheCaller()
 
 namespace Zaldaryon.Pharos.Docs.Generated.commands.Snippet_4
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -242,7 +242,7 @@ public async Task TheCommandRunsAsThePlayer()
 
 namespace Zaldaryon.Pharos.Docs.Generated.commands.Snippet_5
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -295,7 +295,7 @@ public async Task ResetNeedsAdmin(CommandPrivilegeCase privilege)
 
 namespace Zaldaryon.Pharos.Docs.Generated.commands.Snippet_6
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 

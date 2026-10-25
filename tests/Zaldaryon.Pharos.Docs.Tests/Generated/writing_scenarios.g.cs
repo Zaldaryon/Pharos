@@ -54,9 +54,9 @@ using WorldOptions = global::Atlas.Api.WorldOptions;
 
 namespace Zaldaryon.Pharos.Docs.Generated.writing_scenarios.Snippet_1
 {
-    using Zaldaryon.Pharos.XUnit;
+using Zaldaryon.Pharos.XUnit;
 using Xunit;
-#line 21 "docs/writing-scenarios.md"
+#line 27 "docs/writing-scenarios.md"
 public class ChunkLoadingTests : ClientScenarioBase
 {
     [DocExample]
@@ -82,8 +82,8 @@ public class ChunkLoadingTests : ClientScenarioBase
 
 namespace Zaldaryon.Pharos.Docs.Generated.writing_scenarios.Snippet_2
 {
-    using Zaldaryon.Pharos.Bootstrap;
-#line 48 "docs/writing-scenarios.md"
+using Zaldaryon.Pharos.Bootstrap;
+#line 54 "docs/writing-scenarios.md"
 public class MyTests : ClientScenarioBase
 {
     protected override HeadlessClientOptions ClientOptions => new() { BootMode = ClientBootMode.Engine };
@@ -94,7 +94,7 @@ public class MyTests : ClientScenarioBase
 
 namespace Zaldaryon.Pharos.Docs.Generated.writing_scenarios.Snippet_3
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -133,10 +133,10 @@ namespace Zaldaryon.Pharos.Docs.Generated.writing_scenarios.Snippet_3
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
-#line 88 "docs/writing-scenarios.md"
+#line 94 "docs/writing-scenarios.md"
 // Single frame with fixed timestep
 FrameController!.Frame(0.016f);
 
@@ -153,7 +153,7 @@ FrameController.FramesUntil(() => Client!.WorldMap.LoadedChunks > 10, maxFrames:
 
 namespace Zaldaryon.Pharos.Docs.Generated.writing_scenarios.Snippet_4
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -192,10 +192,10 @@ namespace Zaldaryon.Pharos.Docs.Generated.writing_scenarios.Snippet_4
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
-#line 103 "docs/writing-scenarios.md"
+#line 109 "docs/writing-scenarios.md"
 // Teleport to position
 Player!.SetPosition(100, 80, 200);
 
@@ -212,7 +212,7 @@ var pos = Player.Position;
 
 namespace Zaldaryon.Pharos.Docs.Generated.writing_scenarios.Snippet_5
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -251,7 +251,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.writing_scenarios.Snippet_5
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-#line 120 "docs/writing-scenarios.md"
+#line 126 "docs/writing-scenarios.md"
 [DocExample]
 public void MyTest()
 {
@@ -264,7 +264,7 @@ public void MyTest()
 
 namespace Zaldaryon.Pharos.Docs.Generated.writing_scenarios.Snippet_6
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -303,7 +303,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.writing_scenarios.Snippet_6
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-#line 132 "docs/writing-scenarios.md"
+#line 138 "docs/writing-scenarios.md"
 [DocExample]
 [DocExample]
 [DocExample]
@@ -312,7 +312,7 @@ public void ChunksLoadAtPosition(int x, int y, int z)
 {
     Player!.SetPosition(x, y, z);
     FrameController!.Frames(60);
-    
+
     Assert.True(Client!.WorldMap.LoadedChunks > 0);
 }
 #line default
@@ -322,8 +322,8 @@ public void ChunksLoadAtPosition(int x, int y, int z)
 
 namespace Zaldaryon.Pharos.Docs.Generated.writing_scenarios.Snippet_7
 {
-    using Zaldaryon.Pharos.Bootstrap;
-#line 150 "docs/writing-scenarios.md"
+using Zaldaryon.Pharos.Bootstrap;
+#line 156 "docs/writing-scenarios.md"
 [PharosMods("mods/MyMod.zip", "mods/DependencyMod")]
 public class ModCompatibilityTests : ClientScenarioBase
 {
@@ -335,7 +335,7 @@ public class ModCompatibilityTests : ClientScenarioBase
 
 namespace Zaldaryon.Pharos.Docs.Generated.writing_scenarios.Snippet_8
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -374,7 +374,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.writing_scenarios.Snippet_8
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-#line 171 "docs/writing-scenarios.md"
+#line 177 "docs/writing-scenarios.md"
 [DocExample]
 [RequireGameVersion(">=1.22.0", Reason = "Uses the 1.22 calendar API.")]
 public void SeasonsFollowTheNewCalendar() { }
@@ -385,8 +385,8 @@ public void SeasonsFollowTheNewCalendar() { }
 
 namespace Zaldaryon.Pharos.Docs.Generated.writing_scenarios.Snippet_9
 {
-    
-#line 196 "docs/writing-scenarios.md"
+
+#line 202 "docs/writing-scenarios.md"
 public class FastTests : ClientScenarioBase
 {
     // Uses SharedClient by default
@@ -397,19 +397,19 @@ public class FastTests : ClientScenarioBase
 
 namespace Zaldaryon.Pharos.Docs.Generated.writing_scenarios.Snippet_10
 {
-    
-#line 207 "docs/writing-scenarios.md"
+
+#line 213 "docs/writing-scenarios.md"
 public class IsolatedStateTests : ClientScenarioBase
 {
     protected override IsolationMode IsolationMode => IsolationMode.RollbackState;
-    
+
     [DocExample]
     public void FirstTest()
     {
         Player!.SetPosition(100, 100, 100);
         // State rolls back after this test
     }
-    
+
     [DocExample]
     public void SecondTest()
     {
@@ -422,18 +422,18 @@ public class IsolatedStateTests : ClientScenarioBase
 
 namespace Zaldaryon.Pharos.Docs.Generated.writing_scenarios.Snippet_11
 {
-    
-#line 231 "docs/writing-scenarios.md"
+
+#line 237 "docs/writing-scenarios.md"
 public class FullyIsolatedTests : ClientScenarioBase
 {
     protected override IsolationMode IsolationMode => IsolationMode.FreshClient;
-    
+
     [DocExample]
     public void TestA()
     {
         // Fresh client, no state from other tests
     }
-    
+
     [DocExample]
     public void TestB()
     {
@@ -446,10 +446,10 @@ public class FullyIsolatedTests : ClientScenarioBase
 
 namespace Zaldaryon.Pharos.Docs.Generated.writing_scenarios.Snippet_12
 {
-    using Zaldaryon.Pharos.Graphics;
+using Zaldaryon.Pharos.Graphics;
 using Zaldaryon.Pharos.Culling;
 using Zaldaryon.Pharos.Memory;
-#line 254 "docs/writing-scenarios.md"
+#line 260 "docs/writing-scenarios.md"
 public class InspectionTests : ClientScenarioBase
 {
     [DocExample]
@@ -457,25 +457,25 @@ public class InspectionTests : ClientScenarioBase
     {
         var proxy = new GlCommandProxy();
         proxy.Enable();
-        
+
         FrameController!.Frames(60);
         proxy.Reset();
         FrameController.Frames(10);
-        
+
         var record = proxy.Snapshot();
         proxy.Disable();
-        
+
         Assert.True(record.TotalDrawCalls > 0);
     }
-    
+
     [DocExample]
     public void CheckCulling()
     {
         var inspector = new CullingInspector(Client!.ClientMain);
-        
+
         FrameController!.Frames(30);
         var snapshot = inspector.Snapshot();
-        
+
         Assert.True(snapshot.VisibleChunks.Count > 0);
     }
 }
@@ -485,8 +485,8 @@ public class InspectionTests : ClientScenarioBase
 
 namespace Zaldaryon.Pharos.Docs.Generated.writing_scenarios.Snippet_13
 {
-    
-#line 294 "docs/writing-scenarios.md"
+
+#line 300 "docs/writing-scenarios.md"
 public class VisualTests : ClientScenarioBase
 {
     [DocExample]
@@ -496,18 +496,18 @@ public class VisualTests : ClientScenarioBase
         Player!.SetPosition(0, 100, 0);
         Player.LookAt(50, 64, 50);
         FrameController!.Frames(90);
-        
+
         // Capture and compare
         var snapshot = Client!.Framebuffer.Capture();
         var baseline = FramebufferSnapshot.FromFile("baselines/scene.png");
         var result = snapshot.Compare(baseline, tolerance: 0.02f);
-        
+
         // Save actual on failure for debugging
         if (result.DiffPixelCount > 50)
         {
             snapshot.SaveToPng("artifacts/scene-actual.png");
         }
-        
+
         Assert.True(result.DiffPixelCount < 50,
             $"Visual diff: {result.DiffPixelCount} pixels exceed tolerance");
     }
@@ -518,7 +518,7 @@ public class VisualTests : ClientScenarioBase
 
 namespace Zaldaryon.Pharos.Docs.Generated.writing_scenarios.Snippet_14
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -557,10 +557,10 @@ namespace Zaldaryon.Pharos.Docs.Generated.writing_scenarios.Snippet_14
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
-#line 336 "docs/writing-scenarios.md"
+#line 342 "docs/writing-scenarios.md"
 FrameController!.FramesUntil(
     () => Client!.WorldMap.LoadedChunks >= 50,
     maxFrames: 600);
@@ -572,7 +572,7 @@ FrameController!.FramesUntil(
 
 namespace Zaldaryon.Pharos.Docs.Generated.writing_scenarios.Snippet_15
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -611,10 +611,10 @@ namespace Zaldaryon.Pharos.Docs.Generated.writing_scenarios.Snippet_15
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
-#line 346 "docs/writing-scenarios.md"
+#line 352 "docs/writing-scenarios.md"
 var proxy = new GlCommandProxy();
 proxy.Enable();
 try
@@ -633,7 +633,7 @@ finally
 
 namespace Zaldaryon.Pharos.Docs.Generated.writing_scenarios.Snippet_16
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -672,7 +672,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.writing_scenarios.Snippet_16
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-#line 363 "docs/writing-scenarios.md"
+#line 369 "docs/writing-scenarios.md"
 // Good
 public void ChunksOutsideFrustum_AreCulled() { }
 

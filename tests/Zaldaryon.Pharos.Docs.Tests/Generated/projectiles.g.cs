@@ -54,7 +54,7 @@ using WorldOptions = global::Atlas.Api.WorldOptions;
 
 namespace Zaldaryon.Pharos.Docs.Generated.projectiles.Snippet_1
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -93,7 +93,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.projectiles.Snippet_1
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 12 "docs/projectiles.md"
@@ -108,7 +108,7 @@ Assert.Equal(0, log.Projectiles.Count);
 
 namespace Zaldaryon.Pharos.Docs.Generated.projectiles.Snippet_2
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -147,7 +147,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.projectiles.Snippet_2
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 27 "docs/projectiles.md"
@@ -163,7 +163,7 @@ Assert.NotNull(arrow);
 
 namespace Zaldaryon.Pharos.Docs.Generated.projectiles.Snippet_3
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -202,7 +202,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.projectiles.Snippet_3
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 42 "docs/projectiles.md"
@@ -219,7 +219,7 @@ Assert.NotNull(hit.Entity);
 
 namespace Zaldaryon.Pharos.Docs.Generated.projectiles.Snippet_4
 {
-    
+
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -258,7 +258,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.projectiles.Snippet_4
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        
+
         public async Task ExecuteSnippetAsync()
         {
 #line 58 "docs/projectiles.md"
