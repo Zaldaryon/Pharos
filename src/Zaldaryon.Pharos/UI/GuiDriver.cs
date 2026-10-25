@@ -58,6 +58,7 @@ public sealed class GuiDriver
     internal GuiDriver(HeadlessClient client)
     {
         _client = client;
+        Hud = new HudDriver(client, this);
     }
 
     /// <summary>
@@ -85,6 +86,9 @@ public sealed class GuiDriver
 
     private CharacterDriver? _character;
     private CraftingDriver? _crafting;
+
+    /// <summary>Reads the actual composed HUD state on the client thread.</summary>
+    public HudDriver Hud { get; }
 
     /// <summary>The dialogs currently open, HUD elements included.</summary>
     public IReadOnlyList<GuiDialogInfo> OpenDialogs() => _client.RunOnClientThread(() =>
@@ -134,7 +138,7 @@ public sealed class GuiDriver
     public DialogLayout Layout(string nameOrType) =>
         _client.RunOnClientThread(() => LayoutOf(RequireDialog(nameOrType)));
 
-    private DialogLayout LayoutOf(GuiDialog dialog)
+    internal DialogLayout LayoutOf(GuiDialog dialog)
     {
         // A composer lists an element that takes input among both its interactive and its
         // static elements: each once here.
