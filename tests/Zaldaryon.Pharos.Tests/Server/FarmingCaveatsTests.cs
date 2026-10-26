@@ -50,7 +50,8 @@ public abstract class FarmingCaveatsHelpers : ServerScenarioBase
             blocks.SetBlock(Api.World.GetBlock(new AssetLocation(StillWater))!.BlockId, new BlockPos(pos.X - 1, pos.Y, pos.Z));
         });
         Host.Farming.PlaceField(pos, Field);
-        Host.Ticks(60);
+        // Light propagation can need more ticks on fast CI runners; wait for it to settle.
+        Host.Ticks(120);
         return pos;
     }
 

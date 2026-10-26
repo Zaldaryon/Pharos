@@ -97,7 +97,8 @@ public sealed class TemplatesTests
         Assert.Contains("  workflow_call:", modCi, StringComparison.Ordinal);
         foreach (string input in passed.Concat(["parallel", "smoke", "upload-artifacts"]))
         {
-            Assert.Matches($"(?m)^      {input}:$", modCi);
+            // The $ anchor doesn't match before \r\n on Windows checkouts, so use \r?$ explicitly.
+            Assert.Matches($"(?m)^      {input}:\\r?$", modCi);
         }
     }
 
