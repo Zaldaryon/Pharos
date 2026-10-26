@@ -45,7 +45,7 @@ depend on real timing.
 
 The stepper provides machine-readable capability detection:
 
-```csharp
+```text
 PlatformLoopStepper platformLoop = Client.PlatformLoop;
 
 // Check support before stepping
@@ -63,7 +63,7 @@ if (!result.Supported)
 
 Query the current frame pacing configuration:
 
-```csharp
+```text
 FramePacingSnapshot pacing = platformLoop.GetPacingState();
 
 Console.WriteLine($"VSync mode: {pacing.VsyncMode}");         // 0=off, 1=on
@@ -97,7 +97,7 @@ Every step returns a `PlatformStepResult` with:
 
 Step multiple frames at once:
 
-```csharp
+```text
 IReadOnlyList<PlatformStepResult> results = platformLoop.StepFrames(10);
 
 foreach (var result in results)
