@@ -219,6 +219,8 @@ public static class HeadlessPlatformResolver
         try
         {
             Graphics.GlResourceHooks.Install();
+            // Pre-patch GL draw methods before any GL calls occur to avoid JIT-before-patch issues
+            Graphics.GlCommandProxy.PrePatchDrawMethods();
         }
         catch (InvalidOperationException)
         {

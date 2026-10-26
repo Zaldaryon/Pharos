@@ -457,6 +457,127 @@ public sealed class GlCommandProxy
     }
 
     /// <summary>
+    /// Pre-patches all GL draw methods before the game has a chance to JIT them.
+    /// Call this early in startup (before any GL calls) to ensure patches take effect.
+    /// This is a static, one-time operation that affects all future GlCommandProxy instances.
+    /// </summary>
+    /// <remarks>
+    /// If JIT compilation occurs before patching, the compiled code may bypass patches.
+    /// Calling this method early ensures patches are in place before any GL code runs.
+    /// </remarks>
+    public static void PrePatchDrawMethods()
+    {
+        lock (_activeLock)
+        {
+            if (s_prePatched) return;
+
+            var harmony = new Harmony(HarmonyId + ".prepatch");
+            Type[] bindings = [typeof(GL), typeof(OpenTK.Graphics.OpenGL.GL)];
+
+            foreach (Type gl in bindings)
+            {
+                PrePatchType(harmony, gl);
+            }
+
+            s_prePatched = true;
+        }
+    }
+
+    private static bool s_prePatched;
+
+    /// <summary>
+    /// Returns true if <see cref="PrePatchDrawMethods"/> has been called.
+    /// </summary>
+    public static bool IsPrePatched => s_prePatched;
+
+    private static void PrePatchType(Harmony harmony, Type gl)
+    {
+        BindingFlags pub = BindingFlags.Public | BindingFlags.Static;
+        string[] drawMethods =
+        [
+            "DrawArrays", "DrawElements", "DrawArraysInstanced", "DrawElementsInstanced",
+            "DrawElementsInstancedBaseVertex", "DrawElementsInstancedBaseInstance",
+            "DrawElementsInstancedBaseVertexBaseInstance", "DrawRangeElements",
+            "DrawRangeElementsBaseVertex", "DrawElementsBaseVertex",
+            "DrawTransformFeedback", "DrawTransformFeedbackInstanced",
+            "DrawTransformFeedbackStream", "DrawTransformFeedbackStreamInstanced",
+            "MultiDrawArrays", "MultiDrawElements", "MultiDrawElementsBaseVertex",
+            "DrawArraysIndirect", "DrawElementsIndirect",
+            "MultiDrawArraysIndirect", "MultiDrawElementsIndirect",
+            "MultiDrawArraysIndirectCount", "MultiDrawElementsIndirectCount"
+        ];
+
+        foreach (string methodName in drawMethods)
+        {
+            foreach (var method in gl.GetMethods(pub).Where(m => m.Name == methodName))
+            {
+                try
+                {
+                    if (method.IsGenericMethodDefinition)
+                    {
+                        foreach (Type argType in GenericTypeArgs)
+                        {
+                            try
+                            {
+                                var constructed = method.MakeGenericMethod(argType);
+                                harmony.Patch(constructed, prefix: new HarmonyMethod(typeof(GlCommandProxy), nameof(Prefix_Noop)));
+                            }
+                            catch { /* Invalid type combination */ }
+                        }
+                    }
+                    else
+                    {
+                        harmony.Patch(method, prefix: new HarmonyMethod(typeof(GlCommandProxy), nameof(Prefix_Noop)));
+                    }
+                }
+                catch { /* Method not available */ }
+            }
+        }
+    }
+
+    private static void Prefix_Noop()
+    {
+        // No-op prefix just to ensure the method is patched early
+    }
+
+    /// <summary>
+    /// Verifies that patches are active by checking if the Harmony patches are applied.
+    /// Returns a diagnostic string with verification results.
+    /// </summary>
+    public string VerifyPatches()
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine("Patch Verification Report");
+        sb.AppendLine("=========================");
+        sb.AppendLine($"Pre-patched: {IsPrePatched}");
+        sb.AppendLine($"Enabled: {IsEnabled}");
+        sb.AppendLine($"Patched Method Count: {PatchedMethodCount}");
+
+        // Check if Harmony patches are actually in place
+        var patches = Harmony.GetAllPatchedMethods();
+        var ourPatches = patches.Where(m =>
+            (m.DeclaringType?.FullName?.Contains("OpenTK.Graphics.OpenGL") ?? false) ||
+            (m.DeclaringType?.FullName?.Contains("OpenTK.Graphics.OpenGL4") ?? false)).ToList();
+
+        sb.AppendLine($"OpenTK methods with Harmony patches: {ourPatches.Count}");
+
+        // List a sample of patched methods
+        var sample = ourPatches.Take(10).ToList();
+        if (sample.Count > 0)
+        {
+            sb.AppendLine("Sample patched methods:");
+            foreach (var method in sample)
+            {
+                var info = Harmony.GetPatchInfo(method);
+                int prefixCount = info?.Prefixes?.Count ?? 0;
+                sb.AppendLine($"  {method.DeclaringType?.Name}.{method.Name}: {prefixCount} prefix(es)");
+            }
+        }
+
+        return sb.ToString();
+    }
+
+    /// <summary>
     /// Returns a diagnostic report of patching status for troubleshooting.
     /// </summary>
     public string GetDiagnosticReport()
@@ -464,6 +585,7 @@ public sealed class GlCommandProxy
         var sb = new System.Text.StringBuilder();
         sb.AppendLine($"GlCommandProxy Diagnostic Report");
         sb.AppendLine($"================================");
+        sb.AppendLine($"Pre-patched: {IsPrePatched}");
         sb.AppendLine($"Enabled: {IsEnabled}");
         sb.AppendLine($"Patched Methods: {PatchedMethodCount}");
         sb.AppendLine($"Patch Failures: {PatchFailureCount}");

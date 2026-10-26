@@ -456,4 +456,44 @@ public sealed class GlCommandProxyTests : IDisposable
 
         Assert.NotSame(snapshot1.DrawCallsByMethod, snapshot2.DrawCallsByMethod);
     }
+
+    [Fact]
+    public void PrePatchDrawMethods_CanBeCalledMultipleTimes()
+    {
+        // Pre-patching should be idempotent
+        GlCommandProxy.PrePatchDrawMethods();
+        GlCommandProxy.PrePatchDrawMethods();
+
+        Assert.True(GlCommandProxy.IsPrePatched);
+    }
+
+    [Fact]
+    public void IsPrePatched_TrueAfterPrePatch()
+    {
+        GlCommandProxy.PrePatchDrawMethods();
+
+        Assert.True(GlCommandProxy.IsPrePatched);
+    }
+
+    [Fact]
+    public void VerifyPatches_ReturnsNonEmptyReport()
+    {
+        _proxy.Enable();
+
+        string report = _proxy.VerifyPatches();
+
+        Assert.False(string.IsNullOrWhiteSpace(report));
+        Assert.Contains("Patch Verification Report", report);
+        Assert.Contains("Enabled: True", report);
+    }
+
+    [Fact]
+    public void VerifyPatches_ListsPatchedMethods()
+    {
+        _proxy.Enable();
+
+        string report = _proxy.VerifyPatches();
+
+        Assert.Contains("Patched Method Count:", report);
+    }
 }
