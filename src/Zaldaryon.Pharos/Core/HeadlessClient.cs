@@ -357,6 +357,30 @@ public sealed class HeadlessClient : IDisposable
 
     private PipelineDriver? _pipeline;
 
+    /// <summary>
+    /// Steps the engine via the full platform loop (<c>ClientPlatformWindows.window_RenderFrame</c>)
+    /// instead of just <c>ScreenManager.Render</c>, exercising frame pacing, background FPS limits,
+    /// and any OptiTime patches on platform-loop paths. Engine mode only.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The default <see cref="FrameController"/> steps via <c>ScreenManager.Render</c>, which is
+    /// deterministic and fast but bypasses the platform's frame timing logic. This stepper invokes
+    /// the same callback the vanilla game window uses, so the full frame timing path runs.
+    /// </para>
+    /// <para>
+    /// Check <see cref="PlatformLoopStepper.IsSupported"/> before use. When not supported, stepping
+    /// returns <see cref="PlatformStepResult"/> with <c>Supported = false</c> and a machine-readable
+    /// reason.
+    /// </para>
+    /// </remarks>
+    /// <exception cref="InvalidOperationException">The client is not in engine mode.</exception>
+    public PlatformLoopStepper PlatformLoop => _platformLoop ??= IsEngineMode
+        ? new PlatformLoopStepper(Platform, ScreenManager, Window)
+        : throw new InvalidOperationException("Platform loop stepping requires engine mode.");
+
+    private PlatformLoopStepper? _platformLoop;
+
     /// <summary>The client's registered shader programs. See <see cref="ShaderDriver"/>.</summary>
     public ShaderDriver RegisteredShaders => _registeredShaders ??= new ShaderDriver(this);
 
