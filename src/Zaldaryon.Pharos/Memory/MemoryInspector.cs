@@ -10,12 +10,52 @@ namespace Zaldaryon.Pharos.Memory;
 /// Inspects mesh pool state and tracks per-type allocation counts for the headless client.
 /// Pool state is always readable via <see cref="PoolSnapshot"/>. Hit/miss and allocation
 /// counters require <see cref="Enable"/> to install Harmony patches.
+/// Chunk render pool state is readable via <see cref="ChunkRenderPoolSnapshot"/>.
 /// <see cref="MeasureAllocations"/> is a standalone static helper that requires no patching.
 /// </summary>
 public sealed class MemoryInspector
 {
     /// <summary>The client this inspector belongs to, for what it reads on the client.</summary>
     internal Core.HeadlessClient? Owner { get; set; }
+
+    // --- Reflected ChunkRenderer fields ---
+    private static readonly Type? s_chunkRendererType;
+    private static readonly FieldInfo? s_masterPool;
+    private static readonly FieldInfo? s_poolsByRenderPass;
+    private static readonly Type? s_meshDataPoolManagerType;
+    private static readonly FieldInfo? s_poolsField;
+    private static readonly Type? s_meshDataPoolMasterManagerType;
+    private static readonly FieldInfo? s_modelPoolsField;
+    private static readonly FieldInfo? s_removalQueueField;
+    private static readonly Type? s_meshDataPoolType;
+    private static readonly FieldInfo? s_poolLocationsField;
+
+    // EnumChunkRenderPass names for labeling
+    private static readonly string[] s_renderPassNames = ["Opaque", "OpaqueNoCull", "BlendNoCull", "Meta", "Liquid", "TopSoil", "Transparent"];
+
+    static MemoryInspector()
+    {
+        // Resolve ChunkRenderer type (internal, in VintagestoryLib)
+        s_chunkRendererType = Type.GetType("Vintagestory.Client.NoObf.ChunkRenderer, VintagestoryLib");
+        if (s_chunkRendererType != null)
+        {
+            s_masterPool = s_chunkRendererType.GetField("masterPool", BindingFlags.Instance | BindingFlags.NonPublic);
+            s_poolsByRenderPass = s_chunkRendererType.GetField("poolsByRenderPass", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+        }
+
+        // MeshDataPoolManager.pools
+        s_meshDataPoolManagerType = typeof(MeshDataPoolManager);
+        s_poolsField = s_meshDataPoolManagerType.GetField("pools", BindingFlags.Instance | BindingFlags.NonPublic);
+
+        // MeshDataPoolMasterManager.modelPools and removalQueue
+        s_meshDataPoolMasterManagerType = typeof(MeshDataPoolMasterManager);
+        s_modelPoolsField = s_meshDataPoolMasterManagerType.GetField("modelPools", BindingFlags.Instance | BindingFlags.NonPublic);
+        s_removalQueueField = s_meshDataPoolMasterManagerType.GetField("removalQueue", BindingFlags.Instance | BindingFlags.NonPublic);
+
+        // MeshDataPool.poolLocations
+        s_meshDataPoolType = typeof(MeshDataPool);
+        s_poolLocationsField = s_meshDataPoolType.GetField("poolLocations", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+    }
 
     /// <summary>
     /// Tracks every OpenGL buffer, vertex array, texture, framebuffer and renderbuffer the client
@@ -163,6 +203,191 @@ public sealed class MemoryInspector
         ItemRenderInfoAllocations = _itemRenderInfoAllocations,
         MeshDataAllocations = _meshDataAllocations,
     };
+
+    /// <summary>
+    /// Returns an immutable snapshot of the chunk render mesh pools used for terrain rendering.
+    /// This is the pool that holds actual rendered chunk mesh data (vertices, indices).
+    /// Unlike <see cref="PoolSnapshot"/> which reads the MeshDataRecycler (temporary tessellation buffers),
+    /// this reads the ChunkRenderer's master pool where rendered chunks live.
+    /// </summary>
+    /// <returns>
+    /// A snapshot with pool statistics, or <see cref="ChunkRenderPoolSnapshot.Empty"/> if the
+    /// ChunkRenderer is not accessible.
+    /// </returns>
+    public ChunkRenderPoolSnapshot ChunkRenderPoolSnapshot()
+    {
+        Core.HeadlessClient? owner = Owner;
+        if (owner == null)
+        {
+            return Memory.ChunkRenderPoolSnapshot.Empty with
+            {
+                DiagnosticMessage = "MemoryInspector has no owner client"
+            };
+        }
+
+        // Get ClientMain from HeadlessClient
+        object? clientMain = owner.GetType().GetField("_client", BindingFlags.Instance | BindingFlags.NonPublic)?.GetValue(owner);
+        if (clientMain == null)
+        {
+            return Memory.ChunkRenderPoolSnapshot.Empty with
+            {
+                DiagnosticMessage = "ClientMain not accessible from HeadlessClient"
+            };
+        }
+
+        // Get chunkRenderer field from ClientMain
+        FieldInfo? chunkRendererField = clientMain.GetType().GetField("chunkRenderer", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+        object? chunkRenderer = chunkRendererField?.GetValue(clientMain);
+        if (chunkRenderer == null)
+        {
+            return Memory.ChunkRenderPoolSnapshot.Empty with
+            {
+                DiagnosticMessage = "ChunkRenderer not initialized or not accessible"
+            };
+        }
+
+        return ReadChunkRendererPools(chunkRenderer);
+    }
+
+    private ChunkRenderPoolSnapshot ReadChunkRendererPools(object chunkRenderer)
+    {
+        try
+        {
+            // Get masterPool (MeshDataPoolMasterManager)
+            object? masterPool = s_masterPool?.GetValue(chunkRenderer);
+            // Get poolsByRenderPass (MeshDataPoolManager[][])
+            object? poolsByRenderPass = s_poolsByRenderPass?.GetValue(chunkRenderer);
+
+            if (masterPool == null || poolsByRenderPass == null)
+            {
+                return Memory.ChunkRenderPoolSnapshot.Empty with
+                {
+                    DiagnosticMessage = "masterPool or poolsByRenderPass field not accessible"
+                };
+            }
+
+            // Read master pool stats
+            var modelPools = s_modelPoolsField?.GetValue(masterPool) as System.Collections.IList;
+            int totalPoolCount = modelPools?.Count ?? 0;
+
+            // Count pending removals
+            int pendingRemovalCount = 0;
+            if (s_removalQueueField?.GetValue(masterPool) is Array removalQueues)
+            {
+                foreach (var queue in removalQueues)
+                {
+                    if (queue is System.Collections.ICollection coll)
+                    {
+                        pendingRemovalCount += coll.Count;
+                    }
+                }
+            }
+
+            // Aggregate stats from all pools
+            long totalVerticesAllocated = 0;
+            long totalVerticesUsed = 0;
+            long totalIndicesAllocated = 0;
+            long totalRenderedTriangles = 0;
+            long totalAllocatedTriangles = 0;
+            double fragmentationSum = 0;
+            int fragmentationCount = 0;
+
+            var byRenderPass = new Dictionary<string, RenderPassPoolStats>();
+
+            // Read poolsByRenderPass as MeshDataPoolManager[][]
+            if (poolsByRenderPass is Array outerArray)
+            {
+                for (int passIndex = 0; passIndex < outerArray.Length && passIndex < s_renderPassNames.Length; passIndex++)
+                {
+                    string passName = s_renderPassNames[passIndex];
+                    var inner = outerArray.GetValue(passIndex) as Array;
+                    if (inner == null) continue;
+
+                    long passVerticesAllocated = 0;
+                    long passVerticesUsed = 0;
+                    long passIndicesAllocated = 0;
+                    long passRenderedTriangles = 0;
+                    long passAllocatedTriangles = 0;
+                    int passPoolCount = 0;
+                    int passChunkPartCount = 0;
+
+                    for (int atlasIndex = 0; atlasIndex < inner.Length; atlasIndex++)
+                    {
+                        object? poolManager = inner.GetValue(atlasIndex);
+                        if (poolManager == null) continue;
+
+                        // Get pools from MeshDataPoolManager
+                        var pools = s_poolsField?.GetValue(poolManager) as System.Collections.IList;
+                        if (pools == null) continue;
+
+                        passPoolCount += pools.Count;
+
+                        foreach (MeshDataPool pool in pools)
+                        {
+                            passVerticesAllocated += pool.VerticesPoolSize;
+                            passVerticesUsed += pool.UsedVertices;
+                            passIndicesAllocated += pool.IndicesPoolSize;
+                            passRenderedTriangles += pool.RenderedTriangles;
+                            passAllocatedTriangles += pool.AllocatedTris;
+
+                            fragmentationSum += pool.CurrentFragmentation;
+                            fragmentationCount++;
+
+                            // Count chunk parts (locations)
+                            var locations = s_poolLocationsField?.GetValue(pool) as System.Collections.IList;
+                            if (locations != null)
+                            {
+                                passChunkPartCount += locations.Count;
+                            }
+                        }
+                    }
+
+                    totalVerticesAllocated += passVerticesAllocated;
+                    totalVerticesUsed += passVerticesUsed;
+                    totalIndicesAllocated += passIndicesAllocated;
+                    totalRenderedTriangles += passRenderedTriangles;
+                    totalAllocatedTriangles += passAllocatedTriangles;
+
+                    byRenderPass[passName] = new RenderPassPoolStats
+                    {
+                        RenderPass = passName,
+                        PoolCount = passPoolCount,
+                        VerticesAllocated = passVerticesAllocated,
+                        VerticesUsed = passVerticesUsed,
+                        IndicesAllocated = passIndicesAllocated,
+                        RenderedTriangles = passRenderedTriangles,
+                        AllocatedTriangles = passAllocatedTriangles,
+                        ChunkPartCount = passChunkPartCount
+                    };
+                }
+            }
+
+            // Estimate video memory: vertices use ~28 bytes each (pos, normal, uv, color, flags), indices 4 bytes
+            long estimatedMemory = totalVerticesAllocated * 28 + totalIndicesAllocated * 4;
+
+            return new ChunkRenderPoolSnapshot
+            {
+                IsValid = true,
+                TotalPoolCount = totalPoolCount,
+                TotalVerticesAllocated = totalVerticesAllocated,
+                TotalVerticesUsed = totalVerticesUsed,
+                TotalIndicesAllocated = totalIndicesAllocated,
+                TotalRenderedTriangles = totalRenderedTriangles,
+                TotalAllocatedTriangles = totalAllocatedTriangles,
+                EstimatedVideoMemoryBytes = estimatedMemory,
+                AverageFragmentation = fragmentationCount > 0 ? fragmentationSum / fragmentationCount : 0,
+                ByRenderPass = byRenderPass,
+                PendingRemovalCount = pendingRemovalCount
+            };
+        }
+        catch (Exception ex)
+        {
+            return Memory.ChunkRenderPoolSnapshot.Empty with
+            {
+                DiagnosticMessage = $"Exception reading ChunkRenderer pools: {ex.Message}"
+            };
+        }
+    }
 
     /// <summary>
     /// Measures managed heap bytes allocated on the current thread during execution of
