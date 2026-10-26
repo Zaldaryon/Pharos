@@ -9,7 +9,7 @@ on:
 jobs:
   pharos:
     # The inputs are listed in docs/templates.md of Zaldaryon/Pharos.
-    uses: Zaldaryon/Pharos/.github/workflows/mod-ci.yml@main
+    uses: Zaldaryon/Pharos/.github/workflows/mod-ci.yml@v0.8.0
     with:
       test-project: 'tests/TemplateSample/ExampleMod.Tests/ExampleMod.Tests.csproj'
       game-version: "1.22.7"

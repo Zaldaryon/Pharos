@@ -10,7 +10,7 @@
     <RunSettingsFilePath>$(MSBuildThisFileDirectory)pharos.runsettings</RunSettingsFilePath>
 
     <!-- The Pharos packages; -p:PharosVersion=... or a PharosVersion environment variable overrides it. -->
-    <PharosVersion Condition="'$(PharosVersion)' == ''">0.7.0</PharosVersion>
+    <PharosVersion Condition="'$(PharosVersion)' == ''">0.8.0</PharosVersion>
 
     <!-- The game the tests build against and run: VINTAGE_STORY, or -p:VintageStoryPath=... -->
     <VintageStoryPath Condition="'$(VintageStoryPath)' == ''">$(VINTAGE_STORY)</VintageStoryPath>
