@@ -58,8 +58,8 @@ namespace Zaldaryon.Pharos.Docs.Generated.configuration.Snippet_1
 #line 7 "docs/configuration.md"
 [ServerWorld(Preset = WorldPreset.SurvivalFlat)]
 [ServerMods("mods/mymod")]
-[DocExample]
-[DocExample]
+[WorldConfig("temporalStorms", "off")]
+[ServerConfig("AllowPvP", false)]
 public class MyModConfigTests : ServerScenarioBase
 {
     [DocExample]
@@ -116,7 +116,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.configuration.Snippet_2
 
 #line 40 "docs/configuration.md"
 [DocExample]
-[DocExample]
+[WorldConfigMatrix("creatureHostility", "aggressive", "passive")]
 public void EachHostilityRunsWithItsValue(string value)
 {
     Assert.Equal(value, Server.Api.World.Config.GetString("creatureHostility"));
@@ -169,7 +169,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.configuration.Snippet_3
 
 #line 52 "docs/configuration.md"
 [DocExample]
-[DocExample]
+[ServerConfigMatrix("MaxChunkRadius", "4", "8")]
 public void EachChunkRadiusRunsWithItsValue(string value)
 {
     Assert.Equal(int.Parse(value), Server.Config.MaxChunkRadius);
@@ -222,7 +222,7 @@ namespace Zaldaryon.Pharos.Docs.Generated.configuration.Snippet_4
 
 #line 61 "docs/configuration.md"
 [DocExample]
-[DocExample]
+[ModConfigMatrix("mymod.json", "Fixtures/easy.json", "Fixtures/hard.json")]
 public async Task EachModConfigRunsWithItsFile(string fixture)
 {
     CommandResult result = await ExecuteCommandAsync("/mymod");

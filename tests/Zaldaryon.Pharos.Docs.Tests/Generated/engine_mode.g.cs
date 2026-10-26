@@ -886,59 +886,6 @@ namespace Zaldaryon.Pharos.Docs.Generated.engine_mode.Snippet_15
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-#line 359 "docs/engine-mode.md"
-[DocExample, DocExample]
-public async Task WorldRenders(ClientSettingsProfile profile)
-{
-    using IDisposable _ = Client!.Settings.Apply(profile);
-    await Session!.StepFramesAsync(10);
-}
-#line default
-    }
-}
-
-
-namespace Zaldaryon.Pharos.Docs.Generated.engine_mode.Snippet_16
-{
-
-    public class ScenarioContainer : ClientServerScenarioBase
-    {
-
-        protected BlockPos nearClient => new(10, 64, 10);
-        protected BlockPos nearAlice => new(10, 64, 10);
-        protected BlockPos chestPos => new(10, 64, 10);
-        protected BlockPos pos => new(10, 64, 10);
-        protected BlockPos lamp => new(10, 64, 10);
-        protected BlockPos lever => new(10, 64, 10);
-        protected BlockPos doorPos => new(10, 64, 10);
-        protected new string PlayerName => "TestPlayer";
-        protected PlayerVitals vitals => null!;
-        protected ClientVitals clientVitals => Player.Vitals;
-        protected ServerTestPlayer player => null!;
-        protected ClientServerLoopbackSession session => Session;
-        protected EmbeddedServerHost serverHost => Server;
-        protected BlockPos ground => new(10, 64, 10);
-        protected long wolfId => 1;
-        protected Entity wolf => null!;
-        protected int SparkColor => 0;
-        protected List<BlockPos> expectedBlocks => [];
-        protected ICoreServerAPI sapi => Api;
-        protected string playerUid => "playerUid";
-        protected ServerTestPlayer alice => null!;
-        protected ServerTestPlayer bob => null!;
-        protected Entity entity => null!;
-        protected BotResult used => new(true);
-        protected List<string> myCache => [];
-        protected DoorMock Door(BlockPos pos) => new();
-        protected string DumpInventory() => string.Empty;
-        protected string _lastFailure = string.Empty;
-        protected List<BlockPos> marked => [];
-        protected new int DataFilePort(string name) => 8080;
-        protected EmbeddedServerHost host => ServerHost;
-        protected EmbeddedServerHost Host => ServerHost;
-        protected ICoreServerAPI api => Api;
-        protected HeadlessClient client => Client;
-
 
         public async Task ExecuteSnippetAsync()
         {
@@ -955,7 +902,7 @@ Assert.Null(Client.Hotkeys.ConflictWith("mymod:openpanel"));
 }
 
 
-namespace Zaldaryon.Pharos.Docs.Generated.engine_mode.Snippet_17
+namespace Zaldaryon.Pharos.Docs.Generated.engine_mode.Snippet_16
 {
 
     public class ScenarioContainer : ClientServerScenarioBase
@@ -1012,7 +959,7 @@ Assert.True(Client.Commands.Exists("mymod"));
 }
 
 
-namespace Zaldaryon.Pharos.Docs.Generated.engine_mode.Snippet_18
+namespace Zaldaryon.Pharos.Docs.Generated.engine_mode.Snippet_17
 {
 
     public class ScenarioContainer : ClientServerScenarioBase
@@ -1065,7 +1012,7 @@ Assert.Equal(1280, client.CaptureFrame().Width);
 }
 
 
-namespace Zaldaryon.Pharos.Docs.Generated.engine_mode.Snippet_19
+namespace Zaldaryon.Pharos.Docs.Generated.engine_mode.Snippet_18
 {
 
     public class ScenarioContainer : ClientServerScenarioBase
@@ -1124,7 +1071,7 @@ public async Task PanelFitsOnScreen(WindowLayout layout)
 }
 
 
-namespace Zaldaryon.Pharos.Docs.Generated.engine_mode.Snippet_20
+namespace Zaldaryon.Pharos.Docs.Generated.engine_mode.Snippet_19
 {
 
     public class ScenarioContainer : ClientServerScenarioBase
@@ -1177,7 +1124,7 @@ Assert.Equal("ok", (await client.Commands.ExecuteSuccessAsync(".mymod shaderstat
 }
 
 
-namespace Zaldaryon.Pharos.Docs.Generated.engine_mode.Snippet_21
+namespace Zaldaryon.Pharos.Docs.Generated.engine_mode.Snippet_20
 {
 
     public class ScenarioContainer : ClientServerScenarioBase
@@ -1235,7 +1182,7 @@ Assert.Empty(client.Lang.MissingKeysOf("mymod"));
 }
 
 
-namespace Zaldaryon.Pharos.Docs.Generated.engine_mode.Snippet_22
+namespace Zaldaryon.Pharos.Docs.Generated.engine_mode.Snippet_21
 {
 
     public class ScenarioContainer : ClientServerScenarioBase

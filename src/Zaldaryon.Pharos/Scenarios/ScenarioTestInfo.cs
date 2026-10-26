@@ -20,6 +20,12 @@ public sealed record ScenarioTestInfo(string DisplayName, Type TestClass, string
     /// <summary>The seed the test runs with, from <see cref="SeededAttribute"/>, or null when it is not seeded.</summary>
     public ScenarioRandomSeed? RandomSeed { get; init; }
 
+    /// <summary>
+    /// The cancellation token for this test, combining the test framework's token with any scenario-specific cancellation.
+    /// Use this token in all async waits and long-running operations to support cooperative cancellation.
+    /// </summary>
+    public CancellationToken CancellationToken { get; init; } = default;
+
     /// <summary>Reason this running scenario requested a dynamic skip.</summary>
     public string? DynamicSkipReason { get; set; }
 

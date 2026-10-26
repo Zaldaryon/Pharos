@@ -18,6 +18,11 @@ public sealed class WindowSizesAttribute(params string[] sizes) : DataAttribute
     /// <summary>The GUI scales each size is tested at; when empty, each size's own ("1280x720@1.5"), or 1.</summary>
     public float[] GuiScales { get; set; } = [];
 
+    /// <summary>
+    /// Sizes that should be skipped, with their reason. Use "1920x1080:reason" format.
+    /// </summary>
+    public string[] SkipSizes { get; set; } = [];
+
     /// <inheritdoc />
     public override ValueTask<IReadOnlyCollection<ITheoryDataRow>> GetData(MethodInfo testMethod, DisposalTracker disposalTracker)
     {
@@ -29,20 +34,45 @@ public sealed class WindowSizesAttribute(params string[] sizes) : DataAttribute
                 "Give the GUI scales to [WindowSizes] with GuiScales, or write them as \"1280x720@1.5\".");
         }
 
+        Dictionary<string, string> skipReasons = ParseSkipSizes();
+
         List<ITheoryDataRow> rows = [];
         foreach (string size in Sizes)
         {
             WindowLayout layout = WindowLayout.Parse(size);
+            string sizeKey = $"{layout.Width}x{layout.Height}";
+            skipReasons.TryGetValue(sizeKey, out string? skipReason);
+
             if (GuiScales.Length == 0)
             {
-                rows.Add(new TheoryDataRow(layout));
+                TheoryDataRow<WindowLayout> row = new(layout)
+                {
+                    TestDisplayName = layout.ToString(),
+                    Skip = skipReason
+                };
+                rows.Add(row);
                 continue;
             }
 
             if (size.Contains('@')) throw new ArgumentException($"'{size}' has a GUI scale of its own: leave it out, or leave out GuiScales.");
             foreach (float scale in GuiScales)
             {
-                rows.Add(new TheoryDataRow(WindowLayout.Checked(layout.WithGuiScale(scale))));
+                WindowLayout scaledLayout = WindowLayout.Checked(layout.WithGuiScale(scale));
+                string scaleKey = $"{layout.Width}x{layout.Height}@{scale}";
+                string? scaleSkipReason = skipReasons.TryGetValue(scaleKey, out var sr) ? sr : skipReason;
+
+                // Skip GUI scale 3 at resolutions below 1920x1080
+                if (scaleSkipReason == null && scale >= 3f && (layout.Width < 1920 || layout.Height < 1080))
+                {
+                    scaleSkipReason = $"GUI scale {scale} requires at least 1920x1080";
+                }
+
+                TheoryDataRow<WindowLayout> row = new(scaledLayout)
+                {
+                    TestDisplayName = scaledLayout.ToString(),
+                    Skip = scaleSkipReason
+                };
+                rows.Add(row);
             }
         }
 
@@ -51,4 +81,21 @@ public sealed class WindowSizesAttribute(params string[] sizes) : DataAttribute
 
     /// <inheritdoc />
     public override bool SupportsDiscoveryEnumeration() => true;
+
+    private Dictionary<string, string> ParseSkipSizes()
+    {
+        Dictionary<string, string> result = new(StringComparer.OrdinalIgnoreCase);
+        foreach (string entry in SkipSizes)
+        {
+            int colonIndex = entry.IndexOf(':');
+            if (colonIndex <= 0) continue;
+            string key = entry[..colonIndex].Trim();
+            string reason = entry[(colonIndex + 1)..].Trim();
+            if (key.Length > 0 && reason.Length > 0)
+            {
+                result[key] = reason;
+            }
+        }
+        return result;
+    }
 }

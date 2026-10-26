@@ -307,7 +307,26 @@ public static class ScenarioEngine
     /// Executes the scenario body, watchdog, logged error checks, failure artifacts, and environment cleanup.
     /// This method is shared by both the standalone engine and framework adapters (e.g. xUnit v2).
     /// </summary>
-    public static async Task<decimal> ExecuteBodyAsync(
+    /// <summary>
+    /// Executes the scenario body with cancellation support.
+    /// </summary>
+    public static Task<decimal> ExecuteBodyAsync(
+        ScenarioTestInfo info,
+        IScenarioLifecycle? lifecycle,
+        Func<Task> invokeBody,
+        int timeoutMs,
+        Action<Exception> reportException,
+        Action<string>? reportDynamicSkip,
+        Action<string, string>? onArtifact,
+        CancellationToken ct)
+    {
+        return ExecuteBodyAsyncCore(info, lifecycle, invokeBody, timeoutMs, reportException, reportDynamicSkip, onArtifact, ct);
+    }
+
+    /// <summary>
+    /// Executes the scenario body without external cancellation.
+    /// </summary>
+    public static Task<decimal> ExecuteBodyAsync(
         ScenarioTestInfo info,
         IScenarioLifecycle? lifecycle,
         Func<Task> invokeBody,
@@ -315,6 +334,19 @@ public static class ScenarioEngine
         Action<Exception> reportException,
         Action<string>? reportDynamicSkip = null,
         Action<string, string>? onArtifact = null)
+    {
+        return ExecuteBodyAsyncCore(info, lifecycle, invokeBody, timeoutMs, reportException, reportDynamicSkip, onArtifact, CancellationToken.None);
+    }
+
+    private static async Task<decimal> ExecuteBodyAsyncCore(
+        ScenarioTestInfo info,
+        IScenarioLifecycle? lifecycle,
+        Func<Task> invokeBody,
+        int timeoutMs,
+        Action<Exception> reportException,
+        Action<string>? reportDynamicSkip,
+        Action<string, string>? onArtifact,
+        CancellationToken externalCt)
     {
         if (lifecycle != null)
         {
@@ -328,7 +360,7 @@ public static class ScenarioEngine
             }
         }
 
-        CancellationTokenSource abort = new();
+        CancellationTokenSource abort = CancellationTokenSource.CreateLinkedTokenSource(externalCt);
         AbortScope scope = new(abort.Token);
         using Timer? watchdog = timeoutMs > 0 ? new Timer(_ => abort.Cancel(), null, timeoutMs, Timeout.Infinite) : null;
         ScenarioThreadPump pump = new();

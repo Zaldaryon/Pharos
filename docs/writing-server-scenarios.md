@@ -844,7 +844,7 @@ Blocks also schedule callbacks of their own, such as liquid flow. Pass `includeC
 
 Almost all of the game's random numbers come from unseeded generators, such as `World.Rand`, the static generators behind drops and crop growth, and those that systems, blocks and entities hold. `[Seeded]` seeds them before each test it covers, so a test can assert exact outcomes and a failure can be replayed:
 
-```csharp
+```text
 [assembly: Seeded]                       // every scenario test in the assembly
 
 [Seeded]                                 // a stable hash of each test's name
