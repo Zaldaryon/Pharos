@@ -16,6 +16,9 @@ public class ScenarioTestRunnerV3 : XunitTestRunner
     /// <summary>The singleton instance of the scenario test runner.</summary>
     public static readonly new ScenarioTestRunnerV3 Instance = new();
 
+    /// <summary>The maximum size for a single attachment in bytes (10 MB).</summary>
+    public const long MaxAttachmentSize = 10L * 1024 * 1024;
+
     /// <inheritdoc />
     protected override async ValueTask<TimeSpan> InvokeTest(XunitTestRunnerContext ctxt, object? testClassInstance)
     {
@@ -38,25 +41,17 @@ public class ScenarioTestRunnerV3 : XunitTestRunner
         ScenarioAttemptPolicy policy = ScenarioAttemptPolicy.Read(method);
         int timeoutMs = ScenarioTimeouts.Of(method);
 
-        Action<string, string> onArtifact = (name, path) =>
-        {
-            try
-            {
-                if (File.Exists(path))
-                {
-                    TestContext.Current?.AddAttachment(name, File.ReadAllBytes(path), "application/octet-stream");
-                }
-            }
-            catch
-            {
-                // Best effort attachment
-            }
-        };
+        // Get the test's cancellation token from TestContext
+        CancellationToken testToken = TestContext.Current?.CancellationToken ?? CancellationToken.None;
+        using CancellationTokenSource linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
+            testToken, ctxt.CancellationTokenSource.Token);
+
+        Action<string, string> onArtifact = (name, path) => AttachArtifact(name, path);
 
         // 3. Single attempt path (default)
         if (policy.Attempts <= 1)
         {
-            return await RunAttemptAsync(ctxt, testClassInstance, method, timeoutMs, onArtifact).ConfigureAwait(false);
+            return await RunAttemptAsync(ctxt, testClassInstance, method, timeoutMs, onArtifact, linkedCts.Token).ConfigureAwait(false);
         }
 
         // 4. Multiple attempts retry loop
@@ -66,7 +61,7 @@ public class ScenarioTestRunnerV3 : XunitTestRunner
 
         for (int attempt = 1; attempt <= policy.Attempts; attempt++)
         {
-            if (ctxt.CancellationTokenSource.IsCancellationRequested) break;
+            if (linkedCts.IsCancellationRequested) break;
 
             object? currentInstance = attempt == 1
                 ? testClassInstance
@@ -82,7 +77,7 @@ public class ScenarioTestRunnerV3 : XunitTestRunner
                 ctxt.BeforeAfterTestAttributes,
                 ctxt.ConstructorArguments!);
 
-            TimeSpan attemptTime = await RunAttemptAsync(attemptContext, currentInstance, method, timeoutMs, onArtifact).ConfigureAwait(false);
+            TimeSpan attemptTime = await RunAttemptAsync(attemptContext, currentInstance, method, timeoutMs, onArtifact, linkedCts.Token).ConfigureAwait(false);
             totalTime += attemptTime;
 
             if (!attemptAggregator.HasExceptions)
@@ -116,7 +111,8 @@ public class ScenarioTestRunnerV3 : XunitTestRunner
         object? instance,
         MethodInfo method,
         int timeoutMs,
-        Action<string, string> onArtifact)
+        Action<string, string> onArtifact,
+        CancellationToken ct)
     {
         IScenarioLifecycle? lifecycle = instance as IScenarioLifecycle;
         bool hasNativeAsyncLifetime = instance is Xunit.IAsyncLifetime;
@@ -125,6 +121,7 @@ public class ScenarioTestRunnerV3 : XunitTestRunner
         {
             RandomSeed = randomSeed,
             MethodArguments = [.. ctxt.TestMethodArguments],
+            CancellationToken = ct,
         };
         ScenarioAttemptState state = new();
         IsolationLog.Notes notes = new();
@@ -170,7 +167,11 @@ public class ScenarioTestRunnerV3 : XunitTestRunner
                 timeoutMs,
                 ex => ctxt.Aggregator.Add(ex),
                 reason => throw new ScenarioSkipException(reason),
-                onArtifact).ConfigureAwait(false);
+                onArtifact,
+                ct).ConfigureAwait(false);
+
+            // Add isolation warnings to TestContext
+            AddIsolationWarnings(notes);
 
             return TimeSpan.FromSeconds((double)elapsed);
         }
@@ -183,6 +184,71 @@ public class ScenarioTestRunnerV3 : XunitTestRunner
             ScenarioTestInfo.Current = previousInfo;
             ScenarioAttemptState.Current = previousState;
             IsolationLog.Current = previousNotes;
+        }
+    }
+
+    /// <summary>
+    /// Attaches an artifact file to the test context, respecting size limits.
+    /// </summary>
+    private static void AttachArtifact(string name, string path)
+    {
+        try
+        {
+            if (!File.Exists(path)) return;
+
+            FileInfo fileInfo = new(path);
+            if (fileInfo.Length > MaxAttachmentSize)
+            {
+                TestContext.Current?.AddWarning($"Artifact '{name}' exceeds {MaxAttachmentSize / (1024 * 1024)} MB limit and was not attached.");
+                return;
+            }
+
+            string mediaType = GetMediaType(path);
+            TestContext.Current?.AddAttachment(name, File.ReadAllBytes(path), mediaType);
+        }
+        catch (Exception ex)
+        {
+            TestContext.Current?.AddWarning($"Failed to attach artifact '{name}': {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Gets the media type for a file based on its extension.
+    /// </summary>
+    private static string GetMediaType(string path)
+    {
+        string extension = Path.GetExtension(path).ToLowerInvariant();
+        return extension switch
+        {
+            ".png" => "image/png",
+            ".jpg" or ".jpeg" => "image/jpeg",
+            ".json" => "application/json",
+            ".xml" => "application/xml",
+            ".txt" or ".log" => "text/plain",
+            ".csv" => "text/csv",
+            ".html" => "text/html",
+            _ => "application/octet-stream"
+        };
+    }
+
+    /// <summary>
+    /// Adds isolation warnings from the isolation log to the test context.
+    /// </summary>
+    private static void AddIsolationWarnings(IsolationLog.Notes notes)
+    {
+        if (TestContext.Current == null) return;
+
+        string text = notes.Text;
+        if (string.IsNullOrWhiteSpace(text)) return;
+
+        foreach (string line in text.Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (line.StartsWith("isolation:", StringComparison.OrdinalIgnoreCase) &&
+                (line.Contains("booted again", StringComparison.OrdinalIgnoreCase) ||
+                 line.Contains("restarted", StringComparison.OrdinalIgnoreCase)))
+            {
+                TestContext.Current.AddWarning(line);
+            }
         }
     }
 }

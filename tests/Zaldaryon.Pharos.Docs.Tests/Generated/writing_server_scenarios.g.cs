@@ -50,7 +50,7 @@ using Zaldaryon.Pharos.Bootstrap;
 using Zaldaryon.Pharos.Docs.Tests;
 using WorldOptions = global::Atlas.Api.WorldOptions;
 
-[assembly: Seeded]                       // every scenario test in the assembly
+
 
 namespace Zaldaryon.Pharos.Docs.Generated.writing_server_scenarios.Snippet_1
 {
@@ -1321,20 +1321,6 @@ PharosAssert.NoTickListenersAt(Host, pos);
 namespace Zaldaryon.Pharos.Docs.Generated.writing_server_scenarios.Snippet_28
 {
 
-#line 847 "docs/writing-server-scenarios.md"
-[Seeded]                                 // a stable hash of each test's name
-public class DropTests : ServerScenarioBase
-{
-    [DocExample, Seeded(1234)]       // a fixed seed
-    public void Grass_DropsSeeds_Sometimes() { }
-}
-#line default
-}
-
-
-namespace Zaldaryon.Pharos.Docs.Generated.writing_server_scenarios.Snippet_29
-{
-
     public class ScenarioContainer : ClientServerScenarioBase
     {
 
@@ -1388,7 +1374,7 @@ Assert.Empty(Host.Random.Unseeded.Where(u => u.Assembly == typeof(MyMod).Assembl
 }
 
 
-namespace Zaldaryon.Pharos.Docs.Generated.writing_server_scenarios.Snippet_30
+namespace Zaldaryon.Pharos.Docs.Generated.writing_server_scenarios.Snippet_29
 {
 
 #line 909 "docs/writing-server-scenarios.md"
@@ -1407,7 +1393,7 @@ public class ModIntegrationTests : ServerScenarioBase
 }
 
 
-namespace Zaldaryon.Pharos.Docs.Generated.writing_server_scenarios.Snippet_31
+namespace Zaldaryon.Pharos.Docs.Generated.writing_server_scenarios.Snippet_30
 {
 
 #line 927 "docs/writing-server-scenarios.md"
@@ -1426,7 +1412,7 @@ public class MyModConfigTests : ServerScenarioBase
 }
 
 
-namespace Zaldaryon.Pharos.Docs.Generated.writing_server_scenarios.Snippet_32
+namespace Zaldaryon.Pharos.Docs.Generated.writing_server_scenarios.Snippet_31
 {
 
 #line 947 "docs/writing-server-scenarios.md"

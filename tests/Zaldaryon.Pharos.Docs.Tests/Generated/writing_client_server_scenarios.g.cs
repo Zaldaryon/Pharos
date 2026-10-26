@@ -537,7 +537,6 @@ namespace Zaldaryon.Pharos.Docs.Generated.writing_client_server_scenarios.Snippe
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
-        // A look-alike of the mod's message: same [ProtoMember] numbers, matched by type name.
         [ProtoContract] public class SyncPacket { [ProtoMember(1)] public int Version { get; set; } }
         [ProtoContract] public class SyncAck { [ProtoMember(1)] public int Version { get; set; } }
 
@@ -545,6 +544,8 @@ namespace Zaldaryon.Pharos.Docs.Generated.writing_client_server_scenarios.Snippe
         public async Task ExecuteSnippetAsync()
         {
 #line 240 "docs/writing-client-server-scenarios.md"
+// A look-alike of the mod's message: same [ProtoMember] numbers, matched by type name.
+
             ModMessage delivered = await Client!.ModNetwork.DeliverAsync("mymod", new SyncPacket { Version = 1 });
             SyncAck ack = await Client.ModNetwork.WaitForSentAsync<SyncAck>("mymod", since: delivered.Sequence);
             Assert.Equal(1, ack.Version);

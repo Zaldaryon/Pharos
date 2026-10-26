@@ -356,7 +356,7 @@ using (client.Settings.Apply(ClientSettingsProfile.Of("far", ("viewDistance", 25
 
 `ClientSettingsProfile.Presets` holds the game's graphics presets (`minimum` to `maximum`) with the settings the graphics menu applies for each. A theory runs once per preset:
 
-```csharp
+```text
 [Theory, ClientSettingsMatrix("minimum", "high")]
 public async Task WorldRenders(ClientSettingsProfile profile)
 {

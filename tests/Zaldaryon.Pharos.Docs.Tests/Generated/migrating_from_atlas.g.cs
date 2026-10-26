@@ -79,8 +79,8 @@ public class InventoryTests : AtlasScenarioBase
     }
 
     [DocExample]
-    [DocExample]
-    [DocExample]
+    [InlineData("game:sword-iron")]
+    [InlineData("game:axe-copper")]
     public async Task Should_GiveItem_MultipleTypes(string itemCode)
     {
         var player = await _session.CreateTestPlayer();
@@ -119,8 +119,8 @@ public class InventoryTests : ServerScenarioBase
     }
 
     [DocExample]
-    [DocExample]
-    [DocExample]
+    [InlineData("game:sword-iron")]
+    [InlineData("game:axe-copper")]
     public async Task Should_GiveItem_MultipleTypes(string itemCode)
     {
         var player = await _host.CreateTestPlayer();
