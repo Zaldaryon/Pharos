@@ -362,6 +362,12 @@ public sealed class HeadlessClient : IDisposable
 
     private ShaderDriver? _registeredShaders;
 
+    /// <summary>The client's entity render inspection. See <see cref="EntityDriver"/>.</summary>
+    /// <summary>The client's entity render inspection. See <see cref="EntityDriver"/>.</summary>
+    public EntityDriver Entities => _entities ??= new EntityDriver(this);
+
+    private EntityDriver? _entities;
+
     /// <summary>
     /// The client's hotkeys, its own and its mods': what they are bound to, and firing them by code.
     /// See <see cref="HotkeyDriver"/>.
