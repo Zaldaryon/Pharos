@@ -56,12 +56,27 @@ public class DocSnippetsVerificationTests
             string slug = Path.GetFileNameWithoutExtension(docFile).Replace('-', '_');
             string generatedFile = Path.Combine(generatedDir, $"{slug}.g.cs");
             if (!File.Exists(generatedFile)) continue;
-            string[] generatedLines = File.ReadAllLines(generatedFile);
+            string text = File.ReadAllText(generatedFile);
+            string[] generatedLines = text.Split('\n');
+
+            // Whitespace-only lines are formatting noise outside literals, but inside a
+            // verbatim or raw string they are data the generator must preserve exactly.
+            var tree = Microsoft.CodeAnalysis.CSharp.CSharpSyntaxTree.ParseText(text);
+            var literals = tree.GetRoot().DescendantNodes()
+                .OfType<Microsoft.CodeAnalysis.CSharp.Syntax.LiteralExpressionSyntax>()
+                .Select(l => l.FullSpan)
+                .ToList();
+            int offset = 0;
             for (int lineIndex = 0; lineIndex < generatedLines.Length; lineIndex++)
             {
                 string line = generatedLines[lineIndex];
-                Assert.True(line.Length == 0 || line.Trim().Length > 0,
-                    $"Whitespace-only line {lineIndex + 1} in generated file {generatedFile}");
+                if (line.Length > 0 && line.Trim().Length == 0)
+                {
+                    bool insideLiteral = literals.Any(span => span.Start < offset + line.Length && offset < span.End);
+                    Assert.True(insideLiteral,
+                        $"Whitespace-only line {lineIndex + 1} outside a string literal in generated file {generatedFile}");
+                }
+                offset += line.Length + 1;
             }
         }
     }

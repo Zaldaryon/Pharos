@@ -10,6 +10,7 @@ namespace Zaldaryon.Pharos.Audio;
 public sealed class NullLoadedSound : ILoadedSound
 {
     private readonly SoundParams _soundParams;
+    private readonly long _sequence;
     private bool _disposed;
     private bool _isPlaying;
     private bool _isPaused;
@@ -18,7 +19,7 @@ public sealed class NullLoadedSound : ILoadedSound
     public NullLoadedSound(SoundParams? soundParams = null)
     {
         _soundParams = soundParams ?? new SoundParams();
-        if (soundParams != null) SoundRecorder.OnCreated(soundParams);
+        _sequence = soundParams == null ? 0 : SoundRecorder.OnCreated(soundParams);
     }
 
     public float SoundLengthSeconds => 0f;
@@ -58,6 +59,7 @@ public sealed class NullLoadedSound : ILoadedSound
     {
         _isPlaying = false;
         _isPaused = false;
+        SoundRecorder.OnStopped(_sequence);
     }
 
     public void Pause()
@@ -165,5 +167,6 @@ public sealed class NullLoadedSound : ILoadedSound
         _disposed = true;
         _isPlaying = false;
         _isPaused = false;
+        SoundRecorder.OnDisposed(_sequence);
     }
 }

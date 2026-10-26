@@ -43,6 +43,7 @@ public sealed class SoundRecorder
     private readonly object _lock = new();
     private readonly List<RecordedSound> _created = [];
     private readonly List<RecordedSound> _started = [];
+    private readonly HashSet<long> _stopped = [];
     private long _sequence;
 
     /// <summary>Sounds the game created, in order, whether or not it started them.</summary>
@@ -85,7 +86,7 @@ public sealed class SoundRecorder
     }
 
     /// <summary>Sounds that are still playing (loops never stopped). Empty when none leaked.</summary>
-    public IReadOnlyList<RecordedSound> StillPlaying => Started.Where(s => s.Loop).ToList();
+    public IReadOnlyList<RecordedSound> StillPlaying => Started.Where(s => s.Loop && !_stopped.Contains(s.Sequence)).ToList();
 
     /// <summary>Forgets everything recorded so far.</summary>
     public void Clear()
@@ -100,16 +101,19 @@ public sealed class SoundRecorder
     /// <summary>Makes this the recorder the null audio device reports to.</summary>
     internal void Activate() => Volatile.Write(ref s_current, this);
 
-    internal static void OnCreated(SoundParams sound) => s_current?.Record(sound, started: false);
+    internal static long OnCreated(SoundParams sound) => s_current?.Record(sound, started: false) ?? 0;
 
     internal static void OnStarted(SoundParams sound) => s_current?.Record(sound, started: true);
+    internal static void OnStopped(long sequence) { if (sequence > 0) s_current?._stopped.Add(sequence); }
+    internal static void OnDisposed(long sequence) { if (sequence > 0) s_current?._stopped.Add(sequence); }
 
-    private void Record(SoundParams sound, bool started)
+    private long Record(SoundParams sound, bool started)
     {
         lock (_lock)
         {
             RecordedSound recorded = RecordedSound.From(sound, ++_sequence);
             (started ? _started : _created).Add(recorded);
+            return recorded.Sequence;
         }
     }
 }

@@ -16,7 +16,8 @@ public sealed record AmbientModifierSnapshot(
     float CloudDensityValue, float CloudDensityWeight,
     float CloudBrightnessValue, float CloudBrightnessWeight,
     float SceneBrightnessValue, float SceneBrightnessWeight,
-    float FogBrightnessValue, float FogBrightnessWeight);
+    float FogBrightnessValue, float FogBrightnessWeight,
+    float LerpSpeedValue, float LerpSpeedWeight);
 
 /// <summary>The blended ambient values the client renders this frame.</summary>
 public sealed record AmbientSnapshot(
@@ -58,7 +59,8 @@ public sealed class AmbientDriver
                 mod.CloudDensity?.Value ?? 0f, mod.CloudDensity?.Weight ?? 0f,
                 mod.CloudBrightness?.Value ?? 0f, mod.CloudBrightness?.Weight ?? 0f,
                 mod.SceneBrightness?.Value ?? 0f, mod.SceneBrightness?.Weight ?? 0f,
-                mod.FogBrightness?.Value ?? 0f, mod.FogBrightness?.Weight ?? 0f);
+                mod.FogBrightness?.Value ?? 0f, mod.FogBrightness?.Weight ?? 0f,
+                mod.LerpSpeed?.Value ?? 0f, mod.LerpSpeed?.Weight ?? 0f);
         }
         return new AmbientSnapshot(
             new[] { ambient.BlendedFogColor.X, ambient.BlendedFogColor.Y, ambient.BlendedFogColor.Z, ambient.BlendedFogColor.W },
@@ -66,7 +68,7 @@ public sealed class AmbientDriver
             ambient.BlendedFogDensity,
             ambient.BlendedFogMin,
             ambient.BlendedFlatFogDensity,
-            ambient.BlendedFlatFogYOffset,
+            ambient.BlendedFlatFogYOffset + _client.Client.World.SeaLevel,
             ambient.BlendedCloudBrightness,
             ambient.BlendedCloudDensity,
             ambient.BlendedSceneBrightness,
@@ -79,18 +81,27 @@ public sealed class AmbientDriver
     /// </summary>
     public async Task<AmbientSnapshot> WaitForBlendAsync(int maxFrames, CancellationToken ct = default)
     {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxFrames);
         AmbientSnapshot previous = Snapshot();
         for (int i = 0; i < maxFrames; i++)
         {
             await _client.StepAsync(ct).ConfigureAwait(false);
             AmbientSnapshot current = Snapshot();
             if (Math.Abs(current.FogDensity - previous.FogDensity) < 1e-6f &&
-                Math.Abs(current.FogMin - previous.FogMin) < 1e-6f)
+                Math.Abs(current.FogMin - previous.FogMin) < 1e-6f &&
+                Math.Abs(current.FlatFogDensity - previous.FlatFogDensity) < 1e-6f &&
+                Math.Abs(current.FlatFogYOffset - previous.FlatFogYOffset) < 1e-6f &&
+                Math.Abs(current.CloudBrightness - previous.CloudBrightness) < 1e-6f &&
+                Math.Abs(current.CloudDensity - previous.CloudDensity) < 1e-6f &&
+                Math.Abs(current.SceneBrightness - previous.SceneBrightness) < 1e-6f &&
+                Math.Abs(current.FogBrightness - previous.FogBrightness) < 1e-6f &&
+                current.FogColor.SequenceEqual(previous.FogColor) &&
+                current.AmbientColor.SequenceEqual(previous.AmbientColor))
             {
                 return current;
             }
             previous = current;
         }
-        return Snapshot();
+        throw new TimeoutException($"The ambient blend did not settle within {maxFrames} frames.");
     }
 }
