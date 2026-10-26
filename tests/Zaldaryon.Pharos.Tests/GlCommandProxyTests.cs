@@ -247,4 +247,33 @@ public sealed class GlCommandProxyTests : IDisposable
         Assert.Equal(1, snapshot1.DrawCalls);
         Assert.Equal(2, snapshot2.DrawCalls);
     }
+
+    [Fact]
+    public void Enable_PatchesGlMethods()
+    {
+        _proxy.Enable();
+
+        // Should have patched methods from both OpenGL and OpenGL4 namespaces
+        Assert.True(_proxy.PatchedMethodCount > 0, "Expected at least one GL method to be patched");
+        Assert.Equal(2, _proxy.PatchedTypes.Count); // GL and OpenTK.Graphics.OpenGL.GL
+    }
+
+    [Fact]
+    public void Enable_RecordsPatchFailures()
+    {
+        _proxy.Enable();
+
+        // If there are failures, they should be recorded for diagnostics
+        // Note: failures may be zero if all methods are available
+        Assert.NotNull(_proxy.PatchFailures);
+    }
+
+    [Fact]
+    public void PatchedTypes_ContainsBothGlBindings()
+    {
+        _proxy.Enable();
+
+        Assert.Contains(_proxy.PatchedTypes, t => t == typeof(OpenTK.Graphics.OpenGL4.GL));
+        Assert.Contains(_proxy.PatchedTypes, t => t == typeof(OpenTK.Graphics.OpenGL.GL));
+    }
 }
