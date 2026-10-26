@@ -47,8 +47,36 @@ public sealed record GlCommandRecord
     /// <summary>Total GL errors recorded via glGetError calls (populated when ErrorTracking is enabled).</summary>
     public int Errors { get; init; }
 
+    /// <summary>Shader program bindings (glUseProgram calls).</summary>
+    public int ShaderProgramBindings { get; init; }
+
+    /// <summary>Texture bindings (glBindTexture and glActiveTexture calls).</summary>
+    public int TextureBindings { get; init; }
+
+    /// <summary>Vertex array object bindings (glBindVertexArray calls).</summary>
+    public int VaoBindings { get; init; }
+
+    /// <summary>Framebuffer bindings (glBindFramebuffer calls).</summary>
+    public int FramebufferBindings { get; init; }
+
+    /// <summary>
+    /// Delta of VS RuntimeStats.drawCallsCount during recording, for cross-verification.
+    /// Non-zero indicates the game was rendering; zero with non-zero TotalDrawCalls suggests
+    /// the proxy is capturing calls that VS doesn't count.
+    /// </summary>
+    public int RuntimeStatsDelta { get; init; }
+
+    /// <summary>
+    /// Breakdown of draw calls by method name for detailed analysis.
+    /// Keys are method names like "DrawElements", "MultiDrawElements", etc.
+    /// </summary>
+    public IReadOnlyDictionary<string, int> DrawCallsByMethod { get; init; } = new Dictionary<string, int>();
+
     /// <summary>Total of all draw-related calls: DrawCalls + MultiDrawCalls + IndirectDrawCalls.</summary>
     public int TotalDrawCalls => DrawCalls + MultiDrawCalls + IndirectDrawCalls;
+
+    /// <summary>Total state binding calls for performance analysis.</summary>
+    public int TotalStateBindings => ShaderProgramBindings + TextureBindings + VaoBindings + FramebufferBindings;
 
     public static readonly GlCommandRecord Empty = new();
 }
