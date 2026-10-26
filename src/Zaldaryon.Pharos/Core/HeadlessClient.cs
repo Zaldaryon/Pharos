@@ -352,6 +352,11 @@ public sealed class HeadlessClient : IDisposable
 
     private CameraDriver? _camera;
 
+    /// <summary>The client's render pipeline: framebuffers and stages. See <see cref="PipelineDriver"/>.</summary>
+    public PipelineDriver Pipeline => _pipeline ??= new PipelineDriver(this);
+
+    private PipelineDriver? _pipeline;
+
     /// <summary>
     /// The client's hotkeys, its own and its mods': what they are bound to, and firing them by code.
     /// See <see cref="HotkeyDriver"/>.
