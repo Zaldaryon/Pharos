@@ -123,7 +123,19 @@ internal static class HudCapture
 
     private static void AfterComposerRender(GuiComposer __instance)
     {
-        if (!__instance.Enabled || __instance.Api.World is not ClientMain game || !s_frames.TryGetValue(game, out var frame)) return;
+        // Main-menu composers (login screen after a kick or before joining) carry a MainMenuAPI whose
+        // World getter throws NotImplementedException; only in-game composers have a ClientMain world.
+        if (!__instance.Enabled) return;
+        ClientMain? game;
+        try
+        {
+            game = __instance.Api.World as ClientMain;
+        }
+        catch (NotImplementedException)
+        {
+            return;
+        }
+        if (game == null || !s_frames.TryGetValue(game, out var frame)) return;
         long rendered = frame();
         if (s_helpComposers.TryGetValue(__instance, out HelpState? help)) help.RenderedFrame = rendered;
         if (!s_messageComposers.TryGetValue(__instance, out MessageState? state)) return;
