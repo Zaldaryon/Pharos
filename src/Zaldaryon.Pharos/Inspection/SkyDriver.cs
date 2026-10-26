@@ -32,12 +32,12 @@ public sealed class SkyDriver
     public SkySnapshot Snapshot() => _client.RunOnClientThread(() =>
     {
         var cal = _client.Client.Calendar;
-        var sun = cal.SunPositionNormalized;
+        var sun = cal.SunPosition;
         var moon = cal.MoonPosition;
         var ambient = _client.Client.AmbientManager;
         return new SkySnapshot(
-            new CelestialSnapshot(sun.X, sun.Y, sun.Z, new[] { 1f, 1f, 1f }),
-            new CelestialSnapshot(moon.X, moon.Y, moon.Z, new[] { 1f, 1f, 1f }),
+            new CelestialSnapshot(sun.X, sun.Y, sun.Z, new[] { cal.SunColor.X, cal.SunColor.Y, cal.SunColor.Z }),
+            new CelestialSnapshot(moon.X, moon.Y, moon.Z, new[] { cal.ReflectColor.X, cal.ReflectColor.Y, cal.ReflectColor.Z }),
             new[] { ambient.BlendedFogColor.X, ambient.BlendedFogColor.Y, ambient.BlendedFogColor.Z, ambient.BlendedFogColor.W },
             new[] { ambient.BlendedAmbientColor.X, ambient.BlendedAmbientColor.Y, ambient.BlendedAmbientColor.Z },
             cal.DayLightStrength,

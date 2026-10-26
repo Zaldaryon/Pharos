@@ -96,6 +96,182 @@ container_members = """
         protected HeadlessClient client => Client;
 """
 
+# --- C# token masking -------------------------------------------------------
+# Whitespace inside verbatim/raw strings is data, and text that looks like
+# attributes, type names or using directives inside a string literal is still
+# string data. Every line transformation below runs on a token mask so literal
+# and comment regions are never rewritten, blanked or extracted.
+# ponytail: interpolation holes are parsed with a brace-counting heuristic
+# (ternary colons at hole depth 0 switch to format text); upgrade path is a
+# Roslyn-based generator if docs ever need pathological interpolations.
+
+def _skip_string(code, i):
+    m = re.match(r'(\$*)("{3,})', code[i:])
+    if m:
+        return _skip_raw(code, i + len(m.group(1)) + len(m.group(2)), len(m.group(2)), len(m.group(1)))
+    tok = None
+    for t in ('$@"', '@$"', '$"', '@"', '"', "'"):
+        if code.startswith(t, i):
+            tok = t
+            break
+    if tok is None:
+        return i + 1
+    i += len(tok)
+    n = len(code)
+    if tok == "'":
+        while i < n:
+            if code[i] == '\\':
+                i += 2
+                continue
+            if code[i] == "'":
+                return i + 1
+            i += 1
+        return n
+    verbatim = '@' in tok
+    interpolated = '$' in tok
+    while i < n:
+        c = code[i]
+        if verbatim and c == '"' and code.startswith('"', i + 1):
+            i += 2
+            continue
+        if not verbatim and c == '\\':
+            i += 2
+            continue
+        if interpolated and c == '{':
+            if code.startswith('{', i + 1):
+                i += 2
+                continue
+            i = _skip_hole(code, i + 1)
+            continue
+        if interpolated and c == '}' and code.startswith('}', i + 1):
+            i += 2
+            continue
+        if c == '"':
+            return i + 1
+        i += 1
+    return n
+
+
+def _skip_hole(code, i):
+    n = len(code)
+    depth = 0
+    fmt = False
+    while i < n:
+        c = code[i]
+        if fmt:
+            if c == '}':
+                return i + 1
+            i += 1
+            continue
+        if code.startswith('//', i):
+            j = code.find('\n', i)
+            i = n if j < 0 else j
+            continue
+        if code.startswith('/*', i):
+            j = code.find('*/', i + 2)
+            i = n if j < 0 else j + 2
+            continue
+        if c in '"\'' or (c in '@$' and i + 1 < n and code[i + 1] in '"@$'):
+            i = _skip_string(code, i)
+            continue
+        if c == '{':
+            depth += 1
+        elif c == '}':
+            if depth == 0:
+                return i + 1
+            depth -= 1
+        elif c == ':' and depth == 0:
+            fmt = True
+        i += 1
+    return n
+
+
+def _skip_raw(code, i, quote_count, dollar_count):
+    n = len(code)
+    close = '"' * quote_count
+    hole = '{' * dollar_count if dollar_count else None
+    while i < n:
+        if code.startswith(close, i):
+            return i + quote_count
+        if hole and code.startswith(hole, i) and not code.startswith(hole + '{', i):
+            i = _skip_raw_hole(code, i + dollar_count, dollar_count)
+            continue
+        i += 1
+    return n
+
+
+def _skip_raw_hole(code, i, braces):
+    n = len(code)
+    close = '}' * braces
+    while i < n:
+        if code.startswith(close, i):
+            return i + braces
+        c = code[i]
+        if c in '"\'' or (c in '@$' and i + 1 < n and code[i + 1] in '"@$'):
+            i = _skip_string(code, i)
+            continue
+        i += 1
+    return n
+
+
+def lex_csharp(code):
+    """Per-char mask: 0 = code, 1 = string/char literal, 2 = comment."""
+    n = len(code)
+    mask = [0] * n
+    i = 0
+    while i < n:
+        if code.startswith('//', i):
+            j = code.find('\n', i)
+            j = n if j < 0 else j
+            for k in range(i, j):
+                mask[k] = 2
+            i = j
+            continue
+        if code.startswith('/*', i):
+            j = code.find('*/', i + 2)
+            j = n if j < 0 else j + 2
+            for k in range(i, j):
+                mask[k] = 2
+            i = j
+            continue
+        if re.match(r'(\$*)"{3,}', code[i:]) or re.match(r'(\$?@"|@\$"|\$"|@"|"|\')', code[i:]):
+            start = i
+            i = _skip_string(code, i)
+            for k in range(start, i):
+                mask[k] = 1
+            continue
+        i += 1
+    return mask
+
+
+def line_offsets(code):
+    offs = []
+    pos = 0
+    for line in code.split('\n'):
+        offs.append((pos, line))
+        pos += len(line) + 1
+    return offs
+
+
+def code_view(code, mask):
+    return ''.join(ch if mask[k] == 0 else ' ' for k, ch in enumerate(code))
+
+
+def sub_code(pattern, repl, code, mask):
+    """re.sub over code regions only; matches touching literal/comment chars are skipped."""
+    view = code_view(code, mask)
+    out = []
+    last = 0
+    for m in re.finditer(pattern, view):
+        if any(mask[k] != 0 for k in range(m.start(), m.end())):
+            continue
+        out.append(code[last:m.start()])
+        out.append(repl(m))
+        last = m.end()
+    out.append(code[last:])
+    return ''.join(out)
+
+
 file_count = 0
 snippet_count = 0
 
@@ -121,23 +297,41 @@ for doc_path in docs:
         if not lines:
             continue
 
-        # Check for // run marker
-        is_live_run = bool(re.search(r'^\s*//\s*run\b', raw_code, re.MULTILINE))
+        mask = lex_csharp(raw_code)
+        offsets = line_offsets(raw_code)
 
-        # Extract genuine using directives and assembly attributes
+        def line_mask(idx):
+            start, line = offsets[idx]
+            return mask[start:start + len(line)]
+
+        # Check for // run marker in comment regions only
+        is_live_run = any(
+            re.match(r'^\s*//\s*run\b', ''.join(c for c, mk in zip(l, line_mask(k)) if mk == 2).strip())
+            for k, (s, l) in enumerate(offsets)
+        )
+
+        # Extract genuine using directives and assembly attributes: only lines
+        # whose non-whitespace chars are all code, never literal contents.
         usings_in_snippet = []
         clean_lines = []
-        for l in raw_code.split('\n'):
+        for k, (s, l) in enumerate(offsets):
             stripped = l.strip()
-            if stripped.startswith('[assembly:'):
+            lm = line_mask(k)
+            pure_code = all(mk == 0 for ch, mk in zip(l, lm) if ch.strip())
+            if pure_code and stripped.startswith('[assembly:'):
                 assembly_attributes.append(stripped)
-            elif re.match(r'^using\s+(static\s+)?[A-Za-z0-9_.]+(\s*=\s*[A-Za-z0-9_.]+)?\s*;\s*$', stripped):
+            elif pure_code and re.match(r'^using\s+(static\s+)?[A-Za-z0-9_.]+(\s*=\s*[A-Za-z0-9_.]+)?\s*;\s*$', stripped):
                 usings_in_snippet.append(stripped)
             else:
                 clean_lines.append(l)
 
         cleaned_code = '\n'.join(clean_lines).strip()
-        cleaned_code = '\n'.join(l if l.strip() else '' for l in cleaned_code.split('\n'))
+        mask = lex_csharp(cleaned_code)
+        # Blank whitespace-only lines only when they contain no literal data.
+        cleaned_code = '\n'.join(
+            l if (l.strip() or any(mask[s + j] == 1 for j in range(len(l)))) else ''
+            for s, l in line_offsets(cleaned_code)
+        )
         if not is_live_run:
             def replace_bracket(match):
                 inner = match.group(1)
@@ -148,9 +342,11 @@ for doc_path in docs:
                 )
                 return f'[{inner}]'
 
-            cleaned_code = re.sub(r'\[([^\]]+)\]', replace_bracket, cleaned_code)
-            cleaned_code = re.sub(r'\bModSmokeTest\b', 'DocModSmokeTest', cleaned_code)
-        non_comment_lines = [re.sub(r'//.*$', '', l).strip() for l in cleaned_code.split('\n')]
+            cleaned_code = sub_code(r'\[([^\]]+)\]', replace_bracket, cleaned_code, lex_csharp(cleaned_code))
+            cleaned_code = sub_code(r'\bModSmokeTest\b', lambda m: 'DocModSmokeTest', cleaned_code, lex_csharp(cleaned_code))
+        mask = lex_csharp(cleaned_code)
+        view_lines = code_view(cleaned_code, mask).split('\n')
+        non_comment_lines = [l.strip() for l in view_lines]
         non_comment_lines = [l for l in non_comment_lines if l]
         if not non_comment_lines:
             continue
@@ -219,16 +415,34 @@ namespace Zaldaryon.Pharos.Docs.Generated.{file_slug}.Snippet_{i+1}_Outer
         elif has_classes and has_statements and not has_method:
             class_lines = []
             stmt_lines = []
-            for l in cleaned_code.split('\n'):
-                if 'class ' in l or 'ProtoMember' in l or 'ProtoContract' in l:
-                    class_lines.append(l)
+            offs = line_offsets(cleaned_code)
+            emit_view = code_view(cleaned_code, mask).split('\n')
+            for (start, l), vl in zip(offs, emit_view):
+                entry = (start, l)
+                if 'class ' in vl or 'ProtoMember' in vl or 'ProtoContract' in vl:
+                    class_lines.append(entry)
                 else:
-                    stmt_lines.append(l)
+                    stmt_lines.append(entry)
             # Strip boundary empty lines from stmt_lines
-            while stmt_lines and not stmt_lines[0].strip():
+            while stmt_lines and not stmt_lines[0][1].strip():
                 stmt_lines.pop(0)
-            while stmt_lines and not stmt_lines[-1].strip():
+            while stmt_lines and not stmt_lines[-1][1].strip():
                 stmt_lines.pop()
+
+            def render(lines, prefix):
+                # Indent only when the line starts in code; a line starting inside
+                # a multi-line literal must keep its exact characters.
+                out = []
+                for idx, l in lines:
+                    first = len(l) - len(l.lstrip())
+                    if not l.strip():
+                        has_literal = any(mask[idx + j] == 1 for j in range(len(l)))
+                        out.append(l if has_literal else '')
+                    elif idx + first < len(mask) and mask[idx + first] == 0:
+                        out.append(prefix + l)
+                    else:
+                        out.append(l)
+                return chr(10).join(out)
 
             snippet_body = f"""
 {ns}
@@ -237,13 +451,13 @@ namespace Zaldaryon.Pharos.Docs.Generated.{file_slug}.Snippet_{i+1}_Outer
     public class ScenarioContainer : ClientServerScenarioBase
     {{
 {container_members}
-{chr(10).join('        ' + l if l.strip() else '' for l in class_lines)}
+{render(class_lines, '        ')}
 
 {run_trait}
         public async Task ExecuteSnippetAsync()
         {{
 #line {line_num} "{doc_path}"
-{chr(10).join('            ' + l if l.strip() else '' for l in stmt_lines)}
+{render(stmt_lines, '            ')}
 #line default
         }}
     }}

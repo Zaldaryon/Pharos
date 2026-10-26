@@ -522,11 +522,12 @@ public sealed partial class ClientServerLoopbackSession : IDisposable
     /// </summary>
     public async Task FreezeSkyAsync(int maxFrames = 240, CancellationToken ct = default)
     {
-        if (NativeServer != null)
-        {
-            NativeServer.Calendar.Freeze();
-            NativeServer.Weather.StopChanges();
-        }
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxFrames);
+        EmbeddedServerHost server = NativeServer ?? throw new NotSupportedException("FreezeSkyAsync needs a session with an embedded server.");
+        server.Calendar.Freeze();
+        server.Weather.SetWind("still");
+        server.Weather.StopChanges();
+        await WaitForCalendarSyncAsync(null, maxFrames, ct).ConfigureAwait(false);
         await Client.Ambient.WaitForBlendAsync(maxFrames, ct).ConfigureAwait(false);
     }
 
