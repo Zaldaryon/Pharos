@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Reflection;
 using HarmonyLib;
@@ -44,6 +45,11 @@ public sealed class GlCommandProxy
     private static GlCommandProxy? _active;
     private static readonly object _activeLock = new();
 
+    // Diagnostic counters for verifying patches were applied.
+    private int _patchedMethodCount;
+    private int _patchFailureCount;
+    private readonly List<string> _patchFailures = new();
+
     public bool IsEnabled
     {
         get { lock (_lock) { return _enabled; } }
@@ -62,6 +68,9 @@ public sealed class GlCommandProxy
                 if (_enabled) return;
 
                 _active = this;
+                _patchedMethodCount = 0;
+                _patchFailureCount = 0;
+                _patchFailures.Clear();
                 ApplyPatches();
                 _enabled = true;
             }
@@ -132,6 +141,22 @@ public sealed class GlCommandProxy
     /// <summary>Whether a proxy is recording.</summary>
     internal static bool IsRecording => Volatile.Read(ref _active) != null;
 
+    /// <summary>
+    /// Number of GL methods successfully patched. Zero indicates patching failed completely.
+    /// </summary>
+    public int PatchedMethodCount => _patchedMethodCount;
+
+    /// <summary>
+    /// Number of patch failures during <see cref="Enable"/>. Non-zero may indicate
+    /// incompatible OpenTK version or missing methods.
+    /// </summary>
+    public int PatchFailureCount => _patchFailureCount;
+
+    /// <summary>
+    /// Descriptions of patch failures for diagnostics.
+    /// </summary>
+    public IReadOnlyList<string> PatchFailures => _patchFailures;
+
     // Called by GlResourceHooks for each object created or deleted, once per id.
     internal static void OnResource(GlResourceKind kind, bool created)
     {
@@ -184,21 +209,48 @@ public sealed class GlCommandProxy
         PatchedTypes = bindings;
     }
 
+    // Common generic type arguments used by OpenTK GL methods.
+    private static readonly Type[] GenericTypeArgs =
+    [
+        typeof(int),
+        typeof(uint),
+        typeof(short),
+        typeof(ushort),
+        typeof(byte),
+        typeof(sbyte),
+        typeof(float),
+        typeof(double),
+        typeof(IntPtr),
+    ];
+
     private void ApplyPatchesTo(Type gl)
     {
         BindingFlags pub = BindingFlags.Public | BindingFlags.Static;
 
+        // Direct draw calls (DrawArrays, DrawElements, etc.)
         PatchAllOverloads(gl, "DrawArrays", pub, nameof(Prefix_DrawCall));
         PatchAllOverloads(gl, "DrawElements", pub, nameof(Prefix_DrawCall));
         PatchAllOverloads(gl, "DrawArraysInstanced", pub, nameof(Prefix_DrawCall));
         PatchAllOverloads(gl, "DrawElementsInstanced", pub, nameof(Prefix_DrawCall));
+        PatchAllOverloads(gl, "DrawElementsInstancedBaseVertex", pub, nameof(Prefix_DrawCall));
+        PatchAllOverloads(gl, "DrawElementsInstancedBaseInstance", pub, nameof(Prefix_DrawCall));
+        PatchAllOverloads(gl, "DrawElementsInstancedBaseVertexBaseInstance", pub, nameof(Prefix_DrawCall));
         PatchAllOverloads(gl, "DrawRangeElements", pub, nameof(Prefix_DrawCall));
+        PatchAllOverloads(gl, "DrawRangeElementsBaseVertex", pub, nameof(Prefix_DrawCall));
+        PatchAllOverloads(gl, "DrawElementsBaseVertex", pub, nameof(Prefix_DrawCall));
 
+        // Multi-draw calls (MultiDrawArrays, MultiDrawElements)
         PatchAllOverloads(gl, "MultiDrawArrays", pub, nameof(Prefix_MultiDrawCall));
         PatchAllOverloads(gl, "MultiDrawElements", pub, nameof(Prefix_MultiDrawCall));
+        PatchAllOverloads(gl, "MultiDrawElementsBaseVertex", pub, nameof(Prefix_MultiDrawCall));
 
+        // Indirect draw calls (glDrawArraysIndirect, glDrawElementsIndirect, glMultiDraw*Indirect)
+        PatchAllOverloads(gl, "DrawArraysIndirect", pub, nameof(Prefix_IndirectDrawCall));
+        PatchAllOverloads(gl, "DrawElementsIndirect", pub, nameof(Prefix_IndirectDrawCall));
         PatchAllOverloads(gl, "MultiDrawArraysIndirect", pub, nameof(Prefix_IndirectDrawCall));
         PatchAllOverloads(gl, "MultiDrawElementsIndirect", pub, nameof(Prefix_IndirectDrawCall));
+        PatchAllOverloads(gl, "MultiDrawArraysIndirectCount", pub, nameof(Prefix_IndirectDrawCall));
+        PatchAllOverloads(gl, "MultiDrawElementsIndirectCount", pub, nameof(Prefix_IndirectDrawCall));
 
         // Buffers, vertex arrays and the other objects are counted by GlResourceHooks, which is
         // installed before anything boots and counts each id.
@@ -206,19 +258,39 @@ public sealed class GlCommandProxy
 
     private void PatchAllOverloads(Type type, string methodName, BindingFlags flags, string prefixName)
     {
-        foreach (MethodInfo method in type.GetMethods(flags).Where(m => m.Name == methodName))
+        var methods = type.GetMethods(flags).Where(m => m.Name == methodName).ToList();
+
+        foreach (MethodInfo method in methods)
         {
             if (method.IsGenericMethodDefinition)
             {
+                // Try all common type arguments for generic methods like MultiDrawElements<T>
                 Type[] typeArgs = method.GetGenericArguments();
                 if (typeArgs.Length == 1)
                 {
-                    try
+                    foreach (Type argType in GenericTypeArgs)
                     {
-                        MethodInfo constructed = method.MakeGenericMethod(typeof(int));
-                        _harmony.Patch(constructed, prefix: new HarmonyMethod(typeof(GlCommandProxy), prefixName));
+                        try
+                        {
+                            MethodInfo constructed = method.MakeGenericMethod(argType);
+                            _harmony.Patch(constructed, prefix: new HarmonyMethod(typeof(GlCommandProxy), prefixName));
+                            _patchedMethodCount++;
+                        }
+                        catch (Exception ex)
+                        {
+                            // Some type combinations are invalid; only log unexpected failures
+                            if (ex is not ArgumentException)
+                            {
+                                _patchFailureCount++;
+                                _patchFailures.Add($"{type.Name}.{methodName}<{argType.Name}>: {ex.GetType().Name}: {ex.Message}");
+                            }
+                        }
                     }
-                    catch { }
+                }
+                else
+                {
+                    // Multi-arg generics not used by draw calls; skip but log
+                    _patchFailures.Add($"{type.Name}.{methodName}: Skipped (multi-arg generic)");
                 }
             }
             else
@@ -226,8 +298,13 @@ public sealed class GlCommandProxy
                 try
                 {
                     _harmony.Patch(method, prefix: new HarmonyMethod(typeof(GlCommandProxy), prefixName));
+                    _patchedMethodCount++;
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    _patchFailureCount++;
+                    _patchFailures.Add($"{type.Name}.{methodName}: {ex.GetType().Name}: {ex.Message}");
+                }
             }
         }
     }
