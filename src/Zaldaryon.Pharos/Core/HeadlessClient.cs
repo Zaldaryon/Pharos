@@ -357,6 +357,11 @@ public sealed class HeadlessClient : IDisposable
 
     private PipelineDriver? _pipeline;
 
+    /// <summary>The client's registered shader programs. See <see cref="ShaderDriver"/>.</summary>
+    public ShaderDriver RegisteredShaders => _registeredShaders ??= new ShaderDriver(this);
+
+    private ShaderDriver? _registeredShaders;
+
     /// <summary>
     /// The client's hotkeys, its own and its mods': what they are bound to, and firing them by code.
     /// See <see cref="HotkeyDriver"/>.
