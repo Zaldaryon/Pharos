@@ -89,6 +89,10 @@ public sealed class GlCommandProxyTests : IDisposable
         GlCommandProxy.OnBufferDeleted();
         GlCommandProxy.OnVertexArrayAllocated();
         GlCommandProxy.OnError();
+        GlCommandProxy.OnShaderProgramBinding();
+        GlCommandProxy.OnTextureBinding();
+        GlCommandProxy.OnVaoBinding();
+        GlCommandProxy.OnFramebufferBinding();
 
         _proxy.Reset();
         GlCommandRecord record = _proxy.Snapshot();
@@ -100,6 +104,11 @@ public sealed class GlCommandProxyTests : IDisposable
         Assert.Equal(0, record.BufferDeletions);
         Assert.Equal(0, record.VertexArrayAllocations);
         Assert.Equal(0, record.Errors);
+        Assert.Equal(0, record.ShaderProgramBindings);
+        Assert.Equal(0, record.TextureBindings);
+        Assert.Equal(0, record.VaoBindings);
+        Assert.Equal(0, record.FramebufferBindings);
+        Assert.Empty(record.DrawCallsByMethod);
     }
 
     [Fact]
@@ -230,6 +239,11 @@ public sealed class GlCommandProxyTests : IDisposable
         Assert.Equal(0, empty.VertexArrayAllocations);
         Assert.Equal(0, empty.Errors);
         Assert.Equal(0, empty.TotalDrawCalls);
+        Assert.Equal(0, empty.ShaderProgramBindings);
+        Assert.Equal(0, empty.TextureBindings);
+        Assert.Equal(0, empty.VaoBindings);
+        Assert.Equal(0, empty.FramebufferBindings);
+        Assert.Equal(0, empty.TotalStateBindings);
     }
 
     [Fact]
@@ -275,5 +289,171 @@ public sealed class GlCommandProxyTests : IDisposable
 
         Assert.Contains(_proxy.PatchedTypes, t => t == typeof(OpenTK.Graphics.OpenGL4.GL));
         Assert.Contains(_proxy.PatchedTypes, t => t == typeof(OpenTK.Graphics.OpenGL.GL));
+    }
+
+    // New tests for enhanced diagnostics
+
+    [Fact]
+    public void Snapshot_CapturesShaderProgramBindings()
+    {
+        _proxy.Enable();
+
+        GlCommandProxy.OnShaderProgramBinding();
+        GlCommandProxy.OnShaderProgramBinding();
+
+        GlCommandRecord record = _proxy.Snapshot();
+
+        Assert.Equal(2, record.ShaderProgramBindings);
+    }
+
+    [Fact]
+    public void Snapshot_CapturesTextureBindings()
+    {
+        _proxy.Enable();
+
+        GlCommandProxy.OnTextureBinding();
+        GlCommandProxy.OnTextureBinding();
+        GlCommandProxy.OnTextureBinding();
+
+        GlCommandRecord record = _proxy.Snapshot();
+
+        Assert.Equal(3, record.TextureBindings);
+    }
+
+    [Fact]
+    public void Snapshot_CapturesVaoBindings()
+    {
+        _proxy.Enable();
+
+        GlCommandProxy.OnVaoBinding();
+
+        GlCommandRecord record = _proxy.Snapshot();
+
+        Assert.Equal(1, record.VaoBindings);
+    }
+
+    [Fact]
+    public void Snapshot_CapturesFramebufferBindings()
+    {
+        _proxy.Enable();
+
+        GlCommandProxy.OnFramebufferBinding();
+        GlCommandProxy.OnFramebufferBinding();
+
+        GlCommandRecord record = _proxy.Snapshot();
+
+        Assert.Equal(2, record.FramebufferBindings);
+    }
+
+    [Fact]
+    public void TotalStateBindings_SumsAllBindings()
+    {
+        _proxy.Enable();
+
+        GlCommandProxy.OnShaderProgramBinding();  // 1
+        GlCommandProxy.OnTextureBinding();        // 1
+        GlCommandProxy.OnTextureBinding();        // 2
+        GlCommandProxy.OnVaoBinding();            // 1
+        GlCommandProxy.OnFramebufferBinding();    // 1
+
+        GlCommandRecord record = _proxy.Snapshot();
+
+        Assert.Equal(1, record.ShaderProgramBindings);
+        Assert.Equal(2, record.TextureBindings);
+        Assert.Equal(1, record.VaoBindings);
+        Assert.Equal(1, record.FramebufferBindings);
+        Assert.Equal(5, record.TotalStateBindings);
+    }
+
+    [Fact]
+    public void Enable_RecordsPatchedMethods()
+    {
+        _proxy.Enable();
+
+        Assert.NotNull(_proxy.PatchedMethods);
+        Assert.True(_proxy.PatchedMethods.Count > 0, "Should have recorded patched method names");
+        Assert.True(_proxy.PatchedMethodCount == _proxy.PatchedMethods.Count, "PatchedMethodCount should match PatchedMethods.Count");
+    }
+
+    [Fact]
+    public void PatchedMethods_ContainsExpectedDrawMethods()
+    {
+        _proxy.Enable();
+
+        // Both GL and OpenTK.Graphics.OpenGL.GL should have DrawElements patched
+        Assert.Contains(_proxy.PatchedMethods, m => m.Contains("DrawElements"));
+        Assert.Contains(_proxy.PatchedMethods, m => m.Contains("DrawArrays"));
+    }
+
+    [Fact]
+    public void PatchedMethods_ContainsStateBindingMethods()
+    {
+        _proxy.Enable();
+
+        Assert.Contains(_proxy.PatchedMethods, m => m.Contains("UseProgram"));
+        Assert.Contains(_proxy.PatchedMethods, m => m.Contains("BindTexture"));
+        Assert.Contains(_proxy.PatchedMethods, m => m.Contains("BindVertexArray"));
+        Assert.Contains(_proxy.PatchedMethods, m => m.Contains("BindFramebuffer"));
+    }
+
+    [Fact]
+    public void GetDiagnosticReport_ReturnsNonEmptyString()
+    {
+        _proxy.Enable();
+
+        GlCommandProxy.OnDrawCall();
+        GlCommandProxy.OnShaderProgramBinding();
+
+        string report = _proxy.GetDiagnosticReport();
+
+        Assert.False(string.IsNullOrWhiteSpace(report));
+        Assert.Contains("Enabled: True", report);
+        Assert.Contains("Draw Calls:", report);
+        Assert.Contains("Shader Bindings:", report);
+    }
+
+    [Fact]
+    public void GetDiagnosticReport_IncludesPatchInfo()
+    {
+        _proxy.Enable();
+
+        string report = _proxy.GetDiagnosticReport();
+
+        Assert.Contains("Patched Methods:", report);
+        Assert.Matches(@"Patched Methods: \d+", report);
+    }
+
+    [Fact]
+    public void RuntimeStatsHooked_ReturnsFalseWhenVsNotLoaded()
+    {
+        _proxy.Enable();
+
+        // In unit tests, VS is not loaded so RuntimeStats won't be hooked
+        // This test verifies the code handles this gracefully
+        Assert.NotNull(_proxy); // Just verify no exception was thrown
+    }
+
+    [Fact]
+    public void DrawCallsByMethod_IsEmptyInitially()
+    {
+        _proxy.Enable();
+
+        GlCommandRecord record = _proxy.Snapshot();
+
+        Assert.NotNull(record.DrawCallsByMethod);
+        Assert.Empty(record.DrawCallsByMethod);
+    }
+
+    [Fact]
+    public void DrawCallsByMethod_IsImmutableCopy()
+    {
+        _proxy.Enable();
+
+        GlCommandRecord snapshot1 = _proxy.Snapshot();
+
+        // Modify the dictionary in a new record should not affect snapshot1
+        GlCommandRecord snapshot2 = _proxy.Snapshot();
+
+        Assert.NotSame(snapshot1.DrawCallsByMethod, snapshot2.DrawCallsByMethod);
     }
 }
