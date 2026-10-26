@@ -230,6 +230,28 @@ public sealed class HeadlessClient : IDisposable
     public SoundRecorder Sounds { get; } = new();
 
     /// <summary>
+    /// The client's music engine: current track, candidates, cooldowns, and selection logic.
+    /// See <see cref="Audio.MusicDriver"/>.
+    /// </summary>
+    public Audio.MusicDriver Music => _music ??= new Audio.MusicDriver(this);
+
+    private Audio.MusicDriver? _music;
+
+    /// <summary>
+    /// The client's ambient sounds: water, wind, fire, and other sounds from nearby blocks.
+    /// See <see cref="Audio.AmbientSoundDriver"/>.
+    /// </summary>
+    public Audio.AmbientSoundDriver AmbientSounds => _ambientSounds ??= new Audio.AmbientSoundDriver(this);
+
+    private Audio.AmbientSoundDriver? _ambientSounds;
+
+    /// <summary>
+    /// The client's audio level settings: master, sound, entity, ambient, weather, and music.
+    /// See <see cref="Audio.AudioLevelsDriver"/>.
+    /// </summary>
+    public Audio.AudioLevelsDriver AudioLevels { get; } = new();
+
+    /// <summary>
     /// Runs the client's chat commands, the ones that start with a dot, and returns their result.
     /// See <see cref="ClientCommandDriver"/>.
     /// </summary>
