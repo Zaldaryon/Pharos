@@ -4,7 +4,7 @@ name: Pharos mod CI
 #
 #   jobs:
 #     pharos:
-#       uses: Zaldaryon/Pharos/.github/workflows/mod-ci.yml@main
+#       uses: Zaldaryon/Pharos/.github/workflows/mod-ci.yml@v0.8.0
 #       with:
 #         test-project: MyMod.Tests/MyMod.Tests.csproj
 #

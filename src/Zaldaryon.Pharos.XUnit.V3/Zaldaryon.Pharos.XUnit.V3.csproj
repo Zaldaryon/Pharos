@@ -11,7 +11,7 @@
     <IsPackable>true</IsPackable>
     <IsTestProject>false</IsTestProject>
     <PackageId>Zaldaryon.Pharos.XUnit.V3</PackageId>
-    <Version>0.7.0-preview</Version>
+    <Version>0.8.0-preview</Version>
     <Authors>Zaldaryon</Authors>
     <Description>xUnit v3 integration preview package for Pharos headless client test harness.</Description>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>

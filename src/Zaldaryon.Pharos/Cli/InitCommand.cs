@@ -139,7 +139,7 @@ public static class InitCommand
         project.AppendLine("    <PackageReference Include=\"Microsoft.NET.Test.Sdk\" Version=\"17.11.1\" />");
         project.AppendLine("    <PackageReference Include=\"xunit\" Version=\"2.9.3\" />");
         project.AppendLine("    <PackageReference Include=\"xunit.runner.visualstudio\" Version=\"2.8.2\" />");
-        project.AppendLine("    <PackageReference Include=\"Zaldaryon.Pharos.XUnit\" Version=\"0.7.0\" />");
+        project.AppendLine("    <PackageReference Include=\"Zaldaryon.Pharos.XUnit\" Version=\"0.8.0\" />");
         project.AppendLine("  </ItemGroup>");
         project.AppendLine();
         project.AppendLine("  <!-- Pharos runs the game in the test process, so the tests reference the install's assemblies. -->");

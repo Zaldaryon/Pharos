@@ -15,9 +15,9 @@
 
     <!-- The Pharos packages; -p:PharosVersion=... or a PharosVersion environment variable overrides it. -->
 <!--#if (framework == "xunit3") -->
-    <PharosVersion Condition="'$(PharosVersion)' == ''">0.7.0-preview</PharosVersion>
+    <PharosVersion Condition="'$(PharosVersion)' == ''">0.8.0-preview</PharosVersion>
 <!--#else -->
-    <PharosVersion Condition="'$(PharosVersion)' == ''">0.7.0</PharosVersion>
+    <PharosVersion Condition="'$(PharosVersion)' == ''">0.8.0</PharosVersion>
 <!--#endif -->
 
     <!-- The game the tests build against and run: VINTAGE_STORY, or -p:VintageStoryPath=... -->

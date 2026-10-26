@@ -9,7 +9,7 @@
     <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
     <IsPackable>true</IsPackable>
     <PackageId>Zaldaryon.Pharos.Analyzers</PackageId>
-    <Version>0.7.0</Version>
+    <Version>0.8.0</Version>
     <Authors>Zaldaryon</Authors>
     <Description>Roslyn analyzers and code fixes for Pharos test scenarios.</Description>
     <IncludeBuildOutput>false</IncludeBuildOutput>

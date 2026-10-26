@@ -11,7 +11,7 @@
     <EnableDefaultItems>false</EnableDefaultItems>
     <NoWarn>$(NoWarn);NU5128</NoWarn>
     <PackageId>Zaldaryon.Pharos.Templates</PackageId>
-    <Version>0.7.0</Version>
+    <Version>0.8.0</Version>
     <Authors>Zaldaryon</Authors>
     <Description>dotnet new templates for Pharos: pharos-mod-tests, a test project for a Vintage Story mod, and pharos-ci, a GitHub Actions workflow that runs it on Linux and Windows.</Description>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
