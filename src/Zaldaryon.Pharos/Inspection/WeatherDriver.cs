@@ -15,7 +15,9 @@ public sealed record LightningFlashSnapshot(float X, float Y, float Z, long Fram
 /// <param name="PrecipitationType">The effective game EnumPrecipitationType value, with Auto resolved using current temperature.</param>
 /// <param name="BlendedPrecipitationType">The game EnumPrecipitationType value before resolving Auto.</param>
 /// <param name="WindSpeed">A detached copy of the wind vector at the player's position, in X, Y, Z order.</param>
-/// <param name="WeatherParticlesAlive">The alive particle count.</param>
+/// <param name="CloudCoverage">The blended cloud density from the ambient manager.</param>
+/// <param name="WeatherParticlesAlive">The alive particle count (all quad particles).</param>
+/// <param name="WeatherParticleSpawns">Attributed weather particle spawn counts since last reset (rain, snow, hail, dust).</param>
 /// <param name="LightningFlashes">Observed lightning flashes.</param>
 public sealed record WeatherSnapshot(
     float PrecipitationIntensity,
@@ -24,7 +26,16 @@ public sealed record WeatherSnapshot(
     float[] WindSpeed,
     float CloudCoverage,
     int WeatherParticlesAlive,
+    WeatherParticleSpawns WeatherParticleSpawns,
     IReadOnlyList<LightningFlashSnapshot> LightningFlashes);
+
+/// <summary>Counts of weather particle spawn events by type since last reset.</summary>
+/// <param name="Rain">Rain particle spawn calls.</param>
+/// <param name="Snow">Snow particle spawn calls.</param>
+/// <param name="Hail">Hail particle spawn calls.</param>
+/// <param name="Dust">Dust/storm particle spawn calls.</param>
+/// <param name="Total">Total weather-attributed spawns.</param>
+public sealed record WeatherParticleSpawns(long Rain, long Snow, long Hail, long Dust, long Total);
 
 /// <summary>
 /// Reads the client's weather render state on the client thread.
@@ -134,9 +145,23 @@ public sealed class ClientWeatherDriver
                 }
             }
             float cloudCoverage = game.AmbientManager.BlendedCloudDensity;
-            return new WeatherSnapshot(intensity, Convert.ToInt32(effectiveType), Convert.ToInt32(blendedType), wind, cloudCoverage, alive, _flashes.ToArray());
+
+            // Get attributed particle spawn counts if hooks are installed
+            ParticleAttributionHooks.Install(); // Installs on first call, no-op after
+            var spawns = new WeatherParticleSpawns(
+                ParticleAttributionHooks.RainSpawns,
+                ParticleAttributionHooks.SnowSpawns,
+                ParticleAttributionHooks.HailSpawns,
+                ParticleAttributionHooks.DustSpawns,
+                ParticleAttributionHooks.TotalWeatherSpawns);
+
+            return new WeatherSnapshot(intensity, Convert.ToInt32(effectiveType), Convert.ToInt32(blendedType), wind, cloudCoverage, alive, spawns, _flashes.ToArray());
         });
     }
+
+    /// <summary>Resets the weather particle spawn counters to zero.</summary>
+    /// <remarks>Call this at the start of a measurement interval to get accurate spawn counts.</remarks>
+    public void ResetParticleCounters() => ParticleAttributionHooks.ResetCounters();
 
     internal static T RequiredField<T>(object source, string name)
     {

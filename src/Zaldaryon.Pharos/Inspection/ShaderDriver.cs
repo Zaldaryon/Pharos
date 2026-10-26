@@ -186,25 +186,130 @@ public sealed class ShaderDriver
     });
 
     /// <summary>
-    /// Gets the list of all registered mod shaders (from mods rather than vanilla).
-    /// Returns shader names registered via the shader API.
+    /// Gets the list of all registered shader names from the shader registry.
+    /// Includes both vanilla and mod-registered shaders.
     /// </summary>
-    public IReadOnlyList<string> ModShaders() => _client.RunOnClientThread(() =>
+    public IReadOnlyList<string> AllRegisteredShaders() => _client.RunOnClientThread(() =>
     {
         var result = new List<string>();
-        var api = _client.Client?.api;
-        if (api?.Shader == null) return result;
 
-        // List all programs and filter out vanilla ones (those in ShaderPrograms static fields)
-        var vanillaNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var type = typeof(ShaderPrograms);
-        foreach (var fieldInfo in type.GetFields(BindingFlags.Public | BindingFlags.Static))
+        // Access ShaderRegistry.shaderIdsByName via reflection
+        var registryType = typeof(ShaderRegistry);
+        var idsField = registryType.GetField("shaderIdsByName", BindingFlags.NonPublic | BindingFlags.Static);
+        if (idsField?.GetValue(null) is Dictionary<string, int> ids)
         {
-            vanillaNames.Add(fieldInfo.Name);
+            result.AddRange(ids.Keys);
         }
 
-        // For now, we can only list vanilla shaders without internal access
-        // Mod shaders would require reflection into ShaderAPI's internal state
         return result;
     });
+
+    /// <summary>
+    /// Gets the list of mod-registered shaders (not from vanilla EnumShaderProgram).
+    /// </summary>
+    public IReadOnlyList<ModShaderInfo> ModShaders() => _client.RunOnClientThread(() =>
+    {
+        var result = new List<ModShaderInfo>();
+
+        // Get all vanilla shader names from EnumShaderProgram
+        var vanillaNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var enumName in Enum.GetNames(typeof(EnumShaderProgram)))
+        {
+            vanillaNames.Add(enumName.ToLowerInvariant());
+            // Handle suffixed variants like "Entityanimated_Oit"
+            var underscoreIdx = enumName.IndexOf('_');
+            if (underscoreIdx > 0)
+                vanillaNames.Add(enumName.Substring(0, underscoreIdx).ToLowerInvariant());
+        }
+
+        // Access ShaderRegistry internals
+        var registryType = typeof(ShaderRegistry);
+        var idsField = registryType.GetField("shaderIdsByName", BindingFlags.NonPublic | BindingFlags.Static);
+        var programsField = registryType.GetField("shaderPrograms", BindingFlags.NonPublic | BindingFlags.Static);
+
+        if (idsField?.GetValue(null) is not Dictionary<string, int> ids ||
+            programsField?.GetValue(null) is not ShaderProgram[] programs)
+            return result;
+
+        foreach (var kvp in ids)
+        {
+            // Skip vanilla shaders
+            if (vanillaNames.Contains(kvp.Key.ToLowerInvariant()))
+                continue;
+
+            var prog = programs[kvp.Value];
+            if (prog == null) continue;
+
+            var uniforms = (prog as ShaderProgramBase)?.uniformLocations?.Keys.ToList() ?? [];
+            var includes = prog.includes?.ToList() ?? [];
+
+            result.Add(new ModShaderInfo(
+                kvp.Key,
+                prog.PassName ?? "",
+                prog.PassId,
+                prog.ProgramId,
+                prog.ProgramId > 0 && !prog.LoadError,
+                prog.LoadError,
+                prog.VertexShader != null,
+                prog.FragmentShader != null,
+                prog.GeometryShader != null,
+                uniforms,
+                includes,
+                prog.AssetDomain ?? "game"));
+        }
+
+        return result;
+    });
+
+    /// <summary>
+    /// Gets detailed information about a mod shader by name.
+    /// </summary>
+    public ModShaderInfo? GetModShader(string name) => _client.RunOnClientThread(() =>
+    {
+        var registryType = typeof(ShaderRegistry);
+        var idsField = registryType.GetField("shaderIdsByName", BindingFlags.NonPublic | BindingFlags.Static);
+        var programsField = registryType.GetField("shaderPrograms", BindingFlags.NonPublic | BindingFlags.Static);
+
+        if (idsField?.GetValue(null) is not Dictionary<string, int> ids ||
+            programsField?.GetValue(null) is not ShaderProgram[] programs)
+            return null;
+
+        if (!ids.TryGetValue(name, out int passId))
+            return null;
+
+        var prog = programs[passId];
+        if (prog == null) return null;
+
+        var uniforms = (prog as ShaderProgramBase)?.uniformLocations?.Keys.ToList() ?? [];
+        var includes = prog.includes?.ToList() ?? [];
+
+        return new ModShaderInfo(
+            name,
+            prog.PassName ?? "",
+            prog.PassId,
+            prog.ProgramId,
+            prog.ProgramId > 0 && !prog.LoadError,
+            prog.LoadError,
+            prog.VertexShader != null,
+            prog.FragmentShader != null,
+            prog.GeometryShader != null,
+            uniforms,
+            includes,
+            prog.AssetDomain ?? "game");
+    });
 }
+
+/// <summary>Detailed information about a mod-registered shader program.</summary>
+public sealed record ModShaderInfo(
+    string Name,
+    string PassName,
+    int PassId,
+    int ProgramId,
+    bool IsCompiled,
+    bool HasLoadError,
+    bool HasVertexShader,
+    bool HasFragmentShader,
+    bool HasGeometryShader,
+    IReadOnlyList<string> Uniforms,
+    IReadOnlyList<string> Includes,
+    string AssetDomain);
