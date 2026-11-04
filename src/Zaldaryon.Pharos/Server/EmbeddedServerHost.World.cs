@@ -76,7 +76,20 @@ public sealed partial class EmbeddedServerHost
     {
         if (maxTicks <= 0) throw new ArgumentOutOfRangeException(nameof(maxTicks), maxTicks, "Maximum tick count must be positive.");
         RunOnGameThread(() => ChunkRegion.Request(ServerApi, chunks));
-        bool loaded = await advanceUntil(() => RunOnGameThread(() => ChunkRegion.Missing(ServerApi, chunks).Count == 0), maxTicks).ConfigureAwait(false);
+        System.Func<bool> allLoaded = () => RunOnGameThread(() => ChunkRegion.Missing(ServerApi, chunks).Count == 0);
+        System.Diagnostics.Stopwatch elapsed = System.Diagnostics.Stopwatch.StartNew();
+        bool loaded = await advanceUntil(allLoaded, maxTicks).ConfigureAwait(false);
+
+        // Chunks load off the game thread. Ticks pass in moments when nothing else is running, so a busy
+        // machine can spend the whole tick budget before the engine has loaded anything. Keep waiting until
+        // a minimum wall-clock time has also passed.
+        System.TimeSpan floor = System.TimeSpan.FromSeconds(30 * Zaldaryon.Pharos.Scenarios.ScenarioTimeouts.Scale);
+        while (!loaded && elapsed.Elapsed < floor)
+        {
+            await System.Threading.Tasks.Task.Delay(50).ConfigureAwait(false);
+            loaded = await advanceUntil(allLoaded, 50).ConfigureAwait(false);
+        }
+
         if (!loaded) throw ChunkRegion.Timeout(RunOnGameThread(() => ChunkRegion.Missing(ServerApi, chunks)), maxTicks);
     }
 

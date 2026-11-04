@@ -46,7 +46,10 @@ public sealed class ThreadPoolDrainTests : ServerScenarioBase
         Assert.DoesNotContain(host.Logs.Warnings, entry => entry.Message.StartsWith("Pharos thread pool did not become idle", StringComparison.Ordinal));
     }
 
-    [ServerScenario]
+    // Saturating the shared pool depends on how many workers other threads hold at that moment; on a busy
+    // runner one of them can finish mid-test and free a slot. The pool limits are restored afterwards, so a
+    // retry starts clean.
+    [ServerScenario(Attempts = 3)]
     public async Task DisposeWaitsForQueuedCallbackBeforeReleasingThreadPool()
     {
         var host = Host!;

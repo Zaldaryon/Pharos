@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Net;
 using Vintagestory.API.Common;
 using Vintagestory.API.Config;
@@ -183,7 +184,11 @@ internal sealed class HeadlessPlayers
 
     private async Task<T> WaitForAsync<T>(Func<T?> probe, int maxTicks, CancellationToken ct, string what) where T : class
     {
-        for (int tick = 0; tick <= maxTicks; tick++)
+        // The engine finishes these steps on its own threads. Ticks pass fast when the game thread is idle, so
+        // a loaded machine can exhaust the tick budget first: also wait a minimum wall-clock time.
+        TimeSpan floor = TimeSpan.FromSeconds(30 * Zaldaryon.Pharos.Scenarios.ScenarioTimeouts.Scale);
+        Stopwatch elapsed = Stopwatch.StartNew();
+        for (int tick = 0; tick <= maxTicks || elapsed.Elapsed < floor; tick++)
         {
             ct.ThrowIfCancellationRequested();
 

@@ -81,6 +81,7 @@ public class ChunkReloadTests : ServerScenarioBase
     }
 
     [Fact]
+    [Trait(PharosTraits.Category, PharosTraits.Live)]
     public async Task Unload_WritesTheSave_SoACrashKeepsTheChest()
     {
         using ServerSandbox sandbox = new();

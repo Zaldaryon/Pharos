@@ -104,6 +104,11 @@ public sealed partial class EmbeddedServerHost
         server.ServerThreadsCts.Cancel();
         WaitForServerThreadsToShutDown();
 
+        // The asset packet is built off the game thread. Let it finish before the server is torn down, as the orderly
+        // shutdown does, or it can read recipe registries that disposal has already emptied and crash the process.
+        try { _waitOnBuildServerAssetsPacket?.Invoke(server, null); }
+        catch (Exception ex) when (ex is not OutOfMemoryException) { /* a build that failed is not this kill's concern */ }
+
         // A cancelled thread does not run its shutdown hooks, so the world database would stay open. Release it as the
         // game's own shutdown hook does, without writing anything: the save keeps what it held before the crash.
         try
