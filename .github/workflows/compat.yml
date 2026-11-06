@@ -40,7 +40,8 @@ jobs:
     name: Vintage Story ${{ matrix.vs }}
     needs: plan
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    # The live suite takes about two hours on one runner with three workers (112 of 163 groups in 88 minutes).
+    timeout-minutes: 180
     strategy:
       fail-fast: false
       matrix:
