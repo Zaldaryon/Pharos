@@ -82,8 +82,8 @@ public sealed partial class EmbeddedServerHost
 
         // Chunks load off the game thread. Ticks pass in moments when nothing else is running, so a busy
         // machine can spend the whole tick budget before the engine has loaded anything. Keep waiting until
-        // a minimum wall-clock time has also passed.
-        System.TimeSpan floor = System.TimeSpan.FromSeconds(30 * Zaldaryon.Pharos.Scenarios.ScenarioTimeouts.Scale);
+        // a wall-clock time that grows with the budget has also passed.
+        System.TimeSpan floor = Zaldaryon.Pharos.Scenarios.ScenarioTimeouts.TickBudgetFloor(maxTicks);
         while (!loaded && elapsed.Elapsed < floor)
         {
             await System.Threading.Tasks.Task.Delay(50).ConfigureAwait(false);

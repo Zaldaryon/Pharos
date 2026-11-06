@@ -50,8 +50,15 @@ public abstract class FarmingCaveatsHelpers : ServerScenarioBase
             blocks.SetBlock(Api.World.GetBlock(new AssetLocation(StillWater))!.BlockId, new BlockPos(pos.X - 1, pos.Y, pos.Z));
         });
         Host.Farming.PlaceField(pos, Field);
-        // Light propagation can need more ticks on fast CI runners; wait for it to settle.
+        // Light propagation can need more ticks on fast CI runners, and on a loaded one it lags the ticks:
+        // wait until the sealed field has no sun light, or for 30 seconds.
+        System.Diagnostics.Stopwatch elapsed = System.Diagnostics.Stopwatch.StartNew();
         Host.Ticks(120);
+        while (SunAt(pos) != 0 && elapsed.Elapsed < TimeSpan.FromSeconds(30 * Zaldaryon.Pharos.Scenarios.ScenarioTimeouts.Scale))
+        {
+            Host.Ticks(10);
+            Thread.Sleep(50);
+        }
         return pos;
     }
 
