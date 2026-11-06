@@ -64,18 +64,31 @@ jobs:
         continue-on-error: true
         run: dotnet build Pharos.sln -c Release
 
-      - name: Live suite
-        id: test
+      # The live suite outgrew the job timeout when one dotnet test process ran it serially. Run it
+      # through the Pharos runner in parallel workers, as the CI shards do.
+      - name: Build and install Pharos CLI
+        id: cli
         if: steps.build.outcome == 'success'
         continue-on-error: true
-        run: dotnet test tests/Zaldaryon.Pharos.Tests -c Release --no-build --filter "Category=Live" --logger "trx;LogFileName=live.trx" --results-directory out
+        run: |
+          dotnet pack src/Zaldaryon.Pharos.Cli/Zaldaryon.Pharos.Cli.csproj -c Release -o ./tool-nupkg -p:Version=0.0.0-compat.${{ github.run_id }}.${{ github.run_attempt }}
+          dotnet tool install Zaldaryon.Pharos.Cli --tool-path "$RUNNER_TEMP/bin" --add-source ./tool-nupkg --version "0.0.0-compat.${{ github.run_id }}.${{ github.run_attempt }}"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+
+      - name: Live suite
+        id: test
+        if: steps.build.outcome == 'success' && steps.cli.outcome == 'success'
+        continue-on-error: true
+        run: |
+          mkdir -p out
+          pharos run tests/Zaldaryon.Pharos.Tests --no-build --parallel 3 --filter "Category=Live" --trx out/live.trx
 
       - name: Result
         if: always()
         env:
           VS: ${{ matrix.vs }}
           BUILD: ${{ steps.build.outcome }}
-          TEST: ${{ steps.test.outcome }}
+          TEST: ${{ steps.cli.outcome == 'failure' && 'failure' || steps.test.outcome }}
         run: |
           passed=0; failed=0; skipped=0; failures="[]"
           if [ -f out/live.trx ]; then

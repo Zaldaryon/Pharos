@@ -46,6 +46,14 @@ public static class ScenarioTimeouts
             ? scale
             : 1;
 
+    /// <summary>
+    /// The least wall-clock time a wait of <paramref name="maxTicks"/> ticks keeps polling for engine work
+    /// that runs off the game thread: 15 ms a tick, at most 30 seconds, scaled by <c>PHAROS_TIMEOUT_SCALE</c>.
+    /// A small budget stays small, so a caller that asks for a 1-tick wait still sees it time out.
+    /// </summary>
+    internal static TimeSpan TickBudgetFloor(int maxTicks) =>
+        TimeSpan.FromMilliseconds(Math.Min(Math.Max(maxTicks, 0) * 15.0, 30_000) * Scale);
+
     private static int Named(Attribute attribute, string name)
     {
         PropertyInfo? prop = attribute.GetType().GetProperty(name);
