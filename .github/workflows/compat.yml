@@ -40,7 +40,7 @@ jobs:
     name: Vintage Story ${{ matrix.vs }}
     needs: plan
     runs-on: ubuntu-latest
-    # The live suite takes about two hours on one runner with three workers (112 of 163 groups in 88 minutes).
+    # The live suite took 96 minutes on one runner with three workers, soak tests included (run 42227517825).
     timeout-minutes: 180
     strategy:
       fail-fast: false
@@ -66,7 +66,7 @@ jobs:
         run: dotnet build Pharos.sln -c Release
 
       # The live suite outgrew the job timeout when one dotnet test process ran it serially. Run it
-      # through the Pharos runner in parallel workers, as the CI shards do.
+      # through the Pharos runner in parallel workers, as the CI shards do. The soak tests have their own CI lane.
       - name: Build and install Pharos CLI
         id: cli
         if: steps.build.outcome == 'success'
@@ -82,7 +82,7 @@ jobs:
         continue-on-error: true
         run: |
           mkdir -p out
-          pharos run tests/Zaldaryon.Pharos.Tests --no-build --parallel 3 --filter "Category=Live" --trx out/live.trx
+          pharos run tests/Zaldaryon.Pharos.Tests --no-build --parallel 3 --filter "Category=Live&Category!=Soak" --trx out/live.trx
 
       - name: Result
         if: always()
