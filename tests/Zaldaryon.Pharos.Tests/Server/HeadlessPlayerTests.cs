@@ -241,6 +241,30 @@ public class HeadlessPlayerTests : ThreadPoolWarningScenarioBase
         Assert.Equal(1, Volatile.Read(ref advanced));
         Assert.True(Host.Calendar.TotalHours >= before + 0.1, "The night-skip wait missed the calendar advance from its final server tick");
     }
+
+    [ServerScenario]
+    public async Task SpawnSent_HoldsUntilTheEngineHasWrittenTheSpawnPackets()
+    {
+        // A join request that overlaps the spawn packets for the players nearby lets the engine
+        // serialize the new entity on two threads at once (CI run 41623835754).
+        ServerTestPlayer watcher = await CreateTestPlayerAsync("SpawnWatcher");
+        ServerMain server = Host!.Server;
+        Entity entity = Host.RunOnGameThread(() =>
+        {
+            string boatCode = Api!.World.EntityTypes
+                .Select(type => type.Code.ToString())
+                .First(code => code.Contains(":boat-raft-", StringComparison.Ordinal));
+            Entity created = Api.World.ClassRegistry.CreateEntity(Api.World.GetEntityType(new AssetLocation(boatCode))!);
+            Assert.False(HeadlessPlayers.SpawnSent(server, created));
+            created.Pos.SetPos(watcher.Entity!.Pos.XYZ.AddCopy(2, 0, 0));
+            Api.World.SpawnEntity(created);
+            Assert.False(HeadlessPlayers.SpawnSent(server, created));
+            return created;
+        });
+
+        Assert.True(await Host.TryTickUntilAsync(() => Host.RunOnGameThread(() => HeadlessPlayers.SpawnSent(server, entity)), maxTicks: 2000));
+        Assert.True(Host.RunOnGameThread(() => server.Clients.Values.Single(c => c.PlayerName == watcher.PlayerName).TrackedEntities.Contains(entity.EntityId)));
+    }
 }
 
 [Collection("Sequential")]
