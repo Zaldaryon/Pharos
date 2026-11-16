@@ -194,6 +194,56 @@ public class LiveWindowLayoutTests : ClientServerScenarioBase
         PharosAssert.NoOverlappingElements(menu);
     }
 
+    [ClientTheory]
+    [Languages("en", "de", "ar", "ja", "th", "pseudo-long")]
+    public async Task ShortLocalizedLabel_FitsAcrossLanguages(string lang)
+    {
+        using IDisposable _ = Client!.Lang.Use(lang);
+        await OpenAsync("lang-ok");
+
+        PharosAssert.NoTextOverflow(Client, "PharosLayoutDialog");
+    }
+
+    [ClientServerScenario]
+    public async Task OverflowingGermanText_IsNamedWithElementLanguageAndPixels()
+    {
+        using (Client!.Lang.Use("en"))
+        {
+            await OpenAsync("overflow");
+            PharosAssert.NoTextOverflow(Client, "PharosLayoutDialog");
+        }
+
+        using (Client.Lang.Use("de"))
+        {
+            await OpenAsync("overflow");
+            PharosAssertException error = Assert.Throws<PharosAssertException>(() => PharosAssert.NoTextOverflow(Client, "PharosLayoutDialog"));
+            Assert.Contains("'tight-label'", error.Message);
+            Assert.Contains("(de)", error.Message);
+            Assert.Contains("px", error.Message);
+        }
+
+        Zaldaryon.Pharos.Translations.LanguageLayoutReport report = Client.Lang.LayoutReport("PharosLayoutDialog");
+        Assert.True(report.HasOverflows);
+        Assert.Contains("tight-label", report.ToMarkdown());
+    }
+
+    [ClientServerScenario]
+    public async Task RightToLeftRendered_ChecksAlignmentInArabic()
+    {
+        using IDisposable _ = Client!.Lang.Use("ar");
+
+        await OpenAsync("rtl");
+        PharosAssert.RightToLeftRendered(Client, "PharosLayoutDialog");
+
+        await OpenAsync("rtl-mixed");
+        PharosAssertException error = Assert.Throws<PharosAssertException>(() => PharosAssert.RightToLeftRendered(Client, "PharosLayoutDialog"));
+        Assert.Contains("'left-label'", error.Message);
+
+        await OpenAsync("lang-ok");
+        PharosAssert.RightToLeftRendered(Client, "PharosLayoutDialog");
+        Assert.NotEmpty(Client.Lang.LayoutReport("PharosLayoutDialog").Warnings);
+    }
+
     private async Task<DialogLayout> OpenAsync(string mode)
     {
         await Client!.Commands.ExecuteSuccessAsync(".pharoslayout open " + mode);

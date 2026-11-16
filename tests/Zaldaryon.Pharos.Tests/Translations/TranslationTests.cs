@@ -1,3 +1,6 @@
+using System.Globalization;
+using System.Reflection;
+using Vintagestory.API.Client;
 using Vintagestory.API.Common;
 using Xunit;
 using Zaldaryon.Pharos.Assertions;
@@ -18,6 +21,194 @@ public class MissingTranslationTests
     [InlineData(":odd", "game")]
     public void DomainOf_ReadsTheDomainOnlyWhenItLooksLikeOne(string key, string domain) =>
         Assert.Equal(domain, MissingTranslation.DomainOf(key));
+}
+
+public class LanguageSweepTests
+{
+    [Fact]
+    public void AllLanguages_ReadsShippedLanguagesWithoutDuplicates()
+    {
+        IReadOnlyList<string> codes = LanguageCatalog.AllLanguages();
+
+        Assert.True(codes.Count >= 30, $"Expected at least 30 languages, found {codes.Count}.");
+        Assert.Contains("en", codes);
+        Assert.Contains("ar", codes);
+        Assert.Contains("ja", codes);
+        Assert.Contains("th", codes);
+        Assert.Equal(codes.Count, codes.Distinct(StringComparer.OrdinalIgnoreCase).Count());
+    }
+
+    [Fact]
+    public void ParseLanguageCodes_SkipsEmptyAndDuplicateEntries()
+    {
+        IReadOnlyList<string> parsed = LanguageCatalog.ParseLanguageCodes("""
+            [
+              { "code": "en" },
+              { "code": "de" },
+              { "code": "DE" },
+              { "code": "" }
+            ]
+            """);
+
+        Assert.Equal(["en", "de"], parsed);
+    }
+
+    [Theory]
+    [InlineData("ar", true)]
+    [InlineData("ar-SA", true)]
+    [InlineData("he", true)]
+    [InlineData("fa", true)]
+    [InlineData("ur", true)]
+    [InlineData("en", false)]
+    [InlineData("de", false)]
+    [InlineData("ja", false)]
+    [InlineData("th", false)]
+    [InlineData(null, false)]
+    public void IsRightToLeft_DetectsRtlBaseSubtags(string? code, bool expected) =>
+        Assert.Equal(expected, LanguageCatalog.IsRightToLeft(code));
+
+    [Fact]
+    public void PseudoLongExpand_IncreasesLengthWhilePreservingPlaceholdersAndTags()
+    {
+        string source = "Found <strong>{0}</strong> items ({p0:# item|# items})\nNext";
+        string expanded = PseudoLongTranslationService.Expand(source);
+
+        Assert.Contains("{0}", expanded);
+        Assert.Contains("{p0:# item|# items}", expanded);
+        Assert.Contains("<strong>", expanded);
+        Assert.Contains("</strong>", expanded);
+        Assert.Contains("\n", expanded);
+        Assert.True(expanded.Length > source.Length);
+    }
+
+    [Fact]
+    public void AllLanguagesAttribute_SupportsIncludePseudoLongAndExclude()
+    {
+        MethodInfo target = typeof(LanguageSweepTests).GetMethod(nameof(SampleLanguageTheory), BindingFlags.NonPublic | BindingFlags.Static)!;
+        AllLanguagesAttribute attr = new() { IncludePseudoLong = true, Exclude = ["de", "ar"] };
+
+        string[] rows = [.. attr.GetData(target).Select(r => (string)r[0])];
+        Assert.Contains("en", rows);
+        Assert.Contains("pseudo-long", rows);
+        Assert.DoesNotContain("de", rows);
+        Assert.DoesNotContain("ar", rows);
+    }
+
+    [Fact]
+    public void LanguagesAttribute_ValidatesCodesAndParameterSignature()
+    {
+        MethodInfo valid = typeof(LanguageSweepTests).GetMethod(nameof(SampleLanguageTheory), BindingFlags.NonPublic | BindingFlags.Static)!;
+        MethodInfo invalid = typeof(LanguageSweepTests).GetMethod(nameof(InvalidLanguageTheory), BindingFlags.NonPublic | BindingFlags.Static)!;
+
+        LanguagesAttribute attr = new("de", "ar", "ja", "th", "pseudo-long");
+        Assert.Equal(["de", "ar", "ja", "th", "pseudo-long"], attr.GetData(valid).Select(r => (string)r[0]));
+
+        Assert.Throws<ArgumentException>(() => new LanguagesAttribute());
+        Assert.Throws<ArgumentException>(() => new LanguagesAttribute("en", " "));
+        Assert.Throws<ArgumentException>(() => attr.GetData(invalid).ToList());
+    }
+
+    [Fact]
+    public void CultureInvariant_PassesForInvariantCode_AndRestoresThreadCultures()
+    {
+        CultureInfo previous = CultureInfo.CurrentCulture;
+        CultureInfo previousUi = CultureInfo.CurrentUICulture;
+
+        double parsed = PharosAssert.CultureInvariant(() => double.Parse("1.5", CultureInfo.InvariantCulture));
+        PharosAssert.CultureInvariant(() =>
+        {
+            _ = "FILE".ToLowerInvariant();
+        });
+
+        Assert.Equal(1.5, parsed);
+        Assert.Equal(previous, CultureInfo.CurrentCulture);
+        Assert.Equal(previousUi, CultureInfo.CurrentUICulture);
+    }
+
+    [Fact]
+    public void CultureInvariant_FailsOnCultureDependentParsingOrTurkishCase()
+    {
+        PharosAssertException decimalError = Assert.Throws<PharosAssertException>(() =>
+            PharosAssert.CultureInvariant(() => double.Parse("1.5", CultureInfo.CurrentCulture)));
+        Assert.Contains("de-DE", decimalError.Message);
+
+        PharosAssertException turkishError = Assert.Throws<PharosAssertException>(() =>
+            PharosAssert.CultureInvariant(() => "FILE".ToLower()));
+        Assert.Contains("tr-TR", turkishError.Message);
+    }
+
+    [Fact]
+    public void TextLayoutInspector_EvaluateOverflow_MeasuresHorizontalAndVerticalBounds()
+    {
+        TextElementMetrics fits = new("D", "main", "ok", "GuiElementStaticText", "Save", 100, 30, 42, 18, EnumTextOrientation.Left, false);
+        Assert.Null(TextLayoutInspector.EvaluateOverflow(in fits, "en", tolerance: 1));
+
+        TextElementMetrics wide = fits with { Key = "wide", MeasuredWidth = 118.5, Text = "Donaudampfschifffahrt" };
+        TextOverflowEntry? entry = TextLayoutInspector.EvaluateOverflow(in wide, "de", tolerance: 1);
+        Assert.NotNull(entry);
+        Assert.Equal(18.5, entry.HorizontalOverflowPx, 1);
+        Assert.Equal(0, entry.VerticalOverflowPx);
+
+        string message = TextLayoutInspector.FormatOverflowMessage("D", "de", [entry]);
+        Assert.Contains("'wide'", message);
+        Assert.Contains("(de)", message);
+        Assert.Contains("18.5 px horizontally", message);
+    }
+
+    [Fact]
+    public void TextLayoutInspector_EvaluateRtl_WarnsWithoutOptIn_AndFailsWhenOptedInOrStrict()
+    {
+        TextElementMetrics left = new("D", "main", "title", "GuiElementStaticText", "مرحبا", 100, 30, 40, 18, EnumTextOrientation.Left, false);
+        TextElementMetrics right = left with { Key = "subtitle", Orientation = EnumTextOrientation.Right };
+
+        Assert.Empty(TextLayoutInspector.EvaluateRtl([left], "en", strict: true).Failures);
+        Assert.Empty(TextLayoutInspector.EvaluateRtl([left], "en", strict: false).Warnings);
+
+        RtlEvaluationResult warningOnly = TextLayoutInspector.EvaluateRtl([left], "ar", strict: false);
+        Assert.Empty(warningOnly.Failures);
+        LanguageLayoutWarning warning = Assert.Single(warningOnly.Warnings);
+        Assert.Equal("title", warning.ElementKey);
+
+        RtlEvaluationResult optedIn = TextLayoutInspector.EvaluateRtl([right, left], "ar", strict: false);
+        string failure = Assert.Single(optedIn.Failures);
+        Assert.Contains("'title'", failure);
+
+        RtlEvaluationResult strictResult = TextLayoutInspector.EvaluateRtl([left], "ar", strict: true);
+        Assert.Single(strictResult.Failures);
+    }
+
+    [Fact]
+    public void LanguageLayoutReport_SummarizesWorstOverflowsPerLanguageAndMetrics()
+    {
+        TextOverflowEntry deSmall = new("Codex", "main", "btn", "GuiElementTextButton", "de", 6, 0, "Speichern");
+        TextOverflowEntry deBig = new("Codex", "main", "header", "GuiElementStaticText", "de", 24, 12, "Ueberschrift");
+        TextOverflowEntry thBig = new("Codex", "main", "body", "GuiElementRichtext", "th", 0, 15, "ข้อความ");
+        LanguageLayoutWarning arWarn = new("Codex", "main", "body", "GuiElementStaticText", "ar", "uses Left alignment");
+
+        LanguageLayoutReport report = new(
+            "mymod",
+            [deSmall, deBig, thBig],
+            [arWarn],
+            new Dictionary<string, int> { ["en"] = 4, ["de"] = 4, ["th"] = 4, ["ar"] = 4 });
+
+        Assert.True(report.HasOverflows);
+        Assert.Equal(["de", "th", "ar", "en"], report.ByLanguage.Select(s => s.Language));
+        Assert.Equal("header", report.ByLanguage[0].WorstElementKey);
+        Assert.Equal(24, report.ByLanguage[0].WorstOverflowPx);
+
+        string markdown = report.ToMarkdown();
+        Assert.Contains("| de | 4 | 2 | 24 | header | 0 |", markdown);
+        Assert.Contains("| ar | 4 | 0 | 0 | - | 1 |", markdown);
+        Assert.Contains(report.Metrics(), m => m.Name == "lang.layout.worst_overflow_px" && Math.Abs(m.Value - 24) < 0.001);
+    }
+
+    private static void SampleLanguageTheory(string lang)
+    {
+    }
+
+    private static void InvalidLanguageTheory(int wrongType)
+    {
+    }
 }
 
 /// <summary>

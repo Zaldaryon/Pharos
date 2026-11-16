@@ -527,6 +527,29 @@ Assert.Empty(client.Lang.MissingKeysOf("mymod"));
   domain has a name. It looks for the `item-` or `block-` key the game looks names up by; names a
   class builds in code are not checked.
 - **`PharosAssert.NoMissingTranslations(client, domain)`** asserts `MissingKeys` is empty.
+- **`[AllLanguages]` and `[Languages(...)]`** sweep a `[ClientTheory]` across the game's languages (or a subset, including `"pseudo-long"`).
+- **`PharosAssert.NoTextOverflow(client, dialog)`** measures each text element with `TextDrawUtil` and its `CairoFont` and fails when laid-out text exceeds its bounds.
+- **`PharosAssert.RightToLeftRendered(client, dialog)`** checks right alignment on RTL locales (`ar`), failing when the dialog opted into RTL or recording warnings in `client.Lang.LayoutReport(...)` otherwise.
+- **`PharosAssert.CultureInvariant(action)`** runs an action under `de-DE`, `ar-SA` and `tr-TR` process cultures and compares against `InvariantCulture`.
+- **`client.Lang.LayoutReport(domain)`** returns a table of the worst text overflows and warnings per language.
+
+```csharp
+[ClientTheory]
+[Languages("de", "ar", "ja", "th")]
+public async Task Dialog_fits_in_every_language(string lang)
+{
+    using IDisposable _ = client.Lang.Use(lang);
+    await client.Hotkeys.TriggerAsync("mymod:opendialog");
+    await session.StepFramesAsync(2);
+
+    PharosAssert.NoTextOverflow(client, "MyDialog");
+    PharosAssert.RightToLeftRendered(client, "MyDialog");
+}
+```
+
+```csharp
+PharosAssert.CultureInvariant(() => double.Parse("1.5", System.Globalization.CultureInfo.InvariantCulture));
+```
 
 The game keeps one set of translations and one current language per process: a server booted in
 the same process shares them, so `Use` switches the server's language too.

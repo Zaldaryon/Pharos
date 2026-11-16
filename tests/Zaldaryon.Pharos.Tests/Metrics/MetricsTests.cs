@@ -6,6 +6,8 @@ using MetricsTimer = Zaldaryon.Pharos.Metrics.MetricTimer;
 using Zaldaryon.Pharos.Reporting;
 using Zaldaryon.Pharos.Scenarios;
 
+using Zaldaryon.Pharos.Tests.XUnit;
+
 namespace Zaldaryon.Pharos.Tests.Metrics;
 
 public sealed class MetricsTests
@@ -142,6 +144,7 @@ public sealed class MetricsTests
     }
 }
 
+[Collection(FailureArtifactCollection.Name)]
 public sealed class MetricsWriterTests : IDisposable
 {
     private readonly string _root = Path.Combine(Path.GetTempPath(), "pharos-metrics-" + Guid.NewGuid().ToString("N"));
@@ -233,8 +236,8 @@ public sealed class MetricsWriterTests : IDisposable
     [Fact]
     public void AttemptManifest_IncludesTheMetricSummaries()
     {
-        string? previous = Environment.GetEnvironmentVariable(ScenarioAttemptManifestWriter.DirectoryVariable);
-        Environment.SetEnvironmentVariable(ScenarioAttemptManifestWriter.DirectoryVariable, _root);
+        string? previous = ScenarioAttemptManifestWriter.DirectoryOverride;
+        ScenarioAttemptManifestWriter.DirectoryOverride = _root;
         try
         {
             Dictionary<string, MetricSummary> metrics = new()
@@ -260,7 +263,7 @@ public sealed class MetricsWriterTests : IDisposable
         }
         finally
         {
-            Environment.SetEnvironmentVariable(ScenarioAttemptManifestWriter.DirectoryVariable, previous);
+            ScenarioAttemptManifestWriter.DirectoryOverride = previous;
         }
     }
 }
