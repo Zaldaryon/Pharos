@@ -139,6 +139,32 @@ public class V3AttributeTests
         Assert.True(attr.SupportsDiscoveryEnumeration());
     }
 
+    [Fact]
+    public async Task AllLanguagesAttribute_ProvidesShippedLanguages_AndSupportsIncludeExclude()
+    {
+        AllLanguagesAttribute attr = new() { IncludePseudoLong = true, Exclude = ["de"] };
+        var rows = await attr.GetData(TheoryMethod(), new Xunit.Sdk.DisposalTracker());
+
+        string[] codes = [.. rows.Select(r => (string)r.GetData()[0]!)];
+        Assert.Contains("en", codes);
+        Assert.Contains("ar", codes);
+        Assert.Contains("pseudo-long", codes);
+        Assert.DoesNotContain("de", codes);
+        Assert.True(attr.SupportsDiscoveryEnumeration());
+    }
+
+    [Fact]
+    public async Task LanguagesAttribute_ProvidesSpecifiedLanguages_AndValidatesInput()
+    {
+        LanguagesAttribute attr = new("de", "ar", "ja", "th");
+        var rows = await attr.GetData(TheoryMethod(), new Xunit.Sdk.DisposalTracker());
+
+        Assert.Equal(["de", "ar", "ja", "th"], rows.Select(r => (string)r.GetData()[0]!));
+        Assert.True(attr.SupportsDiscoveryEnumeration());
+        Assert.Throws<ArgumentException>(() => new LanguagesAttribute());
+        Assert.Throws<ArgumentException>(() => new LanguagesAttribute("en", " "));
+    }
+
     private static MethodInfo TheoryMethod() =>
         typeof(Rows).GetMethod("TheRow", BindingFlags.NonPublic | BindingFlags.Instance)!;
 

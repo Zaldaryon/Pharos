@@ -122,6 +122,14 @@ public static class ScenarioAttemptManifestWriter
     /// <summary>Environment variable designating the manifest directory.</summary>
     public const string DirectoryVariable = "PHAROS_ATTEMPT_MANIFEST_DIR";
 
+    private static readonly AsyncLocal<string?> s_directoryOverride = new();
+
+    internal static string? DirectoryOverride
+    {
+        get => s_directoryOverride.Value;
+        set => s_directoryOverride.Value = value;
+    }
+
     private static readonly JsonSerializerOptions s_json = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -141,7 +149,7 @@ public static class ScenarioAttemptManifestWriter
         IReadOnlyDictionary<string, Zaldaryon.Pharos.Metrics.MetricSummary>? metrics = null,
         IReadOnlyDictionary<string, string>? configuration = null)
     {
-        string? directory = Environment.GetEnvironmentVariable(DirectoryVariable);
+        string? directory = s_directoryOverride.Value ?? Environment.GetEnvironmentVariable(DirectoryVariable);
         if (string.IsNullOrWhiteSpace(directory)) return;
 
         try

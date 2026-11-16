@@ -2002,6 +2002,148 @@ public static class PharosAssert
             (missing.Count > 50 ? $"\n  ... and {missing.Count - 50} more" : ""));
     }
 
+    /// <summary>
+    /// Asserts that every text element of the open dialog <paramref name="dialogNameOrType"/> fits
+    /// within its bounds in the client's active language, using <see cref="Vintagestory.API.Client.TextDrawUtil"/>
+    /// and each element's <see cref="Vintagestory.API.Client.CairoFont"/>.
+    /// </summary>
+    /// <param name="client">An engine-mode client with the dialog open.</param>
+    /// <param name="dialogNameOrType">The dialog's class name or debug name.</param>
+    /// <param name="tolerance">Allowed pixel slack before reporting overflow (default: 1 px).</param>
+    /// <exception cref="PharosAssertException">One or more elements overflow their bounds.</exception>
+    public static void NoTextOverflow(Core.HeadlessClient client, string dialogNameOrType, double tolerance = 1)
+    {
+        ArgumentNullException.ThrowIfNull(client);
+        ArgumentException.ThrowIfNullOrWhiteSpace(dialogNameOrType);
+
+        (string language, IReadOnlyList<Translations.TextElementMetrics> elements) =
+            Translations.TextLayoutInspector.InspectDialog(client, dialogNameOrType);
+
+        List<Translations.TextOverflowEntry> overflows = [];
+        foreach (Translations.TextElementMetrics element in elements)
+        {
+            if (Translations.TextLayoutInspector.EvaluateOverflow(in element, language, tolerance) is { } finding)
+            {
+                overflows.Add(finding);
+            }
+        }
+
+        client.Lang.RecordOverflowCheck(language, elements.Count, overflows);
+        if (overflows.Count > 0)
+        {
+            throw new PharosAssertException(Translations.TextLayoutInspector.FormatOverflowMessage(dialogNameOrType, language, overflows));
+        }
+    }
+
+    /// <summary>Asserts that every text element of the open dialog <typeparamref name="TDialog"/> fits within its bounds.</summary>
+    public static void NoTextOverflow<TDialog>(Core.HeadlessClient client, double tolerance = 1)
+        where TDialog : Vintagestory.API.Client.GuiDialog =>
+        NoTextOverflow(client, typeof(TDialog).Name, tolerance);
+
+    /// <summary>
+    /// Checks right-to-left rendering on the open dialog <paramref name="dialogNameOrType"/> when the
+    /// client's active language is RTL. When the dialog has opted into RTL (or <paramref name="strict"/>
+    /// is true), left-aligned text elements fail; otherwise they are recorded as warnings in
+    /// <see cref="Translations.LanguageDriver.LayoutReport"/>.
+    /// </summary>
+    /// <param name="client">An engine-mode client with the dialog open.</param>
+    /// <param name="dialogNameOrType">The dialog's class name or debug name.</param>
+    /// <param name="strict">Whether to fail even when the dialog has not opted into RTL.</param>
+    /// <exception cref="PharosAssertException">An opted-in or strict RTL check failed.</exception>
+    public static void RightToLeftRendered(Core.HeadlessClient client, string dialogNameOrType, bool strict = false)
+    {
+        ArgumentNullException.ThrowIfNull(client);
+        ArgumentException.ThrowIfNullOrWhiteSpace(dialogNameOrType);
+
+        (string language, IReadOnlyList<Translations.TextElementMetrics> elements) =
+            Translations.TextLayoutInspector.InspectDialog(client, dialogNameOrType);
+        Translations.RtlEvaluationResult result = Translations.TextLayoutInspector.EvaluateRtl(elements, language, strict);
+        client.Lang.RecordRtlWarnings(result.Warnings);
+
+        if (result.Failures.Count > 0)
+        {
+            throw new PharosAssertException(
+                $"Dialog '{dialogNameOrType}' failed right-to-left check in '{language}':\n  " +
+                string.Join("\n  ", result.Failures.Take(30)) +
+                (result.Failures.Count > 30 ? $"\n  ... and {result.Failures.Count - 30} more" : ""));
+        }
+    }
+
+    /// <summary>Checks right-to-left rendering on the open dialog <typeparamref name="TDialog"/>.</summary>
+    public static void RightToLeftRendered<TDialog>(Core.HeadlessClient client, bool strict = false)
+        where TDialog : Vintagestory.API.Client.GuiDialog =>
+        RightToLeftRendered(client, typeof(TDialog).Name, strict);
+
+    /// <summary>
+    /// Runs <paramref name="action"/> under <see cref="CultureInfo.InvariantCulture"/> and then under
+    /// <c>de-DE</c>, <c>ar-SA</c>, and <c>tr-TR</c>, failing if a locale throws when the invariant
+    /// baseline succeeded (or vice versa) and always restoring the caller's thread cultures.
+    /// </summary>
+    public static void CultureInvariant(Action action)
+    {
+        ArgumentNullException.ThrowIfNull(action);
+        CultureInvariant<int>(() =>
+        {
+            action();
+            return 0;
+        });
+    }
+
+    /// <summary>
+    /// Runs <paramref name="func"/> under <see cref="CultureInfo.InvariantCulture"/> and then under
+    /// <c>de-DE</c>, <c>ar-SA</c>, and <c>tr-TR</c>, asserting that every locale returns the same
+    /// value as the invariant baseline and always restoring the caller's thread cultures.
+    /// </summary>
+    /// <returns>The invariant baseline result.</returns>
+    public static T CultureInvariant<T>(Func<T> func, IEqualityComparer<T>? comparer = null)
+    {
+        ArgumentNullException.ThrowIfNull(func);
+        comparer ??= EqualityComparer<T>.Default;
+
+        CultureInfo previousCulture = CultureInfo.CurrentCulture;
+        CultureInfo previousUiCulture = CultureInfo.CurrentUICulture;
+        string[] testedCultures = ["de-DE", "ar-SA", "tr-TR"];
+
+        try
+        {
+            CultureInfo.CurrentCulture = CultureInfo.InvariantCulture;
+            CultureInfo.CurrentUICulture = CultureInfo.InvariantCulture;
+            T baseline = func();
+
+            foreach (string name in testedCultures)
+            {
+                CultureInfo culture = CultureInfo.GetCultureInfo(name);
+                CultureInfo.CurrentCulture = culture;
+                CultureInfo.CurrentUICulture = culture;
+
+                T actual;
+                try
+                {
+                    actual = func();
+                }
+                catch (Exception ex)
+                {
+                    throw new PharosAssertException(
+                        $"Action is not culture-invariant: threw {ex.GetType().Name} under '{name}' ({ex.Message}), while '{CultureInfo.InvariantCulture.Name}' returned '{baseline}'.",
+                        ex);
+                }
+
+                if (!comparer.Equals(baseline, actual))
+                {
+                    throw new PharosAssertException(
+                        $"Action is not culture-invariant: returned '{actual}' under '{name}', expected '{baseline}' (as under InvariantCulture).");
+                }
+            }
+
+            return baseline;
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = previousCulture;
+            CultureInfo.CurrentUICulture = previousUiCulture;
+        }
+    }
+
     // -------------------------------------------------------------------------
     // Server tick listener assertions
     // -------------------------------------------------------------------------

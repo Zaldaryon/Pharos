@@ -26,6 +26,10 @@ public sealed class LanguageDriver : IDisposable
     private readonly TranslationCapture.Sink _sink;
     private readonly string _bootLanguage;
     private readonly List<Restore> _uses = [];
+    private readonly List<TextOverflowEntry> _overflowEntries = [];
+    private readonly List<LanguageLayoutWarning> _layoutWarnings = [];
+    private readonly Dictionary<string, int> _checkedElementsByLanguage = new(StringComparer.Ordinal);
+    private readonly object _layoutLock = new();
 
     internal LanguageDriver(HeadlessClient client, Func<bool> onClientThread)
     {
@@ -56,21 +60,31 @@ public sealed class LanguageDriver : IDisposable
         return [.. (includeFallbacks ? MissingKeysIncludingFallbacks : MissingKeys).Where(m => m.Domain == domain)];
     }
 
-    /// <summary>Forgets the lookups so far.</summary>
-    public void Reset() => _sink.Clear();
+    /// <summary>Forgets the lookups and layout checks recorded so far.</summary>
+    public void Reset()
+    {
+        _sink.Clear();
+        lock (_layoutLock)
+        {
+            _overflowEntries.Clear();
+            _layoutWarnings.Clear();
+            _checkedElementsByLanguage.Clear();
+        }
+    }
 
     /// <summary>
     /// Shows <paramref name="language"/> until the result is disposed, or until the test ends in a
     /// scenario class. Dialogs already open keep the text they were composed with.
     /// </summary>
-    /// <param name="language">A language code the game has, such as "de" or "pt-br".</param>
+    /// <param name="language">A language code the game has, such as "de", "pt-br", or "pseudo-long".</param>
     /// <exception cref="ArgumentException">The game has no such language.</exception>
     public IDisposable Use(string language)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(language);
         return _client.RunOnClientThread<IDisposable>(() =>
         {
-            if (!GameLang.AvailableLanguages.TryGetValue(language, out ITranslationService? service))
+            ITranslationService? service = ResolveService(language);
+            if (service == null)
             {
                 throw new ArgumentException($"The game has no language '{language}'. It has: {string.Join(", ", GameLang.AvailableLanguages.Keys.Order())}.", nameof(language));
             }
@@ -85,6 +99,73 @@ public sealed class LanguageDriver : IDisposable
             Active = language;
             return restore;
         });
+    }
+
+    /// <summary>
+    /// Produces a report of the worst text overflows and layout/RTL warnings recorded by
+    /// <see cref="Assertions.PharosAssert.NoTextOverflow(Core.HeadlessClient, string, double)"/> and
+    /// <see cref="Assertions.PharosAssert.RightToLeftRendered(Core.HeadlessClient, string, bool)"/>.
+    /// </summary>
+    /// <param name="domain">Optional domain or dialog filter, or null to include all recorded checks.</param>
+    public LanguageLayoutReport LayoutReport(string? domain = null)
+    {
+        lock (_layoutLock)
+        {
+            IEnumerable<TextOverflowEntry> entries = _overflowEntries;
+            IEnumerable<LanguageLayoutWarning> warnings = _layoutWarnings;
+            if (!string.IsNullOrWhiteSpace(domain))
+            {
+                entries = entries.Where(e => MatchesDomain(e.Dialog, e.Composer, e.ElementKey, domain));
+                warnings = warnings.Where(w => MatchesDomain(w.Dialog, w.Composer, w.ElementKey, domain));
+            }
+
+            return new LanguageLayoutReport(
+                domain,
+                entries.ToList(),
+                warnings.ToList(),
+                new Dictionary<string, int>(_checkedElementsByLanguage, StringComparer.Ordinal));
+        }
+    }
+
+    internal void RecordOverflowCheck(string language, int checkedCount, IReadOnlyList<TextOverflowEntry> overflows)
+    {
+        lock (_layoutLock)
+        {
+            _checkedElementsByLanguage[language] = _checkedElementsByLanguage.GetValueOrDefault(language) + checkedCount;
+            _overflowEntries.AddRange(overflows);
+        }
+    }
+
+    internal void RecordRtlWarnings(IReadOnlyList<LanguageLayoutWarning> warnings)
+    {
+        if (warnings.Count == 0) return;
+        lock (_layoutLock)
+        {
+            _layoutWarnings.AddRange(warnings);
+        }
+    }
+
+    private static bool MatchesDomain(string dialog, string composer, string key, string domain) =>
+        dialog.Contains(domain, StringComparison.OrdinalIgnoreCase)
+        || composer.Contains(domain, StringComparison.OrdinalIgnoreCase)
+        || key.StartsWith(domain + ":", StringComparison.OrdinalIgnoreCase);
+
+    private static ITranslationService? ResolveService(string language)
+    {
+        if (GameLang.AvailableLanguages.TryGetValue(language, out ITranslationService? service))
+        {
+            return service;
+        }
+
+        if (string.Equals(language, LanguageCatalog.PseudoLongLocale, StringComparison.OrdinalIgnoreCase)
+            && GameLang.AvailableLanguages.TryGetValue(GameLang.DefaultLocale, out ITranslationService? baseService))
+        {
+            PseudoLongTranslationService pseudo = new(baseService);
+            GameLang.AvailableLanguages[LanguageCatalog.PseudoLongLocale] = pseudo;
+            return pseudo;
+        }
+
+        return null;
     }
 
     /// <summary>The language <see cref="Use"/> set last and has not restored, or null.</summary>

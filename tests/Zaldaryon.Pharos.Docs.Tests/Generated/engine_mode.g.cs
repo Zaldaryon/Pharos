@@ -1223,10 +1223,120 @@ namespace Zaldaryon.Pharos.Docs.Generated.engine_mode.Snippet_21
         protected ICoreServerAPI api => Api;
         protected HeadlessClient client => Client;
 
+#line 536 "docs/engine-mode.md"
+[DocExample]
+[Languages("de", "ar", "ja", "th")]
+public async Task Dialog_fits_in_every_language(string lang)
+{
+    using IDisposable _ = client.Lang.Use(lang);
+    await client.Hotkeys.TriggerAsync("mymod:opendialog");
+    await session.StepFramesAsync(2);
+
+    PharosAssert.NoTextOverflow(client, "MyDialog");
+    PharosAssert.RightToLeftRendered(client, "MyDialog");
+}
+#line default
+    }
+}
+
+
+namespace Zaldaryon.Pharos.Docs.Generated.engine_mode.Snippet_22
+{
+
+    public class ScenarioContainer : ClientServerScenarioBase
+    {
+
+        protected BlockPos nearClient => new(10, 64, 10);
+        protected BlockPos nearAlice => new(10, 64, 10);
+        protected BlockPos chestPos => new(10, 64, 10);
+        protected BlockPos pos => new(10, 64, 10);
+        protected BlockPos lamp => new(10, 64, 10);
+        protected BlockPos lever => new(10, 64, 10);
+        protected BlockPos doorPos => new(10, 64, 10);
+        protected new string PlayerName => "TestPlayer";
+        protected PlayerVitals vitals => null!;
+        protected ClientVitals clientVitals => Player.Vitals;
+        protected ServerTestPlayer player => null!;
+        protected ClientServerLoopbackSession session => Session;
+        protected EmbeddedServerHost serverHost => Server;
+        protected BlockPos ground => new(10, 64, 10);
+        protected long wolfId => 1;
+        protected Entity wolf => null!;
+        protected int SparkColor => 0;
+        protected List<BlockPos> expectedBlocks => [];
+        protected ICoreServerAPI sapi => Api;
+        protected string playerUid => "playerUid";
+        protected ServerTestPlayer alice => null!;
+        protected ServerTestPlayer bob => null!;
+        protected Entity entity => null!;
+        protected BotResult used => new(true);
+        protected List<string> myCache => [];
+        protected DoorMock Door(BlockPos pos) => new();
+        protected string DumpInventory() => string.Empty;
+        protected string _lastFailure = string.Empty;
+        protected List<BlockPos> marked => [];
+        protected new int DataFilePort(string name) => 8080;
+        protected EmbeddedServerHost host => ServerHost;
+        protected EmbeddedServerHost Host => ServerHost;
+        protected ICoreServerAPI api => Api;
+        protected HeadlessClient client => Client;
+
 
         public async Task ExecuteSnippetAsync()
         {
-#line 538 "docs/engine-mode.md"
+#line 550 "docs/engine-mode.md"
+PharosAssert.CultureInvariant(() => double.Parse("1.5", System.Globalization.CultureInfo.InvariantCulture));
+#line default
+        }
+    }
+}
+
+
+namespace Zaldaryon.Pharos.Docs.Generated.engine_mode.Snippet_23
+{
+
+    public class ScenarioContainer : ClientServerScenarioBase
+    {
+
+        protected BlockPos nearClient => new(10, 64, 10);
+        protected BlockPos nearAlice => new(10, 64, 10);
+        protected BlockPos chestPos => new(10, 64, 10);
+        protected BlockPos pos => new(10, 64, 10);
+        protected BlockPos lamp => new(10, 64, 10);
+        protected BlockPos lever => new(10, 64, 10);
+        protected BlockPos doorPos => new(10, 64, 10);
+        protected new string PlayerName => "TestPlayer";
+        protected PlayerVitals vitals => null!;
+        protected ClientVitals clientVitals => Player.Vitals;
+        protected ServerTestPlayer player => null!;
+        protected ClientServerLoopbackSession session => Session;
+        protected EmbeddedServerHost serverHost => Server;
+        protected BlockPos ground => new(10, 64, 10);
+        protected long wolfId => 1;
+        protected Entity wolf => null!;
+        protected int SparkColor => 0;
+        protected List<BlockPos> expectedBlocks => [];
+        protected ICoreServerAPI sapi => Api;
+        protected string playerUid => "playerUid";
+        protected ServerTestPlayer alice => null!;
+        protected ServerTestPlayer bob => null!;
+        protected Entity entity => null!;
+        protected BotResult used => new(true);
+        protected List<string> myCache => [];
+        protected DoorMock Door(BlockPos pos) => new();
+        protected string DumpInventory() => string.Empty;
+        protected string _lastFailure = string.Empty;
+        protected List<BlockPos> marked => [];
+        protected new int DataFilePort(string name) => 8080;
+        protected EmbeddedServerHost host => ServerHost;
+        protected EmbeddedServerHost Host => ServerHost;
+        protected ICoreServerAPI api => Api;
+        protected HeadlessClient client => Client;
+
+
+        public async Task ExecuteSnippetAsync()
+        {
+#line 561 "docs/engine-mode.md"
 var server = EmbeddedServerHost.Boot(new ServerWorldOptions { ListenPort = 0 });   // 0 picks a free port
 var session = client.ConnectTcp(server, ClientAuth.Offline("Alice"));             // ticks the server in lockstep
 #line default
