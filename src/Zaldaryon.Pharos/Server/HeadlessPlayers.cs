@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Net;
 using Vintagestory.API.Common;
+using Vintagestory.API.Common.Entities;
 using Vintagestory.API.Config;
 using Vintagestory.API.Server;
 using Vintagestory.Client.Network;
@@ -85,9 +86,12 @@ internal sealed class HeadlessPlayers
         try
         {
             // The server spawns the entity once the identification is processed and the spawn
-            // chunk is loaded.
+            // chunk is loaded. The entity object exists from the connection on, so wait for the
+            // spawn itself, and for the spawn packets to the other players to go out: the engine
+            // writes them on a worker thread, and the join request serializes the same entity on
+            // the game thread. Overlapping the two corrupts its stats tree and the join throws.
             ConnectedClient client = await WaitForAsync(
-                () => Find(server, playerName) is { Entityplayer: not null } c ? c : null,
+                () => Find(server, playerName) is { Entityplayer: { } entity } c && SpawnSent(server, entity) ? c : null,
                 maxTicks, ct, $"spawn player '{playerName}'").ConfigureAwait(false);
 
             _host.RunOnGameThread(() => connection.RequestJoin());
@@ -181,6 +185,24 @@ internal sealed class HeadlessPlayers
     }
 
     private static ConnectedClient? Find(ServerMain server, string playerName) => server.GetClientByPlayername(playerName);
+
+    /// <summary>
+    /// Whether <paramref name="entity"/> is spawned and no spawn packet is still being written. Runs on the game thread.
+    /// </summary>
+    internal static bool SpawnSent(ServerMain server, Entity entity)
+    {
+        if (entity.EntityId == 0 || !((IServerWorldAccessor)server).LoadedEntities.ContainsKey(entity.EntityId)) return false;
+        lock (server.EntitySpawnSendQueue)
+        {
+            if (server.EntitySpawnSendQueue.Contains(entity)) return false;
+        }
+
+        return Volatile.Read(ref SpawnSendsInFlight(null)) == 0;
+    }
+
+    // Counts the spawn sends queued on the physics manager's worker thread.
+    [System.Runtime.CompilerServices.UnsafeAccessor(System.Runtime.CompilerServices.UnsafeAccessorKind.StaticField, Name = "spawnSendQueue")]
+    private static extern ref int SpawnSendsInFlight(ServerMain? server);
 
     private async Task<T> WaitForAsync<T>(Func<T?> probe, int maxTicks, CancellationToken ct, string what) where T : class
     {
