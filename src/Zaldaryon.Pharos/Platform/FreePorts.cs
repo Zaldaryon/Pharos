@@ -56,14 +56,21 @@ internal static class FreePorts
         {
             for (int attempt = 1; attempt <= maxAttempts; attempt++)
             {
-                TcpListener tcpProbe = new(ipAddress, 0);
-                tcpProbe.Start();
-                // Keep rejected candidates reserved too: otherwise the OS can repeatedly
-                // hand the same ephemeral TCP port back after its UDP bind was denied.
-                held.Add(tcpProbe);
-                int port = Port(tcpProbe);
+                TcpListener? tcpProbe = null;
                 try
                 {
+                    // Windows reserves port ranges for each protocol on its own (Hyper-V, WinNAT), and the system only
+                    // skips the ranges of the protocol it is asked for. Every other attempt takes its candidate from
+                    // UDP, so TCP candidates that all sit in a range reserved for UDP do not exhaust the attempts.
+                    int candidate = attempt % 2 == 0 ? UdpCandidate(ipAddress) : 0;
+                    tcpProbe = new TcpListener(ipAddress, candidate);
+                    tcpProbe.Start();
+                    // Keep rejected candidates reserved too: otherwise the OS can repeatedly
+                    // hand the same ephemeral TCP port back after its UDP bind was denied.
+                    held.Add(tcpProbe);
+                    tcpProbe = null;
+                    int port = Port(held[^1]);
+
                     // Keep TCP reserved while checking UDP. The game binds both protocols to
                     // this same port once Boot has finished configuring its network sockets.
                     udpProbe(ipAddress, port);
@@ -71,12 +78,13 @@ internal static class FreePorts
                 }
                 catch (SocketException ex) when (ex.SocketErrorCode is SocketError.AddressAlreadyInUse or SocketError.AccessDenied)
                 {
+                    tcpProbe?.Dispose();
                     lastUdpFailure = ex;
                 }
             }
 
             throw new InvalidOperationException(
-                $"Pharos could not find a port available for both TCP and UDP on {address} after {maxAttempts} attempts. Last UDP bind error: {lastUdpFailure?.SocketErrorCode}.",
+                $"Pharos could not find a port available for both TCP and UDP on {address} after {maxAttempts} attempts. Last bind error: {lastUdpFailure?.SocketErrorCode}.",
                 lastUdpFailure);
         }
         finally
@@ -89,6 +97,13 @@ internal static class FreePorts
     {
         using Socket probe = new(address.AddressFamily, SocketType.Dgram, ProtocolType.Udp);
         probe.Bind(new IPEndPoint(address, port));
+    }
+
+    private static int UdpCandidate(IPAddress address)
+    {
+        using Socket probe = new(address.AddressFamily, SocketType.Dgram, ProtocolType.Udp);
+        probe.Bind(new IPEndPoint(address, 0));
+        return ((IPEndPoint)probe.LocalEndPoint!).Port;
     }
 
     private static int Port(TcpListener listener) => ((IPEndPoint)listener.LocalEndpoint).Port;

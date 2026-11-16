@@ -141,9 +141,40 @@ runs:
     # where Windows looks first.
     - name: Install Mesa (Windows)
       if: runner.os == 'Windows' && inputs.mesa == 'true'
-      uses: f3d-app/install-mesa-windows-action@v1
-      with:
-        path: ${{ steps.where.outputs.path }}\Lib
+      shell: pwsh
+      env:
+        VS_DIR: ${{ steps.where.outputs.path }}
+      run: |
+        $lib = Join-Path $env:VS_DIR "Lib"
+        if (Test-Path (Join-Path $lib "opengl32.dll")) {
+          Write-Host "Mesa already staged in $lib"
+          exit 0
+        }
+        $mesaUrl = "https://github.com/pal1000/mesa-dist-win/releases/download/23.3.5/mesa3d-23.3.5-release-msvc.7z"
+        $stage = Join-Path $env:RUNNER_TEMP "install_mesa_local_dir"
+        $archive = Join-Path $stage "mesa.7z"
+        New-Item -ItemType Directory -Force -Path $stage | Out-Null
+        try {
+          for ($attempt = 1; $attempt -le 4; $attempt++) {
+            try {
+              & curl.exe -fsSL --retry 3 --retry-delay 2 --output $archive --url $mesaUrl
+              if ($LASTEXITCODE -ne 0) { throw "curl exited with $LASTEXITCODE" }
+              & "C:\Program Files\7-Zip\7z.exe" x -y "-o$stage" $archive | Out-Null
+              if ($LASTEXITCODE -ne 0) { throw "7z exited with $LASTEXITCODE" }
+              break
+            } catch {
+              Remove-Item -Force $archive -ErrorAction SilentlyContinue
+              if ($attempt -eq 4) { throw }
+              Write-Warning "Mesa download/extract attempt $attempt failed: $_; retrying..."
+              Start-Sleep -Seconds (5 * $attempt)
+            }
+          }
+          Get-ChildItem -Directory "$env:VS_DIR\Lib*" | ForEach-Object {
+            Copy-Item -Path (Join-Path $stage "x64\opengl32.dll"), (Join-Path $stage "x64\libglapi.dll"), (Join-Path $stage "x64\libgallium_wgl.dll") -Destination $_.FullName -Force
+          }
+        } finally {
+          Remove-Item -Recurse -Force $stage -ErrorAction SilentlyContinue
+        }
 
     - name: Software rendering settings
       if: inputs.mesa == 'true'

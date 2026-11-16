@@ -59,11 +59,13 @@ public class LiveAnimalTests : ServerScenarioBase
     {
         ServerTestPlayer player = await CreateTestPlayerAsync(PlayerNames.Next());
         Entity chick = await Server.Entities.SpawnAsync("game:chicken-baby", player.Entity!.Pos.XYZ.AddCopy(2, 0, 0));
+        IReadOnlyList<string> adults = Server.Animals.Of(chick).Growth!.AdultEntityCodes;
 
         Entity? adult = await Server.Animals.GrowAsync(chick, maxDays: 30);
 
+        // The game draws the adult from the chick's list, which holds nine hens and a rooster.
         Assert.NotNull(adult);
-        Assert.Contains("henpoult", adult!.Code.Path);
+        Assert.Contains(adult!.Code.ToString(), adults);
     }
 
     [ServerScenario]
