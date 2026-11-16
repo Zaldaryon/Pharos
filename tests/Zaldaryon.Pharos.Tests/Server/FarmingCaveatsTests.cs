@@ -17,48 +17,48 @@ public abstract class FarmingCaveatsHelpers : ServerScenarioBase
     /// beside it. Above sea level there is no depth penalty, so the growth light is the sunlight under the roof, or the
     /// block light of the torch when the world allows underground farming.
     /// </summary>
-    protected BlockPos PrepareUndergroundField(ServerTestPlayer player)
+    protected async Task<BlockPos> PrepareUndergroundFieldAsync(ServerTestPlayer player)
     {
         int seaLevel = Host!.RunOnGameThread(() => ((Vintagestory.API.Server.ICoreServerAPI)Host.Server.Api).World.SeaLevel);
         BlockPos pos = new((int)Math.Floor(player.Entity!.Pos.X) + 2, seaLevel + 1, (int)Math.Floor(player.Entity.Pos.Z));
         Host.Climate.Override(new Cuboidi(pos.X - 8, pos.Y - 2, pos.Z - 8, pos.X + 8, pos.Y + 4, pos.Z + 8), temperature: 20);
-        Host.RunOnGameThread(() =>
+        // The engine lights blocks on its own thread from the block data as it is when the task runs. A roof block
+        // lit before the wall under it exists, and its neighbour lit after, leaves sun light inside the walls.
+        // Hold the light thread until the whole box is in the block data.
+        using (Host.World.PauseLighting())
         {
-            IBlockAccessor blocks = Api!.World.BlockAccessor;
-            Block rock = Api.World.GetBlock(new AssetLocation("game:rock-granite"))!;
-            // The platform the field stands on, and the roof over it, fifteen blocks each way.
-            for (int dx = -7; dx <= 7; dx++)
+            Host.RunOnGameThread(() =>
             {
-                for (int dz = -7; dz <= 7; dz++)
+                IBlockAccessor blocks = Api!.World.BlockAccessor;
+                Block rock = Api.World.GetBlock(new AssetLocation("game:rock-granite"))!;
+                // The platform the field stands on, and the roof over it, fifteen blocks each way.
+                for (int dx = -7; dx <= 7; dx++)
                 {
-                    blocks.SetBlock(rock.BlockId, new BlockPos(pos.X + dx, pos.Y - 1, pos.Z + dz));
-                    blocks.SetBlock(rock.BlockId, new BlockPos(pos.X + dx, pos.Y + 2, pos.Z + dz));
+                    for (int dz = -7; dz <= 7; dz++)
+                    {
+                        blocks.SetBlock(rock.BlockId, new BlockPos(pos.X + dx, pos.Y - 1, pos.Z + dz));
+                        blocks.SetBlock(rock.BlockId, new BlockPos(pos.X + dx, pos.Y + 2, pos.Z + dz));
+                    }
                 }
-            }
-            // Walls on all four sides close the field off from the sky, so only the torch's block light reaches it.
-            for (int d = -4; d <= 4; d++)
-            {
-                for (int h = 0; h <= 1; h++)
+                // Walls on all four sides close the field off from the sky, so only the torch's block light reaches it.
+                for (int d = -4; d <= 4; d++)
                 {
-                    blocks.SetBlock(rock.BlockId, new BlockPos(pos.X + d, pos.Y + h, pos.Z - 4));
-                    blocks.SetBlock(rock.BlockId, new BlockPos(pos.X + d, pos.Y + h, pos.Z + 4));
-                    blocks.SetBlock(rock.BlockId, new BlockPos(pos.X - 4, pos.Y + h, pos.Z + d));
-                    blocks.SetBlock(rock.BlockId, new BlockPos(pos.X + 4, pos.Y + h, pos.Z + d));
+                    for (int h = 0; h <= 1; h++)
+                    {
+                        blocks.SetBlock(rock.BlockId, new BlockPos(pos.X + d, pos.Y + h, pos.Z - 4));
+                        blocks.SetBlock(rock.BlockId, new BlockPos(pos.X + d, pos.Y + h, pos.Z + 4));
+                        blocks.SetBlock(rock.BlockId, new BlockPos(pos.X - 4, pos.Y + h, pos.Z + d));
+                        blocks.SetBlock(rock.BlockId, new BlockPos(pos.X + 4, pos.Y + h, pos.Z + d));
+                    }
                 }
-            }
-            blocks.SetBlock(Api.World.GetBlock(new AssetLocation("game:torch-basic-lit-up"))!.BlockId, new BlockPos(pos.X + 1, pos.Y + 1, pos.Z));
-            blocks.SetBlock(Api.World.GetBlock(new AssetLocation(StillWater))!.BlockId, new BlockPos(pos.X - 1, pos.Y, pos.Z));
-        });
-        Host.Farming.PlaceField(pos, Field);
-        // Light propagation can need more ticks on fast CI runners, and on a loaded one it lags the ticks:
-        // wait until the sealed field has no sun light, or for 30 seconds.
-        System.Diagnostics.Stopwatch elapsed = System.Diagnostics.Stopwatch.StartNew();
-        Host.Ticks(120);
-        while (SunAt(pos) != 0 && elapsed.Elapsed < TimeSpan.FromSeconds(30 * Zaldaryon.Pharos.Scenarios.ScenarioTimeouts.Scale))
-        {
-            Host.Ticks(10);
-            Thread.Sleep(50);
+                blocks.SetBlock(Api.World.GetBlock(new AssetLocation("game:torch-basic-lit-up"))!.BlockId, new BlockPos(pos.X + 1, pos.Y + 1, pos.Z));
+                blocks.SetBlock(Api.World.GetBlock(new AssetLocation(StillWater))!.BlockId, new BlockPos(pos.X - 1, pos.Y, pos.Z));
+            });
+            Host.Farming.PlaceField(pos, Field);
         }
+
+        await Host.World.WaitForRelightAsync();
+        Host.Ticks(20);
         return pos;
     }
 
@@ -163,7 +163,7 @@ public sealed class FarmingUndergroundDeniedTests : FarmingCaveatsHelpers
     public async Task Underground_FieldLitOnlyByATorchDoesNotGrowWhenUndergroundFarmingIsOff()
     {
         ServerTestPlayer player = await CreateTestPlayerAsync("UndergroundOff");
-        BlockPos pos = PrepareUndergroundField(player);
+        BlockPos pos = await PrepareUndergroundFieldAsync(player);
         Assert.True(await Host!.Farming.PlantAsync(player, pos, "game:seeds-carrot"));
         // Sealed from the sky, the field has no sunlight, only the torch's block light.
         Assert.Equal(0, SunAt(pos));
@@ -181,7 +181,7 @@ public sealed class FarmingUndergroundAllowedTests : FarmingCaveatsHelpers
     public async Task Underground_FieldLitOnlyByATorchGrowsWhenUndergroundFarmingIsOn()
     {
         ServerTestPlayer player = await CreateTestPlayerAsync("UndergroundOn");
-        BlockPos pos = PrepareUndergroundField(player);
+        BlockPos pos = await PrepareUndergroundFieldAsync(player);
         Assert.True(await Host!.Farming.PlantAsync(player, pos, "game:seeds-carrot"));
 
         await Host.Farming.PlayAsync([pos], TimeSpan.FromHours(300));

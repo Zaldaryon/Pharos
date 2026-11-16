@@ -79,6 +79,11 @@ public sealed class ServerSimulation
         }
     }
 
+    // The game's calendar system runs every few ticks and banks the time since its last run. Reading the projected
+    // day counts the time it has yet to bank, so it advances on every tick even in a final 1-2 tick chunk.
+    private static double ProjectedDays(GameCalendar calendar) =>
+        CalendarDriver.Internals.ProjectedSeconds(calendar) / 3600 / calendar.HoursPerDay + calendar.Timelapse;
+
     private async Task<SoakReport> RunAsync(VirtualClock clock, double days, float speed, SoakMonitor budgets, CancellationToken ct)
     {
         SoakReport report = new(days, speed, clock.TickMs);
@@ -98,7 +103,8 @@ public sealed class ServerSimulation
         _host.TickTimes = timings;
         try
         {
-            (double rate, float hoursPerDay, double startDays, _) = _host.Calendar.Pace();
+            (double rate, float hoursPerDay, _, _) = _host.Calendar.Pace();
+            double startDays = _host.RunOnGameThread(() => ProjectedDays((GameCalendar)_host.Server.Calendar));
             double gameSecondsPerTick = rate * clock.TickMs / 1000.0;
             long sampleTicks = Math.Max(1, (long)Math.Round(budgets.SampleInterval.TotalSeconds / gameSecondsPerTick));
             long samplesPerCheckpoint = Math.Max(1, (long)Math.Round(budgets.CheckpointInterval.TotalSeconds / budgets.SampleInterval.TotalSeconds));
@@ -204,7 +210,7 @@ public sealed class ServerSimulation
             }
 
             GameCalendar calendar = (GameCalendar)server.Calendar;
-            return (((IServerWorldAccessor)server).LoadedEntities.Count, loadedChunks, calendar.TotalDays);
+            return (((IServerWorldAccessor)server).LoadedEntities.Count, loadedChunks, ProjectedDays(calendar));
         });
 
         int tickListeners = _host.TickListeners.All().Count;
