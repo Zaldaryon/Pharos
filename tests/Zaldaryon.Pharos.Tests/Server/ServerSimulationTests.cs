@@ -27,12 +27,13 @@ public class ServerSimulationTests : ServerScenarioBase
     [ServerScenario]
     public async Task ASampleEachGameHour_AndACheckpointEachDay()
     {
-        SoakReport report = await Host!.Simulate.DaysAsync(1, speed: 1440);
+        // 1.02 days at speed 1440 is 2448 ticks: 24 samples of 100 ticks plus a partial 48-tick sample at the end.
+        SoakReport report = await Host!.Simulate.DaysAsync(1.02, speed: 1440);
 
         // One game hour at speed 1440 is 100 ticks: a sample per 100 ticks, the last one partial, and a
         // checkpoint each game day and at the end.
         Assert.Equal((int)Math.Ceiling(report.Ticks / 100.0), report.Samples.Count);
-        // The end of the game day (sample 24) and the partial last sample are the two checkpoints.
+        // The end of the game day (sample 24) and the partial last sample (sample 25) are the two checkpoints.
         Assert.Equal(2, report.Samples.Count(s => s.Checkpoint));
         Assert.True(report.Samples[^1].Checkpoint);
         Assert.NotNull(report.Samples[^1].ManagedBytesAfterGc);
