@@ -38,8 +38,8 @@ public sealed class PharosLayoutDialog : GuiDialog
         double secondX = mode == "overlap" ? 60 : 20;
         double secondY = mode == "overlap" ? 40 : 80;
 
-        ElementBounds dialogBounds = ElementBounds.Fixed(EnumDialogArea.CenterMiddle, 0, 0, width, 180);
-        ElementBounds background = ElementBounds.Fixed(0, 0, width, 180);
+        ElementBounds dialogBounds = ElementBounds.Fixed(EnumDialogArea.CenterMiddle, 0, 0, width, 160);
+        ElementBounds background = ElementBounds.Fixed(0, 0, width, 160);
 
         GuiComposer composer = capi.Gui.CreateCompo("pharoslayout-" + mode, dialogBounds)
             .AddShadedDialogBG(background, false);
