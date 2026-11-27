@@ -608,7 +608,12 @@ public sealed record WorldSnapshot : IWorldSnapshot
                 inventories[id] = tree.ToBytes();
             }
 
-            return new OnlinePlayerState(pos.X, pos.Y, pos.Z, pos.Yaw, pos.Pitch, pos.Dimension, player.WorldData.CurrentGameMode, inventories)
+            // CurrentGameMode reports spectator until the player's data is flagged as connected,
+            // which a player loaded from a save is not yet when the pair is captured. Restoring
+            // that placeholder would make the player a spectator for real; keep the stored mode.
+            EnumGameMode gameMode = player.WorldData is ServerWorldPlayerData data ? data.GameMode : player.WorldData.CurrentGameMode;
+
+            return new OnlinePlayerState(pos.X, pos.Y, pos.Z, pos.Yaw, pos.Pitch, pos.Dimension, gameMode, inventories)
             {
                 Entity = PlayerEntityState.From(player),
             };
